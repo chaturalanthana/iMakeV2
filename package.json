@@ -1,0 +1,16 @@
+{
+  "name": "imake",
+  "version": "1.0.0",
+  "description": "Root configuration for iMake",
+  "private": true,
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "start": "concurrently \"npm --prefix server start\" \"npm --prefix client run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "puppeteer": "^22.6.0"
+  }
+}
