@@ -1,4 +1,17 @@
 const prisma = require('../lib/prisma');
+const { syncLegacy } = require('../services/production/workOrders');
+
+const mirrorJob = async (job, { receiptOnComplete = false, userId = null, db = prisma } = {}) => {
+  if (!job) return null;
+  return syncLegacy(db, {
+    tenantId: job.tenantId,
+    userId: userId || job.createdBy || null,
+    legacy: job,
+    kind: 'job',
+    sourceType: job.notes === 'MRP' ? 'MRP' : 'MIGRATED_JOB',
+    receiptOnComplete
+  });
+};
 
 const getProductionJobs = async (req, res) => {
   try {
@@ -93,6 +106,7 @@ const createProductionJob = async (req, res) => {
       }
     });
 
+    await mirrorJob(job, { userId: req.user?.userId || null });
     res.status(201).json(job);
   } catch (error) {
     console.error('Create production job error:', error);
@@ -160,6 +174,10 @@ const updateProductionJob = async (req, res) => {
       }
     });
 
+    await mirrorJob(updated, {
+      userId: req.user?.userId || null,
+      receiptOnComplete: status === 'COMPLETED' && job.status !== 'COMPLETED'
+    });
     res.json(updated);
   } catch (error) {
     console.error('Update production job error:', error);
@@ -187,10 +205,18 @@ const updateJobStatus = async (req, res) => {
       if (transitionError) return res.status(400).json({ error: transitionError });
     }
 
-    const updated = await prisma.productionJob.update({
-      where: { id },
-      data: { status },
-      include: { product: true, bom: true }
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.productionJob.update({
+        where: { id },
+        data: { status },
+        include: { product: true, bom: true }
+      });
+      await mirrorJob(row, {
+        userId: req.user?.userId || null,
+        db: tx,
+        receiptOnComplete: status === 'COMPLETED'
+      });
+      return row;
     });
 
     res.json(updated);
@@ -283,7 +309,7 @@ const splitProductionJob = async (req, res) => {
           endDate: originalEnd
         }
       });
-      return tx.productionJob.create({
+      const createdJob = await tx.productionJob.create({
         data: {
           tenantId: req.tenantId,
           jobNumber: await nextJobNumber(req.tenantId, tx),
@@ -300,6 +326,10 @@ const splitProductionJob = async (req, res) => {
           createdBy: req.user.userId
         }
       });
+      const shortened = await tx.productionJob.findUnique({ where: { id: job.id } });
+      await mirrorJob(shortened, { userId: req.user.userId, db: tx });
+      await mirrorJob(createdJob, { userId: req.user.userId, db: tx });
+      return createdJob;
     });
 
     res.status(201).json(created);
@@ -345,6 +375,7 @@ const mergeProductionJobs = async (req, res) => {
         }
       });
       await tx.productionJob.deleteMany({ where: { id: { in: removeIds }, tenantId: req.tenantId } });
+      await mirrorJob(merged, { userId: req.user?.userId || null, db: tx });
       return merged;
     });
 

@@ -26,7 +26,11 @@ export default function Sidebar() {
       subItems: [
         { name: 'Products', icon: Archive, path: '/products' },
         { name: 'Bill of Materials (BOM)', icon: ClipboardList, path: '/production/boms' },
+        { name: 'Work Orders', icon: ClipboardList, path: '/production/work-orders' },
+        { name: 'Shop Floor', icon: Factory, path: '/production/shop-floor' },
         { name: 'Planning', icon: Sliders, path: '/production/planning' },
+        { name: 'Calendar', icon: CalendarDays, path: '/production/calendar' },
+        { name: 'Costing', icon: DollarSign, path: '/production/costing' },
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
@@ -133,6 +137,10 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
+    if (window.matchMedia('(max-width: 720px)').matches) {
+      setExpandedMenu(null);
+      return;
+    }
     const currentActive = menuItems.find(m => isMenuPartiallyActive(m)) || systemItems.find(m => isMenuPartiallyActive(m));
     if (currentActive && !expandedMenu) {
       setExpandedMenu(currentActive);
@@ -243,6 +251,15 @@ export default function Sidebar() {
           .slim-sidebar:hover .bottom-nav {
             align-items: flex-start !important;
             padding: 0;
+          }
+          @media (max-width: 720px) {
+            .sub-panel {
+              position: fixed !important;
+              left: 76px;
+              top: 0;
+              height: 100vh;
+              z-index: 60;
+            }
           }
         `}
       </style>
@@ -363,7 +380,7 @@ export default function Sidebar() {
       {/* 
         Layer 2: Sub Section Side Panel (Collapsible)
       */}
-      <aside style={{
+      <aside className="sub-panel" style={{
         width: showSubPanel ? '240px' : '0px',
         opacity: showSubPanel ? 1 : 0,
         backgroundColor: '#f8fafc', /* Very light gray bg */

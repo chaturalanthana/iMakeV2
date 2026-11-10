@@ -1,5 +1,6 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { createDraftsForSalesOrder } = require('../services/production/workOrders');
 
 const isDocumentModifiable = (status) => {
   if (!status) return true;
@@ -230,6 +231,12 @@ const createOrder = async (req, res) => {
         data: { status: 'ACCEPTED' }
       });
     }
+
+    await createDraftsForSalesOrder({
+      tenantId: req.tenantId,
+      userId: req.user?.userId || null,
+      salesOrderId: order.id
+    });
 
     res.status(201).json(order);
   } catch (error) {

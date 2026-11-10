@@ -64,6 +64,7 @@ export default function PlanningBoard() {
   const [jobs, setJobs] = useState([]);
   const [products, setProducts] = useState([]);
   const [boms, setBoms] = useState([]);
+  const [capacity, setCapacity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   
@@ -109,6 +110,7 @@ export default function PlanningBoard() {
       setJobs(jobsRes.data);
       setProducts(productsRes.data.filter(p => p.bomApplicable));
       setBoms(bomsRes.data);
+      axios.get('/api/work-orders/capacity', config).then((res) => setCapacity(res.data)).catch(() => setCapacity(null));
     } catch (err) {
       console.error(err);
       showToast('Failed to load production planning data', 'error');
@@ -685,6 +687,37 @@ export default function PlanningBoard() {
           )}
         </div>
       </div>
+
+      {capacity && (capacity.workstations || []).length > 0 && (
+        <div style={{ marginBottom: '1rem', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.7rem' }}>
+            <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>Workstation load</strong>
+            {capacity.overloads?.length > 0 ? (
+              <span style={{ color: '#b91c1c', fontWeight: 800, fontSize: '0.75rem' }}>
+                Overload on {capacity.overloads.length} {capacity.overloads.length === 1 ? 'day' : 'days'}
+              </span>
+            ) : (
+              <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.75rem' }}>Within available hours</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+            {capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).map((row) => {
+              const scale = Math.max(row.availableHours, row.loadHours, 1);
+              return (
+                <div key={row.id || row.code}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700, color: row.overload ? '#b91c1c' : '#334155', marginBottom: '0.25rem' }}>
+                    <span>{row.code} · {row.name}</span>
+                    <span>{row.loadHours}h load / {row.availableHours}h available</span>
+                  </div>
+                  <div style={{ height: '8px', borderRadius: '99px', background: '#e2e8f0', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, (row.loadHours / scale) * 100)}%`, height: '100%', background: row.overload ? '#dc2626' : 'var(--accent)' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {viewMode === 'table' ? (
         <DataTable

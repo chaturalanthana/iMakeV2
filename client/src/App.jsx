@@ -10,6 +10,11 @@ import NewProduct from './pages/NewProduct';
 import BOMs from './pages/production/BOMs';
 import NewBOM from './pages/production/NewBOM';
 import PlanningBoard from './pages/production/PlanningBoard';
+import WorkOrders from './pages/production/WorkOrders';
+import WorkOrderDetail from './pages/production/WorkOrderDetail';
+import ShopFloor from './pages/production/ShopFloor';
+import ProductionCalendar from './pages/production/ProductionCalendar';
+import ProductionCosting from './pages/production/ProductionCosting';
 import NewProductionOrder from './pages/production/NewProductionOrder';
 import Workstations from './pages/production/Workstations';
 import NewWorkstation from './pages/production/NewWorkstation';
@@ -123,7 +128,14 @@ function App() {
               <Route path="/production/boms/:productCode/:bomCode" element={<NewBOM />} />
               <Route path="/production/boms/:id" element={<NewBOM />} />
               <Route path="/production/planning" element={<PlanningBoard />} />
-              <Route path="/production/orders" element={<Navigate to="/production/planning" replace />} />
+              <Route path="/production/work-orders" element={<WorkOrders />} />
+              <Route path="/production/work-orders/new" element={<WorkOrderDetail />} />
+              <Route path="/production/work-orders/:id" element={<WorkOrderDetail />} />
+              <Route path="/production/shop-floor" element={<ShopFloor />} />
+              <Route path="/production/shop-floor/:id" element={<ShopFloor />} />
+              <Route path="/production/calendar" element={<ProductionCalendar />} />
+              <Route path="/production/costing" element={<ProductionCosting />} />
+              <Route path="/production/orders" element={<Navigate to="/production/work-orders" replace />} />
               <Route path="/production/orders/new" element={<NewProductionOrder />} />
               <Route path="/production/orders/:id" element={<NewProductionOrder />} />
               <Route path="/production/workstations" element={<Workstations />} />
