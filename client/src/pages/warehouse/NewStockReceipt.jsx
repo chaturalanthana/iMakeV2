@@ -27,6 +27,7 @@ export default function NewStockReceipt() {
   const [receiptNumber, setReceiptNumber] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [warehouseId, setWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [warehouseName, setWarehouseName] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -119,9 +120,17 @@ export default function NewStockReceipt() {
   const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
 
   const handleSubmit = async (submitStatus = 'DRAFT') => {
-    if (!warehouseId) return showToast("Warehouse is required.", "error");
+    const errors = {};
+    if (!date) errors.date = 'Date is required.';
+    if (!warehouseId) errors.warehouseId = 'Warehouse is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     if (submitStatus === 'COMPLETED') {
       for (let item of validLines) {
         if (parseFloat(item.quantity) <= 0) return showToast("All product lines must have a positive receipt quantity before completing.", "error");
@@ -217,6 +226,8 @@ export default function NewStockReceipt() {
               </div>
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <DatePicker 
+                  invalid={!!fieldErrors.date}
+                  error={fieldErrors.date || ''}
                   value={date} 
                   onChange={setDate} 
                   placeholder="Select Date" 
@@ -232,6 +243,8 @@ export default function NewStockReceipt() {
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <WarehouseSearchDropdown
                   warehouses={warehouses}
+                  invalid={!!fieldErrors.warehouseId}
+                  error={fieldErrors.warehouseId || ''}
                   value={warehouseName}
                   onChange={(name, wh) => {
                     setWarehouseName(name);

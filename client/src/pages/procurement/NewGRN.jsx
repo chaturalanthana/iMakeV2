@@ -33,6 +33,7 @@ export default function NewGRN() {
   const [supplierId, setSupplierId] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [warehouseName, setWarehouseName] = useState('');
   const [status, setStatus] = useState('RECEIVED');
   
@@ -161,9 +162,18 @@ export default function NewGRN() {
   const totalReceived = items.reduce((sum, item) => sum + (parseFloat(item.quantityReceived) || 0), 0);
 
   const handleSubmit = async () => {
-    if (!supplierId || !date || !warehouseId) return showToast("Please fill required header fields including Warehouse.", "error");
+    const errors = {};
+    if (!supplierId) errors.supplierId = 'Supplier is required.';
+    if (!date) errors.date = 'Date is required.';
+    if (!warehouseId) errors.warehouseId = 'Warehouse is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     for (let item of validLines) {
       if (parseFloat(item.quantityReceived) <= 0) return showToast("All product lines must have a received quantity greater than 0.", "error");
     }
@@ -290,6 +300,8 @@ export default function NewGRN() {
                 <div style={{ pointerEvents: (isCompleted || poId) ? 'none' : 'auto', opacity: (isCompleted || poId) ? 0.7 : 1 }}>
                   <SupplierSearchDropdown 
                     suppliers={suppliers}
+                    invalid={!!fieldErrors.supplierId}
+                    error={fieldErrors.supplierId || ''}
                     value={supplierName}
                     onChange={(name, sup) => {
                       setSupplierName(name);
@@ -306,6 +318,8 @@ export default function NewGRN() {
                 </div>
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <DatePicker 
+                    invalid={!!fieldErrors.date}
+                    error={fieldErrors.date || ''}
                     value={date} 
                     onChange={setDate} 
                     placeholder="Select Date" 
@@ -320,6 +334,8 @@ export default function NewGRN() {
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <WarehouseSearchDropdown
                     warehouses={warehouses}
+                    invalid={!!fieldErrors.warehouseId}
+                    error={fieldErrors.warehouseId || ''}
                     value={warehouseName}
                     onChange={(name, wh) => {
                       setWarehouseName(name);

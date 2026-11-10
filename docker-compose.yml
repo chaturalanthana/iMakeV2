@@ -6,18 +6,32 @@ services:
     container_name: imake-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_USER: imake_user
-      POSTGRES_PASSWORD: imake_secret_2024
-      POSTGRES_DB: imake_db
+      POSTGRES_USER: ${POSTGRES_USER:-imake_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-imake_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U imake_user -d imake_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-imake_user} -d ${POSTGRES_DB:-imake_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  app:
+    profiles: ["app"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+    ports:
+      - "${APP_PORT:-5000}:5000"
 
 volumes:
   pgdata:

@@ -324,15 +324,15 @@ const deleteOrder = async (req, res) => {
 };
 
 // --- SALES DELIVERIES ---
-const updateOrderStatusOnDelivery = async (orderId) => {
+const updateOrderStatusOnDelivery = async (orderId, db = prisma) => {
   if (!orderId) return;
-  const order = await prisma.salesOrder.findUnique({
+  const order = await db.salesOrder.findUnique({
     where: { id: orderId },
     include: { items: true }
   });
   if (!order) return;
 
-  const completedDeliveries = await prisma.salesDelivery.findMany({
+  const completedDeliveries = await db.salesDelivery.findMany({
     where: { orderId, status: 'DELIVERED' },
     include: { items: true }
   });
@@ -365,7 +365,7 @@ const updateOrderStatusOnDelivery = async (orderId) => {
     newStatus = 'PENDING';
   }
 
-  await prisma.salesOrder.update({
+  await db.salesOrder.update({
     where: { id: orderId },
     data: { status: newStatus }
   });
@@ -445,47 +445,45 @@ const createDelivery = async (req, res) => {
       'deliveryNumber'
     );
 
-    const delivery = await prisma.salesDelivery.create({
-      data: {
-        tenantId: req.tenantId,
-        customerId,
-        orderId: orderId || null,
-        deliveryNumber: finalDeliveryNumber,
-        date: new Date(date),
-        warehouseId: warehouseId,
-        status: status || 'DELIVERED',
-        createdBy: req.user.userId,
-        items: {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity)
-          }))
-        }
-      }
-    });
-
-    // Create automatically stock movement for each item ONLY IF DELIVERED
-    if (delivery.status === 'DELIVERED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI', // Goods Issue for Sales
-            quantity: -parseFloat(item.quantity), // Negative for outbound
-            referenceType: 'SALES_DELIVERY',
-            referenceId: delivery.id,
-            warehouseId: warehouseId,
-            createdBy: req.user.userId
+    const delivery = await prisma.$transaction(async (tx) => {
+      const created = await tx.salesDelivery.create({
+        data: {
+          tenantId: req.tenantId,
+          customerId,
+          orderId: orderId || null,
+          deliveryNumber: finalDeliveryNumber,
+          date: new Date(date),
+          warehouseId: warehouseId,
+          status: status || 'DELIVERED',
+          createdBy: req.user.userId,
+          items: {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity)
+            }))
           }
-        });
-      }
+        }
+      });
 
-      // Dynamically recalculate and update Order status
-      if (orderId) {
-        await updateOrderStatusOnDelivery(orderId);
+      if (created.status === 'DELIVERED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GI',
+              quantity: -parseFloat(item.quantity),
+              referenceType: 'SALES_DELIVERY',
+              referenceId: created.id,
+              warehouseId: warehouseId,
+              createdBy: req.user.userId
+            }
+          });
+        }
+        if (orderId) await updateOrderStatusOnDelivery(orderId, tx);
       }
-    }
+      return created;
+    });
 
     res.status(201).json(delivery);
   } catch (error) {
@@ -554,49 +552,50 @@ const updateDelivery = async (req, res) => {
       }
     }
 
-    await prisma.salesDeliveryItem.deleteMany({
-      where: { deliveryId: id }
-    });
+    const delivery = await prisma.$transaction(async (tx) => {
+      await tx.salesDeliveryItem.deleteMany({
+        where: { deliveryId: id }
+      });
 
-    const delivery = await prisma.salesDelivery.update({
-      where: { id },
-      data: {
-        customerId,
-        orderId: orderId || null,
-        date: new Date(date),
-        status: status || 'PENDING',
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity || 0)
-          }))
-        } : undefined
-      },
-      include: { 
-        customer: true,
-        items: { include: { product: true } }
+      const updated = await tx.salesDelivery.update({
+        where: { id },
+        data: {
+          customerId,
+          orderId: orderId || null,
+          date: new Date(date),
+          status: status || 'PENDING',
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          customer: true,
+          items: { include: { product: true } }
+        }
+      });
+
+      if (updated.status === 'DELIVERED' && existing.status !== 'DELIVERED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GI',
+              quantity: -parseFloat(item.quantity),
+              referenceType: 'SALES_DELIVERY',
+              referenceId: updated.id,
+              createdBy: req.user.userId
+            }
+          });
+        }
       }
+
+      if (linkedOrderId) await updateOrderStatusOnDelivery(linkedOrderId, tx);
+      return updated;
     });
-
-    if (delivery.status === 'DELIVERED' && existing.status !== 'DELIVERED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: -parseFloat(item.quantity),
-            referenceType: 'SALES_DELIVERY',
-            referenceId: delivery.id,
-            createdBy: req.user.userId
-          }
-        });
-      }
-    }
-
-    if (linkedOrderId) {
-      await updateOrderStatusOnDelivery(linkedOrderId);
-    }
 
     res.json(delivery);
   } catch (error) {
@@ -616,10 +615,10 @@ const deleteDelivery = async (req, res) => {
       return res.status(403).json({ error: 'Document is finalized and cannot be deleted' });
     }
     const orderId = existing.orderId;
-    await prisma.salesDelivery.delete({ where: { id } });
-    if (orderId) {
-      await updateOrderStatusOnDelivery(orderId);
-    }
+    await prisma.$transaction(async (tx) => {
+      await tx.salesDelivery.delete({ where: { id } });
+      if (orderId) await updateOrderStatusOnDelivery(orderId, tx);
+    });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete delivery' });

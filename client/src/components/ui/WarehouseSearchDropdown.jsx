@@ -8,7 +8,9 @@ export default function WarehouseSearchDropdown({
   onChange, 
   placeholder = "Search or select warehouse...",
   disabled = false,
-  style = {}
+  style = {},
+  invalid = false,
+  error = ''
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -79,6 +81,7 @@ export default function WarehouseSearchDropdown({
         onClick={() => {
           if (!disabled) setIsOpen(!isOpen);
         }}
+        className={invalid ? 'field-invalid' : undefined}
         style={{ 
           position: 'relative', 
           cursor: disabled ? 'not-allowed' : 'pointer',
@@ -118,6 +121,7 @@ export default function WarehouseSearchDropdown({
           }} 
         />
       </div>
+      {error ? <span className="field-error-text">{error}</span> : null}
 
       {isOpen && createPortal(
         <div 

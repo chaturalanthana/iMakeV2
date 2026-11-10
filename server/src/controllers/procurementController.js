@@ -171,52 +171,52 @@ const createGrn = async (req, res) => {
       'grnNumber'
     );
 
-    // Create the GRN
-    const grn = await prisma.gRN.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId,
-        poId: poId || null,
-        grnNumber,
-        date: new Date(date),
-        warehouseId: warehouseId,
-        status: status || 'RECEIVED',
-        currencyId: currencyId || null,
-        exchangeRate: parseFloat(exchangeRate) || 1.0,
-        createdBy: req.user.userId,
-        items: {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantityReceived: parseFloat(item.quantityReceived),
-            quantityOrdered: parseFloat(item.quantityOrdered || item.quantityReceived)
-          }))
-        }
-      }
-    });
-
-    // Create stock movements to increase stock (Goods Receipt)
-    for (const item of items) {
-      await prisma.stockMovement.create({
+    const grn = await prisma.$transaction(async (tx) => {
+      const created = await tx.gRN.create({
         data: {
           tenantId: req.tenantId,
-          productId: item.productId,
-          type: 'GR',
-          quantity: parseFloat(item.quantityReceived),
-          referenceType: 'GRN',
-          referenceId: grn.id,
+          supplierId,
+          poId: poId || null,
+          grnNumber,
+          date: new Date(date),
           warehouseId: warehouseId,
-          createdBy: req.user.userId
+          status: status || 'RECEIVED',
+          currencyId: currencyId || null,
+          exchangeRate: parseFloat(exchangeRate) || 1.0,
+          createdBy: req.user.userId,
+          items: {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantityReceived: parseFloat(item.quantityReceived),
+              quantityOrdered: parseFloat(item.quantityOrdered || item.quantityReceived)
+            }))
+          }
         }
       });
-    }
 
-    // Optionally update PurchaseOrder status to RECEIVED
-    if (poId) {
-      await prisma.purchaseOrder.update({
-        where: { id: poId },
-        data: { status: 'RECEIVED' }
-      });
-    }
+      for (const item of items) {
+        await tx.stockMovement.create({
+          data: {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            type: 'GR',
+            quantity: parseFloat(item.quantityReceived),
+            referenceType: 'GRN',
+            referenceId: created.id,
+            warehouseId: warehouseId,
+            createdBy: req.user.userId
+          }
+        });
+      }
+
+      if (poId) {
+        await tx.purchaseOrder.update({
+          where: { id: poId },
+          data: { status: 'RECEIVED' }
+        });
+      }
+      return created;
+    });
 
     res.status(201).json(grn);
   } catch (error) {

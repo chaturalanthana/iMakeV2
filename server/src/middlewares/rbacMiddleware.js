@@ -1,49 +1,57 @@
 const prisma = require('../lib/prisma');
+const { authenticateToken } = require('./authMiddleware');
+const { enforceTenantContext } = require('./tenantMiddleware');
+const { hasFullAccess, allows, actionForMethod } = require('../permissions/catalog');
 
-const requirePermission = (module, action) => {
+async function loadActor(req) {
+  if (Object.prototype.hasOwnProperty.call(req, 'actorUser')) return req.actorUser;
+  const userId = req.user && req.user.userId;
+  if (!userId) {
+    req.actorUser = null;
+    return null;
+  }
+  req.actorUser = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { role: true }
+  });
+  return req.actorUser;
+}
+
+const requirePermission = (moduleName, action) => {
   return async (req, res, next) => {
     try {
-      const { userId } = req.user;
-      
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { role: true }
-      });
-
-      if (!user) {
-        return res.status(401).json({ error: 'User not found' });
+      if (!req.user || !req.user.userId) {
+        return res.status(401).json({ error: 'Access token is missing' });
       }
 
+      const user = await loadActor(req);
+      if (!user) return res.status(401).json({ error: 'User not found' });
       if (user.status !== 'ACTIVE') {
         return res.status(403).json({ error: 'User account is inactive' });
       }
+      if (!user.role) return res.status(403).json({ error: 'No role assigned to user' });
+      if (hasFullAccess(user.role)) return next();
 
-      // If user has a system role with all permissions, let them pass
-      if (user.role && user.role.isSystem && user.role.permissions.all) {
-        return next();
-      }
+      const needed = action || actionForMethod(req.method);
+      if (allows(user.role.permissions, moduleName, needed)) return next();
 
-      // If no role assigned, deny access
-      if (!user.role) {
-        return res.status(403).json({ error: 'No role assigned to user' });
-      }
-
-      const permissions = user.role.permissions || {};
-      
-      // Check if they have the specific module and action
-      // Expected structure: permissions = { "products": ["read", "write"], "sales": ["read"] }
-      if (permissions[module] && permissions[module].includes(action)) {
-        return next();
-      }
-
-      return res.status(403).json({ error: `Forbidden: Requires ${action} permission for ${module}` });
+      return res.status(403).json({
+        error: `Forbidden: Requires ${needed} permission for ${moduleName}`
+      });
     } catch (error) {
       console.error('RBAC Error:', error);
-      res.status(500).json({ error: 'Internal server error during authorization' });
+      return res.status(500).json({ error: 'Internal server error during authorization' });
     }
   };
 };
 
+const secureModule = (moduleName) => [
+  authenticateToken,
+  enforceTenantContext,
+  requirePermission(moduleName)
+];
+
 module.exports = {
-  requirePermission
+  requirePermission,
+  secureModule
 };

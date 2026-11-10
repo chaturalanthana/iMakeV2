@@ -53,6 +53,7 @@ export default function NewDelivery() {
   const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [warehouseName, setWarehouseName] = useState('');
 
   // Lines
@@ -257,9 +258,18 @@ export default function NewDelivery() {
 
 
   const handleSubmit = async (finalStatus = 'DELIVERED') => {
-    if (!customerId || !date || !warehouseId) return showToast("Please fill required header fields including Warehouse.", "error");
+    const errors = {};
+    if (!customerId) errors.customerId = 'Customer is required.';
+    if (!date) errors.date = 'Date is required.';
+    if (!warehouseId) errors.warehouseId = 'Warehouse is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setLoading(true);
     try {
@@ -425,6 +435,8 @@ export default function NewDelivery() {
                   <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                     <CustomerSearchDropdown 
                       customers={customers}
+                      invalid={!!fieldErrors.customerId}
+                      error={fieldErrors.customerId || ''}
                       value={customerName}
                       onChange={(name, cus) => {
                         setCustomerName(name);
@@ -450,6 +462,8 @@ export default function NewDelivery() {
                 ) : (
                   <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                     <DatePicker 
+                      invalid={!!fieldErrors.date}
+                      error={fieldErrors.date || ''}
                       value={date} 
                       onChange={setDate} 
                       placeholder="Select Date" 
@@ -470,6 +484,8 @@ export default function NewDelivery() {
                   <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                     <WarehouseSearchDropdown
                       warehouses={warehouses}
+                      invalid={!!fieldErrors.warehouseId}
+                      error={fieldErrors.warehouseId || ''}
                       value={warehouseName}
                       onChange={(name, wh) => {
                         setWarehouseName(name);

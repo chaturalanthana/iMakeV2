@@ -37,6 +37,34 @@ export default function NewBOM() {
     return val.toString().replace(/,/g, '');
   };
 
+  const openProtectedUpload = async (filePath, downloadName) => {
+    try {
+      const token = localStorage.getItem('token');
+      const normalized = filePath.startsWith('/api/')
+        ? filePath
+        : `/api${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+      const response = await fetch(normalized, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!response.ok) throw new Error('Unable to open this file');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (downloadName) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      showToast(error.message || 'Unable to open this file', 'error');
+    }
+  };
+
   const formatCost = (val) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
@@ -2659,7 +2687,7 @@ function BOMResourceManager({ bomId, isLocked = false, routingSteps = [] }) {
                   return (
                     <tr key={res.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>
-                        <a href={res.filePath} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <a href={res.filePath} target="_blank" rel="noreferrer" onClick={(event) => { event.preventDefault(); openProtectedUpload(res.filePath); }} style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                           <File size={16} style={{ color: '#64748b', flexShrink: 0 }} />
                           <span>{res.fileName}</span>
                         </a>
@@ -2688,6 +2716,7 @@ function BOMResourceManager({ bomId, isLocked = false, routingSteps = [] }) {
                           href={res.filePath} 
                           download 
                           title="Download"
+                          onClick={(event) => { event.preventDefault(); openProtectedUpload(res.filePath, res.fileName); }}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',

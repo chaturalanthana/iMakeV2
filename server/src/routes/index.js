@@ -29,38 +29,48 @@ const productionOrderRoutes = require('./productionOrderRoutes');
 const mrpRoutes = require('./mrpRoutes');
 const workstationRoutes = require('./workstationRoutes');
 const machineRoutes = require('./machineRoutes');
+const uploadRoutes = require('./uploadRoutes');
+const { secureModule } = require('../middlewares/rbacMiddleware');
+const { requireTenant } = require('../middlewares/tenantMiddleware');
 
 const router = express.Router();
 
 router.use('/auth', authRoutes);
-router.use('/products', productRoutes); // Secured internally by tenantMiddleware
-router.use('/brands', brandRoutes);     // Secured internally by tenantMiddleware
-router.use('/categories', categoryRoutes);
-router.use('/product-types', productTypeRoutes);
-router.use('/product-groups', productGroupRoutes);
-router.use('/uoms', uomRoutes);
-router.use('/finance', financeRoutes); // Needs to be secured
-router.use('/customers', customerRoutes);
-router.use('/customer-categories', customerCategoryRoutes);
-router.use('/price-lists', priceListRoutes);
-router.use('/discount-groups', discountGroupRoutes);
-router.use('/payment-terms', paymentTermRoutes);
-router.use('/boms', bomRoutes);
-router.use('/production-calendar', productionCalendarRoutes);
-router.use('/production-jobs', productionJobRoutes);
-router.use('/production-orders', productionOrderRoutes);
-router.use('/workstations', workstationRoutes);
-router.use('/machines', machineRoutes);
-router.use('/mrp', mrpRoutes);
-router.use('/sales', salesRoutes);
-router.use('/suppliers', supplierRoutes);
-router.use('/procurement', procurementRoutes);
-router.use('/warehouse', warehouseRoutes);
-router.use('/warehouses', warehouseMasterRoutes);
-router.use('/hr', hrRoutes);
-router.use('/roles', roleRoutes);
-router.use('/users', userRoutes);
-router.use('/me/preferences', preferenceRoutes);
+router.use('/me/preferences', ...requireTenant, preferenceRoutes);
+
+router.use('/products', ...secureModule('products'), productRoutes);
+router.use('/brands', ...secureModule('products'), brandRoutes);
+router.use('/categories', ...secureModule('products'), categoryRoutes);
+router.use('/product-types', ...secureModule('products'), productTypeRoutes);
+router.use('/product-groups', ...secureModule('products'), productGroupRoutes);
+router.use('/uoms', ...secureModule('products'), uomRoutes);
+
+router.use('/customers', ...secureModule('sales'), customerRoutes);
+router.use('/customer-categories', ...secureModule('sales'), customerCategoryRoutes);
+router.use('/price-lists', ...secureModule('sales'), priceListRoutes);
+router.use('/discount-groups', ...secureModule('sales'), discountGroupRoutes);
+router.use('/sales', ...secureModule('sales'), salesRoutes);
+
+router.use('/suppliers', ...secureModule('procurement'), supplierRoutes);
+router.use('/payment-terms', ...secureModule('procurement'), paymentTermRoutes);
+router.use('/procurement', ...secureModule('procurement'), procurementRoutes);
+
+router.use('/warehouse', ...secureModule('warehouse'), warehouseRoutes);
+router.use('/warehouses', ...secureModule('warehouse'), warehouseMasterRoutes);
+
+router.use('/finance', ...secureModule('finance'), financeRoutes);
+router.use('/hr', ...secureModule('hr'), hrRoutes);
+
+router.use('/boms', ...secureModule('production'), bomRoutes);
+router.use('/production-calendar', ...secureModule('production'), productionCalendarRoutes);
+router.use('/production-jobs', ...secureModule('production'), productionJobRoutes);
+router.use('/production-orders', ...secureModule('production'), productionOrderRoutes);
+router.use('/workstations', ...secureModule('production'), workstationRoutes);
+router.use('/machines', ...secureModule('production'), machineRoutes);
+router.use('/mrp', ...secureModule('production'), mrpRoutes);
+router.use('/uploads', ...secureModule('production'), uploadRoutes);
+
+router.use('/roles', ...secureModule('settings'), roleRoutes);
+router.use('/users', ...secureModule('settings'), userRoutes);
 
 module.exports = router;
-

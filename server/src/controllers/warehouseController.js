@@ -118,26 +118,23 @@ const createStockMovement = async (req, res) => {
       return res.status(400).json({ error: 'Invalid movement type.' });
     }
 
-    const createdMovements = [];
-
-    // Create a movement for each item
-    for (const item of items) {
-      const movement = await prisma.stockMovement.create({
-        data: {
-          tenantId: req.tenantId,
-          productId: item.productId,
-          type: type,
-          // For GI, we generally store positive quantity but subtract in aggregations, 
-          // or we can store positive quantity consistently for all movements. 
-          // We will store positive quantity in DB.
-          quantity: parseFloat(item.quantity),
-          referenceType: referenceType || (type === 'GI' ? 'MANUAL_ISSUE' : 'MANUAL_ADJ'),
-          referenceId: referenceId || description || '', // Storing description in referenceId if available
-          createdBy: req.user.userId
-        }
-      });
-      createdMovements.push(movement);
-    }
+    const createdMovements = await prisma.$transaction(async (tx) => {
+      const rows = [];
+      for (const item of items) {
+        rows.push(await tx.stockMovement.create({
+          data: {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            type: type,
+            quantity: parseFloat(item.quantity),
+            referenceType: referenceType || (type === 'GI' ? 'MANUAL_ISSUE' : 'MANUAL_ADJ'),
+            referenceId: referenceId || description || '',
+            createdBy: req.user.userId
+          }
+        }));
+      }
+      return rows;
+    });
 
     res.status(201).json(createdMovements);
   } catch (error) {
@@ -185,47 +182,49 @@ const createGoodsIssue = async (req, res) => {
       'giNumber'
     );
 
-    const issue = await prisma.goodsIssue.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId: supplierId || null,
-        giNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        reason: reason || null,
-        total: totalAmount,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        items: { include: { product: true } }
-      }
-    });
+    const issue = await prisma.$transaction(async (tx) => {
+      const created = await tx.goodsIssue.create({
+        data: {
+          tenantId: req.tenantId,
+          supplierId: supplierId || null,
+          giNumber,
+          date: new Date(date),
+          status: status || 'PENDING',
+          reason: reason || null,
+          total: totalAmount,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    // Generate StockMovements IF COMPLETED/ISSUED
-    if (issue.status === 'COMPLETED' || issue.status === 'ISSUED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'GI',
-            referenceId: issue.id,
-            createdBy: req.user?.userId || null
-          }
-        });
+      if (created.status === 'COMPLETED' || created.status === 'ISSUED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GI',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'GI',
+              referenceId: created.id,
+              createdBy: req.user?.userId || null
+            }
+          });
+        }
       }
-    }
+      return created;
+    });
 
     res.status(201).json(issue);
   } catch (error) {
@@ -250,48 +249,51 @@ const updateGoodsIssue = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    await prisma.goodsIssueItem.deleteMany({
-      where: { giId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.goodsIssueItem.deleteMany({
+        where: { giId: id }
+      });
 
-    const updated = await prisma.goodsIssue.update({
-      where: { id },
-      data: {
-        supplierId: supplierId || null,
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        total: totalAmount,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        items: { include: { product: true } }
-      }
-    });
+      const saved = await tx.goodsIssue.update({
+        where: { id },
+        data: {
+          supplierId: supplierId || null,
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          total: totalAmount,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (updated.status === 'COMPLETED' || updated.status === 'ISSUED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'GI',
-            referenceId: updated.id,
-            createdBy: req.user?.userId || null
-          }
-        });
+      if (saved.status === 'COMPLETED' || saved.status === 'ISSUED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GI',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'GI',
+              referenceId: saved.id,
+              createdBy: req.user?.userId || null
+            }
+          });
+        }
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
@@ -338,48 +340,51 @@ const createStockAdjustment = async (req, res) => {
       'adjNumber'
     );
 
-    const adj = await prisma.stockAdjustment.create({
-      data: {
-        tenantId: req.tenantId,
-        adjNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        reason: reason || null,
-        total: totalAmount,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            systemQty: parseFloat(item.systemQty || 0),
-            actualQty: parseFloat(item.actualQty || 0),
-            diffQty: parseFloat(item.diffQty || 0),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        items: { include: { product: true } }
-      }
-    });
-
-    if (adj.status === 'COMPLETED') {
-      for (const item of items) {
-        if (parseFloat(item.diffQty) !== 0) {
-          await prisma.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
+    const adj = await prisma.$transaction(async (tx) => {
+      const created = await tx.stockAdjustment.create({
+        data: {
+          tenantId: req.tenantId,
+          adjNumber,
+          date: new Date(date),
+          status: status || 'PENDING',
+          reason: reason || null,
+          total: totalAmount,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
               productId: item.productId,
-              type: 'ADJ',
-              quantity: parseFloat(item.diffQty),
-              referenceType: 'ADJ',
-              referenceId: adj.id,
-              createdBy: req.user?.userId || null
-            }
-          });
+              systemQty: parseFloat(item.systemQty || 0),
+              actualQty: parseFloat(item.actualQty || 0),
+              diffQty: parseFloat(item.diffQty || 0),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          items: { include: { product: true } }
+        }
+      });
+
+      if (created.status === 'COMPLETED') {
+        for (const item of items) {
+          if (parseFloat(item.diffQty) !== 0) {
+            await tx.stockMovement.create({
+              data: {
+                tenantId: req.tenantId,
+                productId: item.productId,
+                type: 'ADJ',
+                quantity: parseFloat(item.diffQty),
+                referenceType: 'ADJ',
+                referenceId: created.id,
+                createdBy: req.user?.userId || null
+              }
+            });
+          }
         }
       }
-    }
+      return created;
+    });
 
     res.status(201).json(adj);
   } catch (error) {
@@ -404,50 +409,53 @@ const updateStockAdjustment = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    await prisma.stockAdjustmentItem.deleteMany({
-      where: { adjId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockAdjustmentItem.deleteMany({
+        where: { adjId: id }
+      });
 
-    const updated = await prisma.stockAdjustment.update({
-      where: { id },
-      data: {
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        total: totalAmount,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            systemQty: parseFloat(item.systemQty || 0),
-            actualQty: parseFloat(item.actualQty || 0),
-            diffQty: parseFloat(item.diffQty || 0),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        items: { include: { product: true } }
-      }
-    });
-
-    if (updated.status === 'COMPLETED') {
-      for (const item of items) {
-        if (parseFloat(item.diffQty) !== 0) {
-          await prisma.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
+      const saved = await tx.stockAdjustment.update({
+        where: { id },
+        data: {
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          total: totalAmount,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
               productId: item.productId,
-              type: 'ADJ',
-              quantity: parseFloat(item.diffQty),
-              referenceType: 'ADJ',
-              referenceId: updated.id,
-              createdBy: req.user?.userId || null
-            }
-          });
+              systemQty: parseFloat(item.systemQty || 0),
+              actualQty: parseFloat(item.actualQty || 0),
+              diffQty: parseFloat(item.diffQty || 0),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          items: { include: { product: true } }
+        }
+      });
+
+      if (saved.status === 'COMPLETED') {
+        for (const item of items) {
+          if (parseFloat(item.diffQty) !== 0) {
+            await tx.stockMovement.create({
+              data: {
+                tenantId: req.tenantId,
+                productId: item.productId,
+                type: 'ADJ',
+                quantity: parseFloat(item.diffQty),
+                referenceType: 'ADJ',
+                referenceId: saved.id,
+                createdBy: req.user?.userId || null
+              }
+            });
+          }
         }
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
@@ -566,47 +574,50 @@ const createStockReceipt = async (req, res) => {
       'receiptNumber'
     );
 
-    const receipt = await prisma.stockReceipt.create({
-      data: {
-        tenantId: req.tenantId,
-        receiptNumber,
-        date: new Date(date),
-        status: status || 'DRAFT',
-        reason: reason || null,
-        total: totalAmount,
-        warehouseId: warehouseId || null,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        warehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+    const receipt = await prisma.$transaction(async (tx) => {
+      const created = await tx.stockReceipt.create({
+        data: {
+          tenantId: req.tenantId,
+          receiptNumber,
+          date: new Date(date),
+          status: status || 'DRAFT',
+          reason: reason || null,
+          total: totalAmount,
+          warehouseId: warehouseId || null,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          warehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (receipt.status === 'COMPLETED' || receipt.status === 'ISSUED' || receipt.status === 'RECEIVED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'SR',
-            referenceId: receipt.id,
-            warehouseId: warehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
+      if (created.status === 'COMPLETED' || created.status === 'ISSUED' || created.status === 'RECEIVED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GR',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'SR',
+              referenceId: created.id,
+              warehouseId: warehouseId || null,
+              createdBy: req.user?.userId || null
+            }
+          });
+        }
       }
-    }
+      return created;
+    });
 
     res.status(201).json(receipt);
   } catch (error) {
@@ -631,49 +642,52 @@ const updateStockReceipt = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    await prisma.stockReceiptItem.deleteMany({
-      where: { receiptId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockReceiptItem.deleteMany({
+        where: { receiptId: id }
+      });
 
-    const updated = await prisma.stockReceipt.update({
-      where: { id },
-      data: {
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        total: totalAmount,
-        warehouseId: warehouseId !== undefined ? warehouseId : existing.warehouseId,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        warehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+      const saved = await tx.stockReceipt.update({
+        where: { id },
+        data: {
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          total: totalAmount,
+          warehouseId: warehouseId !== undefined ? warehouseId : existing.warehouseId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          warehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (updated.status === 'COMPLETED' || updated.status === 'RECEIVED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'SR',
-            referenceId: updated.id,
-            warehouseId: updated.warehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
+      if (saved.status === 'COMPLETED' || saved.status === 'RECEIVED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GR',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'SR',
+              referenceId: saved.id,
+              warehouseId: saved.warehouseId || null,
+              createdBy: req.user?.userId || null
+            }
+          });
+        }
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
@@ -721,60 +735,61 @@ const createStockTransfer = async (req, res) => {
       'transferNumber'
     );
 
-    const transfer = await prisma.stockTransfer.create({
-      data: {
-        tenantId: req.tenantId,
-        transferNumber,
-        date: new Date(date),
-        status: status || 'DRAFT',
-        reason: reason || null,
-        fromWarehouseId: fromWarehouseId || null,
-        toWarehouseId: toWarehouseId || null,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity)
-          }))
-        } : undefined
-      },
-      include: {
-        fromWarehouse: true,
-        toWarehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+    const transfer = await prisma.$transaction(async (tx) => {
+      const created = await tx.stockTransfer.create({
+        data: {
+          tenantId: req.tenantId,
+          transferNumber,
+          date: new Date(date),
+          status: status || 'DRAFT',
+          reason: reason || null,
+          fromWarehouseId: fromWarehouseId || null,
+          toWarehouseId: toWarehouseId || null,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity)
+            }))
+          } : undefined
+        },
+        include: {
+          fromWarehouse: true,
+          toWarehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (transfer.status === 'COMPLETED' || transfer.status === 'ISSUED' || transfer.status === 'RECEIVED') {
-      for (const item of items) {
-        // GI out of source warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: transfer.id,
-            warehouseId: fromWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
-        // GR into target warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: transfer.id,
-            warehouseId: toWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
+      if (created.status === 'COMPLETED' || created.status === 'ISSUED' || created.status === 'RECEIVED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GI',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'ST',
+              referenceId: created.id,
+              warehouseId: fromWarehouseId || null,
+              createdBy: req.user?.userId || null
+            }
+          });
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GR',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'ST',
+              referenceId: created.id,
+              warehouseId: toWarehouseId || null,
+              createdBy: req.user?.userId || null
+            }
+          });
+        }
       }
-    }
+      return created;
+    });
 
     res.status(201).json(transfer);
   } catch (error) {
@@ -796,62 +811,63 @@ const updateStockTransfer = async (req, res) => {
       return res.status(400).json({ error: 'Cannot modify a completed stock movement.' });
     }
 
-    await prisma.stockTransferItem.deleteMany({
-      where: { transferId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockTransferItem.deleteMany({
+        where: { transferId: id }
+      });
 
-    const updated = await prisma.stockTransfer.update({
-      where: { id },
-      data: {
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        fromWarehouseId: fromWarehouseId !== undefined ? fromWarehouseId : existing.fromWarehouseId,
-        toWarehouseId: toWarehouseId !== undefined ? toWarehouseId : existing.toWarehouseId,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity)
-          }))
-        } : undefined
-      },
-      include: {
-        fromWarehouse: true,
-        toWarehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+      const saved = await tx.stockTransfer.update({
+        where: { id },
+        data: {
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          fromWarehouseId: fromWarehouseId !== undefined ? fromWarehouseId : existing.fromWarehouseId,
+          toWarehouseId: toWarehouseId !== undefined ? toWarehouseId : existing.toWarehouseId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity)
+            }))
+          } : undefined
+        },
+        include: {
+          fromWarehouse: true,
+          toWarehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (updated.status === 'COMPLETED') {
-      for (const item of items) {
-        // GI out of source warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: updated.id,
-            warehouseId: updated.fromWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
-        // GR into target warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: updated.id,
-            warehouseId: updated.toWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
+      if (saved.status === 'COMPLETED') {
+        for (const item of items) {
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GI',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'ST',
+              referenceId: saved.id,
+              warehouseId: saved.fromWarehouseId || null,
+              createdBy: req.user?.userId || null
+            }
+          });
+          await tx.stockMovement.create({
+            data: {
+              tenantId: req.tenantId,
+              productId: item.productId,
+              type: 'GR',
+              quantity: parseFloat(item.quantity),
+              referenceType: 'ST',
+              referenceId: saved.id,
+              warehouseId: saved.toWarehouseId || null,
+              createdBy: req.user?.userId || null
+            }
+          });
+        }
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {

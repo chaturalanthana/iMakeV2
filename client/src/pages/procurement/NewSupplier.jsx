@@ -15,6 +15,7 @@ export default function NewSupplier() {
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [activeTab, setActiveTab] = useState('mandatory'); // 'mandatory', 'procurement', 'finance', 'classification', 'address'
 
@@ -214,10 +215,15 @@ export default function NewSupplier() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.code || !formData.name) {
-      showToast('Please fill in Supplier Code and Supplier Name.', 'error');
+    const nextErrors = {};
+    if (!formData.code) nextErrors.code = 'Supplier Code is required.';
+    if (!formData.name) nextErrors.name = 'Supplier Name is required.';
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors);
+      showToast(Object.keys(nextErrors).length === 1 ? Object.values(nextErrors)[0] : 'Please fill the highlighted fields.', 'error');
       return;
     }
+    setFieldErrors({});
 
     setSaving(true);
     try {
@@ -515,8 +521,10 @@ export default function NewSupplier() {
                       onChange={handleInputChange} 
                       placeholder="e.g. SUP-1002" 
                       style={inputStyle}
+                      className={fieldErrors.code ? 'field-invalid' : undefined}
                       required 
                     />
+                    {fieldErrors.code && <span className="field-error-text">{fieldErrors.code}</span>}
                   </div>
                 </div>
                 <div style={formRowStyle}>
@@ -529,8 +537,10 @@ export default function NewSupplier() {
                       onChange={handleInputChange} 
                       placeholder="e.g. Globex Corp" 
                       style={inputStyle}
+                      className={fieldErrors.name ? 'field-invalid' : undefined}
                       required 
                     />
+                    {fieldErrors.name && <span className="field-error-text">{fieldErrors.name}</span>}
                   </div>
                 </div>
                 <div style={formRowStyle}>

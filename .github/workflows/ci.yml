@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: imake_user
+          POSTGRES_PASSWORD: imake_ci_password
+          POSTGRES_DB: imake_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U imake_user -d imake_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://imake_user:imake_ci_password@localhost:5432/imake_test
+      JWT_SECRET: ci-jwt-secret-not-for-production
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix server
+          npm ci --prefix client
+      - name: Lint if a lint script is configured
+        run: |
+          found=0
+          for dir in . server client; do
+            if [ -f "$dir/package.json" ] && node -e "const s=require('./$dir/package.json').scripts||{}; process.exit(s.lint?0:1)"; then
+              npm --prefix "$dir" run lint
+              found=1
+            fi
+          done
+          if [ "$found" = 0 ]; then
+            echo "No lint script is configured. client/eslint.config.js is present but ESLint is not installed, so lint is skipped."
+          fi
+      - name: Apply database migrations
+        working-directory: server
+        run: npx prisma migrate deploy
+      - name: Server tests
+        working-directory: server
+        run: npm test
+      - name: Build client
+        working-directory: client
+        run: npm run build

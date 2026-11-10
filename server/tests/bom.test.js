@@ -245,7 +245,7 @@ describe('BOM Registry Operations & Multi-level Tree Checks', () => {
       .get(`/api/boms/${fgBOMId}`)
       .set('Authorization', `Bearer ${authToken}`)
       .set('x-tenant-id', testTenant.id);
-    expect(getV1.body.status).toBe('SUPERSEDED');
+    expect(getV1.body.status).toBe('RETIRED');
     expect(getV1.body.isDefault).toBe(false);
 
     // Verify v2 is default and ACTIVE
