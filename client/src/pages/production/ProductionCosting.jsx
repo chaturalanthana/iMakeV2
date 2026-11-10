@@ -18,6 +18,7 @@ export default function ProductionCosting() {
   const [productId, setProductId] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [sheet, setSheet] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [report, setReport] = useState({ orders: [], products: [] });
 
   const authConfig = useCallback(() => ({
@@ -40,6 +41,16 @@ export default function ProductionCosting() {
   useEffect(() => { loadReport(); }, [loadReport]);
 
   const rollup = async () => {
+    const errors = {};
+    if (!productId) errors.productId = 'Product is required';
+    if (!(parseFloat(quantity) > 0)) errors.quantity = 'Quantity must be greater than zero';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const res = await axios.get('/api/costing/rollup', {
         ...authConfig(),
@@ -47,6 +58,7 @@ export default function ProductionCosting() {
       });
       setSheet(res.data);
     } catch (error) {
+      setFieldErrors(error.response?.data?.fields || {});
       showToast(error.response?.data?.error || 'Failed to roll up cost', 'error');
     }
   };
@@ -62,10 +74,11 @@ export default function ProductionCosting() {
           <LiveSearchDropdown
             options={products.map((product) => ({ label: `${product.code} - ${product.name}`, value: product.id }))}
             value={productId}
+            invalid={!!fieldErrors.productId}
             onChange={setProductId}
             placeholder="Product"
           />
-          <input type="number" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} style={FIELD} />
+          <input type="number" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} className={fieldErrors.quantity ? 'field-invalid' : undefined} style={FIELD} />
           <button onClick={rollup} style={{ height: '42px', border: 'none', borderRadius: '8px', background: 'var(--accent)', color: '#fff', fontWeight: 800, padding: '0 1rem', cursor: 'pointer' }}>
             Roll up
           </button>
@@ -126,7 +139,7 @@ export default function ProductionCosting() {
           </tbody>
         </table>
         <div style={{ marginTop: '0.55rem', fontSize: '0.75rem', color: '#64748b' }}>
-          Variance is actual minus the full order plan. A partial confirmation stays under the plan until the order is finished. Labour includes machine time and subcontract.
+          Planned cost is the full roll-up pro-rated to confirmed quantity (good plus scrap). Labour includes machine time and subcontract.
         </div>
       </div>
     </AppLayout>

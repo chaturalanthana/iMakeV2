@@ -106,6 +106,19 @@ function labourBucket(sheet) {
   return round4(num(sheet.labour) + num(sheet.machine) + num(sheet.subcontract));
 }
 
+function prorateSheet(sheet, factor) {
+  const ratio = Number.isFinite(factor) ? factor : 0;
+  const next = { ...sheet };
+  ['material', 'scrap', 'labour', 'machine', 'subcontract', 'overhead', 'total'].forEach((key) => {
+    next[key] = round4(num(sheet[key]) * ratio);
+  });
+  if (num(next.total) > 0 && ratio > 0 && num(sheet.quantity) > 0) {
+    next.quantity = round4(num(sheet.quantity) * ratio);
+    next.unitCost = next.quantity > 0 ? round4(next.total / next.quantity) : 0;
+  }
+  return next;
+}
+
 function varianceReport(planned, actual) {
   const rows = {
     material: { planned: round4(planned.material), actual: round4(actual.material) },
@@ -142,6 +155,7 @@ module.exports = {
   num,
   materialUnitCost,
   rollupCost,
+  prorateSheet,
   splitIssueCost,
   varianceReport,
   addSheets,

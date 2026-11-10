@@ -760,6 +760,7 @@ export default function MachineLayout({ workstationId }) {
             autoFocus
             value={draft.name}
             placeholder="Machine name"
+            className={errors.name ? 'field-invalid' : undefined}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();

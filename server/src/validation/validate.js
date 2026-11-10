@@ -23,4 +23,21 @@ function validateBody(schema) {
   };
 }
 
-module.exports = { validateBody };
+function validateQuery(schema) {
+  return (req, res, next) => {
+    const parsed = schema.safeParse(req.query || {});
+    if (parsed.success) return next();
+    const fields = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path.length ? issue.path.join('.') : 'query';
+      if (!fields[key]) fields[key] = issue.message;
+    }
+    const messages = Object.values(fields);
+    return res.status(400).json({
+      error: messages.length === 1 ? messages[0] : 'Please correct the highlighted fields.',
+      fields
+    });
+  };
+}
+
+module.exports = { validateBody, validateQuery };

@@ -344,6 +344,34 @@ describe('Work order lifecycle', () => {
     expect(drafts[0].status).toBe('CREATED');
     expect(parseFloat(drafts[0].quantity)).toBe(2);
 
+    const revised = await request(app)
+      .put(`/api/sales/orders/${sales.body.id}`)
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 5, unitPrice: 50, total: 250 }]
+      });
+    expect(revised.status).toBe(200);
+    const updatedDraft = await prisma.workOrder.findFirst({
+      where: { tenantId: tenant.id, salesOrderId: sales.body.id, status: 'CREATED' }
+    });
+    expect(parseFloat(updatedDraft.quantity)).toBe(5);
+
+    const cleared = await request(app)
+      .put(`/api/sales/orders/${sales.body.id}`)
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: []
+      });
+    expect(cleared.status).toBe(200);
+    const cancelled = await prisma.workOrder.findFirst({ where: { id: updatedDraft.id } });
+    expect(cancelled.status).toBe('CANCELLED');
+
     const mrp = await request(app)
       .post('/api/mrp/convert-production')
       .set(auth())

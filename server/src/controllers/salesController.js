@@ -306,6 +306,12 @@ const updateOrder = async (req, res) => {
       }
     });
 
+    await createDraftsForSalesOrder({
+      tenantId: req.tenantId,
+      userId: req.user?.userId || null,
+      salesOrderId: order.id
+    });
+
     res.json(order);
   } catch (error) {
     console.error('Update order error:', error);

@@ -33,6 +33,7 @@ export default function WorkOrderDetail() {
   const [order, setOrder] = useState(null);
   const [cost, setCost] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [issueQty, setIssueQty] = useState({});
   const [issueLot, setIssueLot] = useState({});
   const [form, setForm] = useState({
@@ -80,6 +81,16 @@ export default function WorkOrderDetail() {
     .map((bom) => ({ label: `${bom.code} (v${bom.version})`, value: bom.id }));
 
   const save = async () => {
+    const errors = {};
+    if (!form.productId) errors.productId = 'Product is required';
+    if (!(parseFloat(form.quantity) > 0)) errors.quantity = 'Quantity must be greater than zero';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+      return;
+    }
+    setFieldErrors({});
     setSaving(true);
     try {
       const res = await axios.post('/api/work-orders', {
@@ -92,6 +103,7 @@ export default function WorkOrderDetail() {
       showToast('Work order created', 'success');
       navigate(`/production/work-orders/${res.data.id}`);
     } catch (error) {
+      setFieldErrors(error.response?.data?.fields || {});
       showToast(error.response?.data?.error || 'Failed to create work order', 'error');
     } finally {
       setSaving(false);
@@ -144,7 +156,7 @@ export default function WorkOrderDetail() {
         <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
           <div>
             <label style={LABEL_STYLE}>Product</label>
-            <LiveSearchDropdown options={productOptions} value={form.productId} onChange={(value) => setForm((prev) => ({ ...prev, productId: value, bomId: '' }))} placeholder="Select product" />
+            <LiveSearchDropdown options={productOptions} value={form.productId} invalid={!!fieldErrors.productId} onChange={(value) => setForm((prev) => ({ ...prev, productId: value, bomId: '' }))} placeholder="Select product" />
           </div>
           <div>
             <label style={LABEL_STYLE}>BOM</label>
@@ -152,7 +164,7 @@ export default function WorkOrderDetail() {
           </div>
           <div>
             <label style={LABEL_STYLE}>Quantity</label>
-            <input type="number" min="0" step="any" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} style={FIELD_STYLE} />
+            <input type="number" min="0" step="any" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} className={fieldErrors.quantity ? 'field-invalid' : undefined} style={FIELD_STYLE} />
           </div>
           <div>
             <label style={LABEL_STYLE}>Priority</label>
@@ -314,7 +326,7 @@ export default function WorkOrderDetail() {
                 </tbody>
               </table>
               <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#64748b' }}>
-                Labour includes machine time and subcontract. Unit planned cost {money(cost.planned.unitCost)}.
+                Plan is pro-rated to confirmed quantity ({cost.confirmedQuantity || 0}). Labour includes machine time and subcontract. Unit cost of the full order {money(cost.fullPlan?.unitCost || cost.planned.unitCost)}.
               </div>
             </div>
           )}

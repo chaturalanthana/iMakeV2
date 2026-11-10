@@ -22,6 +22,7 @@ export default function ShopFloor() {
   const [reasons, setReasons] = useState([]);
   const [scan, setScan] = useState('');
   const [forms, setForms] = useState({});
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const authConfig = useCallback(() => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -95,6 +96,20 @@ export default function ShopFloor() {
 
   const confirm = async (operation) => {
     const form = forms[operation.id] || {};
+    const errors = {};
+    const yieldQty = parseFloat(form.yieldQty || 0);
+    const scrapQty = parseFloat(form.scrapQty || 0);
+    const reworkQty = parseFloat(form.reworkQty || 0);
+    if (!(yieldQty > 0) && !(scrapQty > 0) && !(reworkQty > 0)) errors.yieldQty = 'Enter a yield, scrap, or rework quantity';
+    if (scrapQty > 0 && !form.scrapReasonId) errors.scrapReasonId = 'Scrap reason is required';
+    if (reworkQty > 0 && !form.reworkReasonId) errors.reworkReasonId = 'Rework reason is required';
+    if (Object.keys(errors).length) {
+      setFieldErrors({ [operation.id]: errors });
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const res = await axios.post(`/api/work-orders/${id}/confirmations`, {
         operationId: operation.id,
@@ -108,6 +123,7 @@ export default function ShopFloor() {
       showToast('Confirmation posted', 'success');
       setOrder(res.data);
     } catch (error) {
+      setFieldErrors({ [operation.id]: error.response?.data?.fields || {} });
       showToast(error.response?.data?.error || 'Confirmation failed', 'error');
     }
   };
@@ -172,15 +188,15 @@ export default function ShopFloor() {
                 </div>
                 <input style={FIELD} placeholder="Operator" value={form.operatorName || ''} onChange={(event) => setField(operation.id, 'operatorName', event.target.value)} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem' }}>
-                  <input style={FIELD} inputMode="decimal" placeholder="Good qty" value={form.yieldQty || ''} onChange={(event) => setField(operation.id, 'yieldQty', event.target.value)} />
+                  <input style={FIELD} className={fieldErrors[operation.id]?.yieldQty ? 'field-invalid' : undefined} inputMode="decimal" placeholder="Good qty" value={form.yieldQty || ''} onChange={(event) => setField(operation.id, 'yieldQty', event.target.value)} />
                   <input style={FIELD} inputMode="decimal" placeholder="Scrap qty" value={form.scrapQty || ''} onChange={(event) => setField(operation.id, 'scrapQty', event.target.value)} />
                   <input style={FIELD} inputMode="decimal" placeholder="Rework qty" value={form.reworkQty || ''} onChange={(event) => setField(operation.id, 'reworkQty', event.target.value)} />
                 </div>
-                <select style={FIELD} value={form.scrapReasonId || ''} onChange={(event) => setField(operation.id, 'scrapReasonId', event.target.value)}>
+                <select style={FIELD} className={fieldErrors[operation.id]?.scrapReasonId ? 'field-invalid' : undefined} value={form.scrapReasonId || ''} onChange={(event) => setField(operation.id, 'scrapReasonId', event.target.value)}>
                   <option value="">Scrap reason</option>
                   {scrapReasons.map((reason) => <option key={reason.id} value={reason.id}>{reason.code} — {reason.name}</option>)}
                 </select>
-                <select style={FIELD} value={form.reworkReasonId || ''} onChange={(event) => setField(operation.id, 'reworkReasonId', event.target.value)}>
+                <select style={FIELD} className={fieldErrors[operation.id]?.reworkReasonId ? 'field-invalid' : undefined} value={form.reworkReasonId || ''} onChange={(event) => setField(operation.id, 'reworkReasonId', event.target.value)}>
                   <option value="">Rework reason</option>
                   {reworkReasons.map((reason) => <option key={reason.id} value={reason.id}>{reason.code} — {reason.name}</option>)}
                 </select>

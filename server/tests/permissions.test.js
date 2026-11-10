@@ -97,6 +97,16 @@ describe('API permission layer', () => {
       .get('/api/products')
       .set('Authorization', `Bearer ${salesToken}`);
     expect(products.status).toBe(403);
+
+    const workOrders = await request(app)
+      .get('/api/work-orders')
+      .set('Authorization', `Bearer ${salesToken}`);
+    expect(workOrders.status).toBe(403);
+
+    const costing = await request(app)
+      .get('/api/costing/variances')
+      .set('Authorization', `Bearer ${salesToken}`);
+    expect(costing.status).toBe(403);
   });
 
   test('admin role still reaches protected routes', async () => {
@@ -140,7 +150,11 @@ describe('API permission layer', () => {
       .get('/api/roles/catalog')
       .set('Authorization', `Bearer ${res.body.token}`);
     expect(catalog.status).toBe(200);
-    expect(catalog.body.modules.map((module) => module.id)).toContain('production');
+    expect(catalog.body.modules.map((module) => module.id)).toEqual(expect.arrayContaining(['production', 'costing']));
+    const sales = roles.body.find((role) => role.name === 'Sales');
+    const finance = roles.body.find((role) => role.name === 'Finance');
+    expect(sales.permissions.costing).toEqual(['read']);
+    expect(finance.permissions.costing).toEqual(['read']);
 
     await prisma.user.deleteMany({ where: { email } });
     await prisma.tenant.deleteMany({ where: { slug: res.body.tenant.slug } });

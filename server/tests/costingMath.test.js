@@ -1,4 +1,4 @@
-const { materialUnitCost, rollupCost, splitIssueCost, varianceReport } = require('../src/services/production/costing');
+const { materialUnitCost, rollupCost, prorateSheet, splitIssueCost, varianceReport } = require('../src/services/production/costing');
 const { buildLoadProfile } = require('../src/services/production/capacity');
 
 describe('Production costing math', () => {
@@ -84,6 +84,23 @@ describe('Production costing math', () => {
     expect(variance.buckets.scrap.variance).toBe(4);
     expect(variance.buckets.labour.variance).toBe(0);
     expect(variance.buckets.overhead.variance).toBe(0);
+    expect(variance.variance).toBe(0);
+  });
+
+  test('partial confirmation is measured against the plan for the confirmed quantity', () => {
+    const full = rollupCost({
+      quantity: 4,
+      components,
+      operations,
+      labourRatePerHour: 30,
+      overheadPercent: 0
+    });
+    const planned = prorateSheet(full, 0.25);
+    const actual = { material: 4, scrap: 0, labour: 7.5, machine: 15, subcontract: 0, overhead: 0 };
+    const variance = varianceReport(planned, actual);
+    expect(planned.material).toBe(4);
+    expect(planned.labour).toBe(7.5);
+    expect(planned.machine).toBe(15);
     expect(variance.variance).toBe(0);
   });
 });

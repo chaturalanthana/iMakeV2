@@ -14,6 +14,7 @@ const SYSTEM_MODULES = [
   { id: 'hr', name: 'Human Resources' },
   { id: 'warehouse', name: 'Inventory & Warehousing' },
   { id: 'production', name: 'Production & Manufacturing' },
+  { id: 'costing', name: 'Costing' },
 ];
 
 export default function Roles() {

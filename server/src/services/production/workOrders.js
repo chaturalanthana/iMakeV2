@@ -2,7 +2,7 @@ const prisma = require('../../lib/prisma');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
 const { syncRoutingForBom } = require('./routing');
 const { receiveLayer, issueFifo, nextFifoUnitCost, lastReceiptUnitCost, onHandFromMovements } = require('./fifo');
-const { round4, num, materialUnitCost, rollupCost, splitIssueCost, varianceReport } = require('./costing');
+const { round4, num, materialUnitCost, rollupCost, prorateSheet, splitIssueCost, varianceReport } = require('./costing');
 const { buildLoadProfile } = require('./capacity');
 
 const runTx = (fn) => prisma.$transaction(fn, { timeout: 20000 });
@@ -1078,13 +1078,16 @@ async function cancelWorkOrder(tenantId, id) {
 }
 
 function costView(wo) {
-  const planned = rollupCost({
+  const fullPlan = rollupCost({
     quantity: num(wo.quantity),
     components: wo.components || [],
     operations: wo.operations || [],
     labourRatePerHour: num(wo.labourRatePerHour),
     overheadPercent: num(wo.overheadPercent)
   });
+  const confirmedQty = round4(num(wo.quantityCompleted) + num(wo.quantityScrapped));
+  const factor = num(wo.quantity) > 0 ? confirmedQty / num(wo.quantity) : 0;
+  const planned = prorateSheet(fullPlan, factor);
   const actual = {
     material: num(wo.actualMaterialCost),
     scrap: num(wo.actualScrapCost),
@@ -1097,8 +1100,10 @@ function costView(wo) {
   actual.unitCost = num(wo.quantityCompleted) > 0 ? round4((actual.material + actual.labour + actual.machine + actual.subcontract + actual.overhead) / num(wo.quantityCompleted)) : 0;
   return {
     planned,
+    fullPlan,
     actual,
     variance: varianceReport(planned, actual),
+    confirmedQuantity: confirmedQty,
     quantityCompleted: num(wo.quantityCompleted),
     quantityScrapped: num(wo.quantityScrapped),
     quantityRework: num(wo.quantityRework)
@@ -1238,17 +1243,35 @@ async function createDraftsForSalesOrder({ tenantId, userId, salesOrderId }) {
     include: { items: { include: { product: true } } }
   });
   if (!order) return [];
-  const created = [];
+
+  const drafts = await prisma.workOrder.findMany({
+    where: { tenantId, salesOrderId, status: 'CREATED' },
+    orderBy: { createdAt: 'asc' }
+  });
+  const used = new Set();
+  const result = [];
+
   for (const item of order.items) {
     if (!item.product || !item.product.bomApplicable) continue;
-    const existing = await prisma.workOrder.findFirst({
-      where: { tenantId, salesOrderItemId: item.id, status: { not: 'CANCELLED' } }
-    });
-    if (existing) {
-      created.push(existing);
+    const draft = drafts.find((row) => !used.has(row.id) && row.productId === item.productId);
+    if (draft) {
+      used.add(draft.id);
+      if (num(draft.quantity) !== num(item.quantity) || draft.salesOrderItemId !== item.id) {
+        await prisma.workOrder.update({
+          where: { id: draft.id },
+          data: {
+            quantity: num(item.quantity),
+            salesOrderItemId: item.id,
+            sourceId: order.id,
+            notes: `Sales order ${order.orderNumber}`
+          }
+        });
+        await refreshPlan(prisma, draft.id);
+      }
+      result.push(await prisma.workOrder.findUnique({ where: { id: draft.id } }));
       continue;
     }
-    created.push(await createInside(prisma, {
+    result.push(await createInside(prisma, {
       tenantId,
       userId,
       productId: item.productId,
@@ -1261,7 +1284,15 @@ async function createDraftsForSalesOrder({ tenantId, userId, salesOrderId }) {
       status: 'CREATED'
     }));
   }
-  return created;
+
+  for (const draft of drafts) {
+    if (used.has(draft.id)) continue;
+    await prisma.workOrder.update({
+      where: { id: draft.id },
+      data: { status: 'CANCELLED', salesOrderItemId: null }
+    });
+  }
+  return result;
 }
 
 module.exports = {

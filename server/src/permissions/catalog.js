@@ -8,7 +8,8 @@ const MODULES = [
   { id: 'finance', name: 'Finance & Accounts' },
   { id: 'hr', name: 'Human Resources' },
   { id: 'warehouse', name: 'Inventory & Warehousing' },
-  { id: 'production', name: 'Production & Manufacturing' }
+  { id: 'production', name: 'Production & Manufacturing' },
+  { id: 'costing', name: 'Costing' }
 ];
 
 const READ_WRITE = ['read', 'write'];
@@ -25,7 +26,7 @@ const DEFAULT_ROLES = [
     name: 'Sales',
     description: 'Sales documents and customer masters.',
     isSystem: false,
-    permissions: { sales: READ_WRITE, products: READ, warehouse: READ }
+    permissions: { sales: READ_WRITE, products: READ, warehouse: READ, costing: READ }
   },
   {
     name: 'Procurement',
@@ -43,13 +44,13 @@ const DEFAULT_ROLES = [
     name: 'Production',
     description: 'Manufacturing, BOM, and planning.',
     isSystem: false,
-    permissions: { production: READ_WRITE, products: READ, warehouse: READ }
+    permissions: { production: READ_WRITE, products: READ, warehouse: READ, costing: READ }
   },
   {
     name: 'Finance',
     description: 'Accounting and payments.',
     isSystem: false,
-    permissions: { finance: READ_WRITE, sales: READ, procurement: READ }
+    permissions: { finance: READ_WRITE, sales: READ, procurement: READ, costing: READ }
   },
   {
     name: 'Human Resources',

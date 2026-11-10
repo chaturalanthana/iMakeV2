@@ -67,6 +67,7 @@ export default function PlanningBoard() {
   const [capacity, setCapacity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   
   // Date State for Gantt View
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -165,8 +166,15 @@ export default function PlanningBoard() {
   };
 
   const handleSave = async () => {
-    if (!form.productId) return showToast('Product selection is required', 'error');
-    if (parseFloat(form.quantity) <= 0) return showToast('Quantity must be greater than zero', 'error');
+    const errors = {};
+    if (!form.productId) errors.productId = 'Product selection is required';
+    if (!(parseFloat(form.quantity) > 0)) errors.quantity = 'Quantity must be greater than zero';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setSaving(true);
     try {
@@ -181,6 +189,7 @@ export default function PlanningBoard() {
       setShowModal(false);
       fetchData();
     } catch (err) {
+      setFieldErrors(err.response?.data?.fields || {});
       showToast(err.response?.data?.error || 'Failed to save job card', 'error');
     } finally {
       setSaving(false);
@@ -1134,6 +1143,7 @@ export default function PlanningBoard() {
             <LiveSearchDropdown
               options={products.map(p => ({ label: `${p.code} - ${p.name}`, value: p.id }))}
               value={form.productId}
+              invalid={!!fieldErrors.productId}
               onChange={handleProductChange}
               placeholder="Select Finished / Semi-Finished Product..."
               style={{ input: FIELD_STYLE }}
@@ -1157,6 +1167,7 @@ export default function PlanningBoard() {
               type="number" 
               value={form.quantity} 
               onChange={e => setForm(prev => ({ ...prev, quantity: e.target.value }))}
+              className={fieldErrors.quantity ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
           </div>
