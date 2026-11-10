@@ -119,7 +119,8 @@ export default function NewGRN() {
                productId: qi.productId,
                productName: qi.product?.name || '',
                quantityOrdered: parseFloat(qi.quantity),
-               quantityReceived: parseFloat(qi.quantity) // Default receive all
+               unitPrice: parseFloat(qi.unitPrice || 0),
+               quantityReceived: Math.max(parseFloat(qi.quantity) - (order.grns || []).reduce((sum, grn) => sum + (grn.status === 'CANCELLED' ? 0 : (grn.items || []).filter(line => line.productId === qi.productId).reduce((qty, line) => qty + parseFloat(line.quantityReceived || 0), 0)), 0), 0)
              })));
            }
         }
@@ -193,7 +194,8 @@ export default function NewGRN() {
         items: validLines.map(l => ({
           productId: l.productId,
           quantityReceived: parseFloat(l.quantityReceived),
-          quantityOrdered: parseFloat(l.quantityOrdered || l.quantityReceived)
+          quantityOrdered: parseFloat(l.quantityOrdered || l.quantityReceived),
+          unitPrice: parseFloat(l.unitPrice || 0)
         }))
       };
 

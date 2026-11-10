@@ -61,6 +61,7 @@ export default function Sidebar() {
         { name: 'Purchase Requisitions', icon: ClipboardList, path: '/procurement/purchase-requisitions' },
         { name: 'Purchase Orders', icon: ShoppingBag, path: '/procurement/purchase-orders' },
         { name: 'GRNs', icon: Package, path: '/procurement/grn' },
+        { name: 'Supplier Invoices', icon: FileText, path: '/procurement/supplier-invoices' },
       ]
     },
     { 

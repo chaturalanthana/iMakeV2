@@ -72,6 +72,9 @@ import NewPurchaseWithholdingTaxGroup from './pages/procurement/NewPurchaseWithh
 import PurchaseRequisitions from './pages/procurement/PurchaseRequisitions';
 import NewPurchaseRequisition from './pages/procurement/NewPurchaseRequisition';
 import SupplierOutstanding from './pages/procurement/SupplierOutstanding';
+import SupplierInvoices from './pages/procurement/SupplierInvoices';
+import NewSupplierInvoice from './pages/procurement/NewSupplierInvoice';
+import PartyStatement from './pages/finance/PartyStatement';
 
 // Warehouse / Stock Features
 import StockMovements from './pages/warehouse/StockMovements';
@@ -163,6 +166,7 @@ function App() {
               <Route path="/sales/invoices/:id" element={<NewInvoice />} />
               <Route path="/sales/invoices" element={<Invoices />} />
               <Route path="/sales/outstanding" element={<CustomerOutstanding />} />
+              <Route path="/sales/customers/:id/statement" element={<PartyStatement kind="customer" />} />
 
               {/* Procurement */}
               <Route path="/procurement/suppliers" element={<Suppliers />} />
@@ -175,6 +179,9 @@ function App() {
               <Route path="/procurement/grn/new" element={<NewGRN />} />
               <Route path="/procurement/grn/:id" element={<NewGRN />} />
               <Route path="/procurement/grn" element={<GRNs />} />
+              <Route path="/procurement/supplier-invoices/new" element={<NewSupplierInvoice />} />
+              <Route path="/procurement/supplier-invoices/:id" element={<NewSupplierInvoice />} />
+              <Route path="/procurement/supplier-invoices" element={<SupplierInvoices />} />
               <Route path="/procurement/purchase-requisitions" element={<PurchaseRequisitions />} />
               <Route path="/procurement/purchase-requisitions/new" element={<NewPurchaseRequisition />} />
               <Route path="/procurement/purchase-requisitions/:id" element={<NewPurchaseRequisition />} />
@@ -185,6 +192,7 @@ function App() {
               <Route path="/procurement/withholding-tax-groups/new" element={<NewPurchaseWithholdingTaxGroup />} />
               <Route path="/procurement/withholding-tax-groups/:id" element={<NewPurchaseWithholdingTaxGroup />} />
               <Route path="/procurement/outstanding" element={<SupplierOutstanding />} />
+              <Route path="/procurement/suppliers/:id/statement" element={<PartyStatement kind="supplier" />} />
 
               {/* Stock */}
               <Route path="/warehouse/issues/new" element={<NewStockIssue />} />

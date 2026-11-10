@@ -1,5 +1,17 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { sendError } = require('../services/errors');
+const { money } = require('../services/money');
+const {
+  postGrn,
+  assertPrQuantity,
+  refreshPrStatus,
+  refreshPoReceiptStatus,
+  cancelStockAndJournal,
+  createSupplierInvoice,
+  supplierAging,
+  supplierStatement
+} = require('../services/documentPosting');
 
 // --- PURCHASE ORDERS ---
 const getPurchaseOrders = async (req, res) => {
@@ -9,7 +21,8 @@ const getPurchaseOrders = async (req, res) => {
       include: { 
         supplier: true,
         currency: true,
-        items: { include: { product: true } }
+        items: { include: { product: true } },
+        grns: { where: { status: { not: 'CANCELLED' } }, include: { items: true } }
       },
       orderBy: { date: 'desc' }
     });
@@ -32,45 +45,42 @@ const createPurchaseOrder = async (req, res) => {
       'poNumber'
     );
 
-    const order = await prisma.purchaseOrder.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId,
-        poNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        total: totalAmount,
-        currencyId: currencyId || null,
-        exchangeRate: parseFloat(exchangeRate) || 1.0,
-        createdBy: req.user.userId,
-        prId: prId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice),
-            total: parseFloat(item.total)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        currency: true,
-        items: { include: { product: true } }
-      }
-    });
-
-    if (prId) {
-      await prisma.purchaseRequisition.update({
-        where: { id: prId },
-        data: { status: 'CONVERTED' }
+    const order = await prisma.$transaction(async (tx) => {
+      if (prId) await assertPrQuantity(tx, { tenantId: req.tenantId, prId, items: items || [] });
+      const created = await tx.purchaseOrder.create({
+        data: {
+          tenantId: req.tenantId,
+          supplierId,
+          poNumber,
+          date: new Date(date),
+          status: status || 'PENDING',
+          total: totalAmount,
+          currencyId: currencyId || null,
+          exchangeRate: parseFloat(exchangeRate) || 1.0,
+          createdBy: req.user.userId,
+          prId: prId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice),
+              total: parseFloat(item.total)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          currency: true,
+          items: { include: { product: true } }
+        }
       });
-    }
+      if (prId) await refreshPrStatus(tx, prId);
+      return created;
+    });
 
     res.status(201).json(order);
   } catch (error) {
-    console.error('Failed to create PO:', error);
-    res.status(500).json({ error: 'Failed to create purchase order' });
+    return sendError(res, error, 'Failed to create purchase order');
   }
 };
 
@@ -188,50 +198,158 @@ const createGrn = async (req, res) => {
             create: items.map(item => ({
               productId: item.productId,
               quantityReceived: parseFloat(item.quantityReceived),
-              quantityOrdered: parseFloat(item.quantityOrdered || item.quantityReceived)
+              quantityOrdered: parseFloat(item.quantityOrdered || item.quantityReceived),
+              unitPrice: parseFloat(item.unitPrice || 0)
             }))
           }
-        }
+        },
+        include: { items: true }
       });
 
-      for (const item of items) {
-        await tx.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantityReceived),
-            referenceType: 'GRN',
-            referenceId: created.id,
-            warehouseId: warehouseId,
-            createdBy: req.user.userId
-          }
+      if ((created.status || 'RECEIVED') !== 'CANCELLED') {
+        await postGrn(tx, {
+          tenantId: req.tenantId,
+          grn: created,
+          items: created.items.map((item, index) => ({
+            ...item,
+            unitPrice: items[index]?.unitPrice != null ? items[index].unitPrice : item.unitPrice
+          })),
+          overReceiptTolerance: parseFloat(req.body.overReceiptTolerance || 0),
+          createdBy: req.user.userId
         });
       }
-
-      if (poId) {
-        await tx.purchaseOrder.update({
-          where: { id: poId },
-          data: { status: 'RECEIVED' }
-        });
-      }
-      return created;
+      return tx.gRN.findUnique({
+        where: { id: created.id },
+        include: { supplier: true, purchaseOrder: true, currency: true, items: { include: { product: true } } }
+      });
     });
 
     res.status(201).json(grn);
   } catch (error) {
-    console.error('Failed to create GRN:', error);
-    res.status(500).json({ error: 'Failed to create GRN' });
+    return sendError(res, error, 'Failed to create GRN');
   }
 };
 
-const deleteGrn = async (req, res) => {
+const cancelGrn = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.gRN.delete({ where: { id, tenantId: req.tenantId } });
-    res.json({ success: true });
+    const existing = await prisma.gRN.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'GRN not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'GRN is already cancelled.' });
+    const billed = await prisma.supplierInvoice.count({
+      where: { grnId: id, tenantId: req.tenantId, status: { not: 'CANCELLED' } }
+    });
+    if (billed) return res.status(400).json({ error: 'Cancel the supplier invoice before cancelling this receipt.' });
+
+    await prisma.$transaction(async (tx) => {
+      await cancelStockAndJournal(tx, {
+        tenantId: req.tenantId,
+        referenceType: 'GRN',
+        referenceId: id,
+        date: new Date(),
+        createdBy: req.user?.userId,
+        description: existing.grnNumber
+      });
+      await tx.gRN.update({ where: { id }, data: { status: 'CANCELLED' } });
+      await refreshPoReceiptStatus(tx, existing.poId);
+    });
+    res.json({ success: true, cancelled: true });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete GRN' });
+    return sendError(res, error, 'Failed to cancel GRN');
+  }
+};
+
+const deleteGrn = async (req, res) => cancelGrn(req, res);
+
+const getSupplierInvoices = async (req, res) => {
+  try {
+    const where = { tenantId: req.tenantId };
+    if (req.query.supplierId) where.supplierId = req.query.supplierId;
+    if (req.query.open === '1') where.status = { in: ['UNPAID', 'PARTIAL'] };
+    const invoices = await prisma.supplierInvoice.findMany({
+      where,
+      include: {
+        supplier: true,
+        currency: true,
+        grn: true,
+        purchaseOrder: true,
+        items: { include: { product: true } }
+      },
+      orderBy: { date: 'desc' }
+    });
+    res.json(invoices);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch supplier invoices' });
+  }
+};
+
+const postSupplierInvoice = async (req, res) => {
+  try {
+    const invoice = await prisma.$transaction((tx) => createSupplierInvoice(tx, {
+      tenantId: req.tenantId,
+      supplierId: req.body.supplierId,
+      poId: req.body.poId || null,
+      grnId: req.body.grnId || null,
+      date: req.body.date,
+      supplierReference: req.body.supplierReference,
+      currencyId: req.body.currencyId || null,
+      exchangeRate: req.body.exchangeRate,
+      items: (req.body.items || []).map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice
+      })),
+      priceTolerance: req.body.priceTolerance != null ? parseFloat(req.body.priceTolerance) : 0.02,
+      qtyTolerance: req.body.qtyTolerance != null ? parseFloat(req.body.qtyTolerance) : 0,
+      createdBy: req.user.userId
+    }));
+    res.status(201).json(invoice);
+  } catch (error) {
+    return sendError(res, error, 'Failed to create supplier invoice');
+  }
+};
+
+const cancelSupplierInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.supplierInvoice.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Supplier invoice not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Supplier invoice is already cancelled.' });
+    if (money(existing.amountPaid) > 0.0001) {
+      return res.status(400).json({ error: 'Remove the payment allocation before cancelling this invoice.' });
+    }
+    await prisma.$transaction(async (tx) => {
+      await cancelStockAndJournal(tx, {
+        tenantId: req.tenantId,
+        referenceType: 'SUPPLIER_INVOICE',
+        referenceId: id,
+        date: new Date(),
+        createdBy: req.user?.userId,
+        description: existing.invoiceNumber
+      });
+      await tx.supplierInvoice.update({ where: { id }, data: { status: 'CANCELLED' } });
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel supplier invoice');
+  }
+};
+
+const getSupplierAging = async (req, res) => {
+  try {
+    res.json(await supplierAging(prisma, req.tenantId));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to build supplier aging' });
+  }
+};
+
+const getSupplierStatement = async (req, res) => {
+  try {
+    const statement = await supplierStatement(prisma, req.tenantId, req.params.id);
+    if (!statement) return res.status(404).json({ error: 'Supplier not found' });
+    res.json(statement);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to build supplier statement' });
   }
 };
 
@@ -242,5 +360,11 @@ module.exports = {
   deletePurchaseOrder,
   getGrns,
   createGrn,
-  deleteGrn
+  deleteGrn,
+  cancelGrn,
+  getSupplierInvoices,
+  postSupplierInvoice,
+  cancelSupplierInvoice,
+  getSupplierAging,
+  getSupplierStatement
 };

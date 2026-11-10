@@ -294,15 +294,13 @@ export default function NewOrder() {
         }))
       };
 
-      if (orderId) {
-        await axios.put(`/api/sales/orders/${orderId}`, payload, config);
-      } else {
-        const res = await axios.post('/api/sales/orders', payload, config);
-        setOrderId(res.data.id);
-      }
+      const res = orderId
+        ? await axios.put(`/api/sales/orders/${orderId}`, payload, config)
+        : await axios.post('/api/sales/orders', payload, config);
+      if (!orderId) setOrderId(res.data.id);
       setOrderStatus(finalStatus);
       setLoading(false);
-      showToast('Order saved successfully!', 'success');
+      showToast(res.data.creditWarning ? `Order saved. ${res.data.creditWarning}` : 'Order saved successfully!', res.data.creditWarning ? 'error' : 'success');
       navigate('/sales/orders');
     } catch (error) {
       console.error('Failed to save order:', error);

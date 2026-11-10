@@ -1,4 +1,15 @@
 const prisma = require('../lib/prisma');
+const { sendError } = require('../services/errors');
+const { num, money } = require('../services/money');
+const { receive, issue, movementEffect, valuation } = require('../services/stockService');
+const { receiveLayer, issueFifo } = require('../services/production/fifo');
+const {
+  postReceiptDocument,
+  postIssueDocument,
+  postAdjustmentDocument,
+  postTransferDocument,
+  cancelStockAndJournal
+} = require('../services/documentPosting');
 
 const getStockLedger = async (req, res) => {
   try {
@@ -22,9 +33,7 @@ const getStockLedger = async (req, res) => {
         where: priorWhere
       });
       
-      openingBalance = priorMovements.reduce((acc, m) => {
-        return m.type === 'GI' ? acc - parseFloat(m.quantity) : acc + parseFloat(m.quantity);
-      }, 0);
+      openingBalance = priorMovements.reduce((acc, m) => acc + movementEffect(m), 0);
     }
 
     const whereClause = {
@@ -68,6 +77,12 @@ const getStockLedger = async (req, res) => {
         } else if (m.referenceType === 'ST' && m.referenceId) {
           const doc = await prisma.stockTransfer.findUnique({ where: { id: m.referenceId }});
           if (doc) readableReference = doc.transferNumber;
+        } else if (m.referenceType === 'SALES_DELIVERY' && m.referenceId) {
+          const doc = await prisma.salesDelivery.findUnique({ where: { id: m.referenceId }});
+          if (doc) readableReference = doc.deliveryNumber;
+        } else if (m.referenceType === 'GRN' && m.referenceId) {
+          const doc = await prisma.gRN.findUnique({ where: { id: m.referenceId }});
+          if (doc) readableReference = doc.grnNumber;
         }
       } catch (err) {
         // Fallback to original referenceId if lookup fails
@@ -121,25 +136,42 @@ const createStockMovement = async (req, res) => {
     const createdMovements = await prisma.$transaction(async (tx) => {
       const rows = [];
       for (const item of items) {
-        rows.push(await tx.stockMovement.create({
-          data: {
+        const qty = parseFloat(item.quantity);
+        const reference = referenceType || (type === 'GI' ? 'MANUAL_ISSUE' : type === 'GR' ? 'MANUAL_RECEIPT' : 'MANUAL_ADJ');
+        if (type === 'GR' || (type === 'ADJ' && qty >= 0)) {
+          const result = await receive(tx, {
             tenantId: req.tenantId,
             productId: item.productId,
-            type: type,
-            quantity: parseFloat(item.quantity),
-            referenceType: referenceType || (type === 'GI' ? 'MANUAL_ISSUE' : 'MANUAL_ADJ'),
-            referenceId: referenceId || description || '',
+            warehouseId: item.warehouseId || null,
+            quantity: Math.abs(qty),
+            unitCost: item.unitCost || item.unitPrice || 0,
+            referenceType: reference,
+            referenceId: referenceId || description || null,
+            movementType: type,
             createdBy: req.user.userId
-          }
-        }));
+          });
+          rows.push(result.movement);
+        } else {
+          const result = await issue(tx, {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            warehouseId: item.warehouseId || null,
+            quantity: Math.abs(qty),
+            referenceType: reference,
+            referenceId: referenceId || description || null,
+            movementType: type,
+            quantitySign: type === 'ADJ' ? -1 : 1,
+            createdBy: req.user.userId
+          });
+          rows.push(result.movement);
+        }
       }
       return rows;
     });
 
     res.status(201).json(createdMovements);
   } catch (error) {
-    console.error('Failed to create stock movement:', error);
-    res.status(500).json({ error: 'Failed to create stock movement' });
+    return sendError(res, error, 'Failed to create stock movement');
   }
 };
 
@@ -192,6 +224,7 @@ const createGoodsIssue = async (req, res) => {
           status: status || 'PENDING',
           reason: reason || null,
           total: totalAmount,
+          warehouseId: req.body.warehouseId || null,
           createdBy: req.user?.userId || null,
           items: items && items.length > 0 ? {
             create: items.map(item => ({
@@ -209,27 +242,23 @@ const createGoodsIssue = async (req, res) => {
       });
 
       if (created.status === 'COMPLETED' || created.status === 'ISSUED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GI',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'GI',
-              referenceId: created.id,
-              createdBy: req.user?.userId || null
-            }
-          });
-        }
+        await postIssueDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: created.warehouseId,
+          items,
+          referenceType: 'GI',
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null,
+          description: `Goods issue ${giNumber}`
+        });
       }
       return created;
     });
 
     res.status(201).json(issue);
   } catch (error) {
-    console.error('Failed to create Goods Issue:', error);
-    res.status(500).json({ error: 'Failed to create Goods Issue' });
+    return sendError(res, error, 'Failed to create Goods Issue');
   }
 };
 
@@ -262,6 +291,7 @@ const updateGoodsIssue = async (req, res) => {
           status: status || existing.status,
           reason: reason !== undefined ? reason : existing.reason,
           total: totalAmount,
+          warehouseId: req.body.warehouseId !== undefined ? req.body.warehouseId : existing.warehouseId,
           items: items && items.length > 0 ? {
             create: items.map(item => ({
               productId: item.productId,
@@ -278,27 +308,23 @@ const updateGoodsIssue = async (req, res) => {
       });
 
       if (saved.status === 'COMPLETED' || saved.status === 'ISSUED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GI',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'GI',
-              referenceId: saved.id,
-              createdBy: req.user?.userId || null
-            }
-          });
-        }
+        await postIssueDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: saved.warehouseId,
+          items,
+          referenceType: 'GI',
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null,
+          description: `Goods issue ${existing.giNumber}`
+        });
       }
       return saved;
     });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update GI:', error);
-    res.status(500).json({ error: 'Failed to update Goods Issue' });
+    return sendError(res, error, 'Failed to update Goods Issue');
   }
 };
 
@@ -349,6 +375,7 @@ const createStockAdjustment = async (req, res) => {
           status: status || 'PENDING',
           reason: reason || null,
           total: totalAmount,
+          warehouseId: req.body.warehouseId || null,
           createdBy: req.user?.userId || null,
           items: items && items.length > 0 ? {
             create: items.map(item => ({
@@ -367,29 +394,21 @@ const createStockAdjustment = async (req, res) => {
       });
 
       if (created.status === 'COMPLETED') {
-        for (const item of items) {
-          if (parseFloat(item.diffQty) !== 0) {
-            await tx.stockMovement.create({
-              data: {
-                tenantId: req.tenantId,
-                productId: item.productId,
-                type: 'ADJ',
-                quantity: parseFloat(item.diffQty),
-                referenceType: 'ADJ',
-                referenceId: created.id,
-                createdBy: req.user?.userId || null
-              }
-            });
-          }
-        }
+        await postAdjustmentDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: created.warehouseId,
+          items,
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null
+        });
       }
       return created;
     });
 
     res.status(201).json(adj);
   } catch (error) {
-    console.error('Failed to create ADJ:', error);
-    res.status(500).json({ error: 'Failed to create Stock Adjustment' });
+    return sendError(res, error, 'Failed to create Stock Adjustment');
   }
 };
 
@@ -421,6 +440,7 @@ const updateStockAdjustment = async (req, res) => {
           status: status || existing.status,
           reason: reason !== undefined ? reason : existing.reason,
           total: totalAmount,
+          warehouseId: req.body.warehouseId !== undefined ? req.body.warehouseId : existing.warehouseId,
           items: items && items.length > 0 ? {
             create: items.map(item => ({
               productId: item.productId,
@@ -438,29 +458,21 @@ const updateStockAdjustment = async (req, res) => {
       });
 
       if (saved.status === 'COMPLETED') {
-        for (const item of items) {
-          if (parseFloat(item.diffQty) !== 0) {
-            await tx.stockMovement.create({
-              data: {
-                tenantId: req.tenantId,
-                productId: item.productId,
-                type: 'ADJ',
-                quantity: parseFloat(item.diffQty),
-                referenceType: 'ADJ',
-                referenceId: saved.id,
-                createdBy: req.user?.userId || null
-              }
-            });
-          }
-        }
+        await postAdjustmentDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: saved.warehouseId,
+          items,
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null
+        });
       }
       return saved;
     });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update ADJ:', error);
-    res.status(500).json({ error: 'Failed to update Stock Adjustment' });
+    return sendError(res, error, 'Failed to update Stock Adjustment');
   }
 };
 
@@ -502,26 +514,20 @@ const getInventoryReport = async (req, res) => {
       }
     });
 
-    // Aggregate movements
     const stockMap = {};
-    for (const m of movements) {
-      if (!stockMap[m.productId]) {
-        stockMap[m.productId] = 0;
-      }
-      const qty = parseFloat(m.quantity);
-      if (m.type === 'GR' || (m.type === 'ADJ' && qty > 0)) {
-        stockMap[m.productId] += Math.abs(qty);
-      } else if (m.type === 'GI' || (m.type === 'ADJ' && qty < 0)) {
-        stockMap[m.productId] -= Math.abs(qty);
-      }
+    for (const movement of movements) {
+      stockMap[movement.productId] = (stockMap[movement.productId] || 0) + movementEffect(movement);
     }
+    const valued = await valuation(prisma, { tenantId: req.tenantId, warehouseId });
+    const layerByProduct = new Map(valued.rows.map((row) => [row.productId, row]));
 
-    // Combine
     const report = products.map(p => {
-      const currentStock = stockMap[p.id] || 0;
+      const layer = layerByProduct.get(p.id);
+      const currentStock = layer ? layer.quantity : (stockMap[p.id] || 0);
       const costPrice = parseFloat(p.costPrice || 0);
       const sellingPrice = parseFloat(p.sellingPrice || 0);
-      
+      const totalCostValue = layer ? layer.value : currentStock * costPrice;
+
       return {
         id: p.id,
         code: p.code,
@@ -532,7 +538,7 @@ const getInventoryReport = async (req, res) => {
         currentStock,
         costPrice,
         sellingPrice,
-        totalCostValue: currentStock * costPrice,
+        totalCostValue,
         totalRetailValue: currentStock * sellingPrice
       };
     });
@@ -601,28 +607,24 @@ const createStockReceipt = async (req, res) => {
       });
 
       if (created.status === 'COMPLETED' || created.status === 'ISSUED' || created.status === 'RECEIVED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GR',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'SR',
-              referenceId: created.id,
-              warehouseId: warehouseId || null,
-              createdBy: req.user?.userId || null
-            }
-          });
-        }
+        await postReceiptDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: created.warehouseId,
+          items,
+          referenceType: 'SR',
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null,
+          description: `Stock receipt ${receiptNumber}`,
+          creditKey: 'STOCK_ADJUSTMENT'
+        });
       }
       return created;
     });
 
     res.status(201).json(receipt);
   } catch (error) {
-    console.error('Failed to create Stock Receipt:', error);
-    res.status(500).json({ error: 'Failed to create Stock Receipt' });
+    return sendError(res, error, 'Failed to create Stock Receipt');
   }
 };
 
@@ -671,28 +673,24 @@ const updateStockReceipt = async (req, res) => {
       });
 
       if (saved.status === 'COMPLETED' || saved.status === 'RECEIVED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GR',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'SR',
-              referenceId: saved.id,
-              warehouseId: saved.warehouseId || null,
-              createdBy: req.user?.userId || null
-            }
-          });
-        }
+        await postReceiptDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: saved.warehouseId,
+          items,
+          referenceType: 'SR',
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null,
+          description: `Stock receipt ${existing.receiptNumber}`,
+          creditKey: 'STOCK_ADJUSTMENT'
+        });
       }
       return saved;
     });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update Stock Receipt:', error);
-    res.status(500).json({ error: 'Failed to update Stock Receipt' });
+    return sendError(res, error, 'Failed to update Stock Receipt');
   }
 };
 
@@ -761,40 +759,22 @@ const createStockTransfer = async (req, res) => {
       });
 
       if (created.status === 'COMPLETED' || created.status === 'ISSUED' || created.status === 'RECEIVED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GI',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'ST',
-              referenceId: created.id,
-              warehouseId: fromWarehouseId || null,
-              createdBy: req.user?.userId || null
-            }
-          });
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GR',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'ST',
-              referenceId: created.id,
-              warehouseId: toWarehouseId || null,
-              createdBy: req.user?.userId || null
-            }
-          });
-        }
+        await postTransferDocument(tx, {
+          tenantId: req.tenantId,
+          fromWarehouseId,
+          toWarehouseId,
+          items,
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null
+        });
       }
       return created;
     });
 
     res.status(201).json(transfer);
   } catch (error) {
-    console.error('Failed to create Stock Transfer:', error);
-    res.status(500).json({ error: 'Failed to create Stock Transfer' });
+    return sendError(res, error, 'Failed to create Stock Transfer');
   }
 };
 
@@ -839,40 +819,22 @@ const updateStockTransfer = async (req, res) => {
       });
 
       if (saved.status === 'COMPLETED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GI',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'ST',
-              referenceId: saved.id,
-              warehouseId: saved.fromWarehouseId || null,
-              createdBy: req.user?.userId || null
-            }
-          });
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GR',
-              quantity: parseFloat(item.quantity),
-              referenceType: 'ST',
-              referenceId: saved.id,
-              warehouseId: saved.toWarehouseId || null,
-              createdBy: req.user?.userId || null
-            }
-          });
-        }
+        await postTransferDocument(tx, {
+          tenantId: req.tenantId,
+          fromWarehouseId: saved.fromWarehouseId,
+          toWarehouseId: saved.toWarehouseId,
+          items,
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null
+        });
       }
       return saved;
     });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update Stock Transfer:', error);
-    res.status(500).json({ error: 'Failed to update Stock Transfer' });
+    return sendError(res, error, 'Failed to update Stock Transfer');
   }
 };
 
@@ -883,6 +845,55 @@ const deleteStockTransfer = async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete Stock Transfer' });
+  }
+};
+
+const getValuation = async (req, res) => {
+  try {
+    const report = await valuation(prisma, {
+      tenantId: req.tenantId,
+      warehouseId: req.query.warehouseId,
+      productId: req.query.productId
+    });
+    res.json(report);
+  } catch (error) {
+    return sendError(res, error, 'Failed to value stock');
+  }
+};
+
+const costingReceive = async (req, res) => {
+  try {
+    const layer = await prisma.$transaction((tx) => receiveLayer(tx, {
+      tenantId: req.tenantId,
+      productId: req.body.productId,
+      warehouseId: req.body.warehouseId,
+      quantity: req.body.quantity,
+      unitCost: req.body.unitCost,
+      sourceType: req.body.referenceType,
+      sourceId: req.body.referenceId || null,
+      receivedAt: req.body.receivedAt || null
+    }));
+    res.status(201).json(layer);
+  } catch (error) {
+    return sendError(res, error, 'Failed to receive cost layer');
+  }
+};
+
+const costingIssue = async (req, res) => {
+  try {
+    const fifo = await prisma.$transaction(async (tx) => {
+      const result = await issueFifo(tx, {
+        tenantId: req.tenantId,
+        productId: req.body.productId,
+        warehouseId: req.body.warehouseId,
+        quantity: req.body.quantity,
+        strictWarehouse: true
+      });
+      return result;
+    });
+    res.status(201).json(fifo);
+  } catch (error) {
+    return sendError(res, error, 'Failed to issue FIFO cost');
   }
 };
 
@@ -900,6 +911,9 @@ module.exports = {
   updateStockAdjustment,
   deleteStockAdjustment,
   getInventoryReport,
+  getValuation,
+  costingReceive,
+  costingIssue,
   
   // New Stock Receipts & Transfers
   getStockReceipts,

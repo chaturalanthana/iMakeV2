@@ -1,5 +1,17 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { sendError } = require('../services/errors');
+const { dec, money, rateOf } = require('../services/money');
+const {
+  postIssueDocument,
+  cancelStockAndJournal,
+  assertQuotationQuantity,
+  refreshQuotationStatus,
+  creditWarning,
+  finalizeSalesInvoice,
+  customerAging,
+  customerStatement
+} = require('../services/documentPosting');
 
 const isDocumentModifiable = (status) => {
   if (!status) return true;
@@ -183,18 +195,11 @@ const createOrder = async (req, res) => {
     );
 
     if (quotationId) {
-      const sourceQuo = await prisma.salesQuotation.findFirst({
-        where: { id: quotationId, tenantId: req.tenantId },
-        include: { items: true }
+      await assertQuotationQuantity(prisma, {
+        tenantId: req.tenantId,
+        quotationId,
+        items
       });
-      if (!sourceQuo) {
-        return res.status(404).json({ error: 'Source quotation not found' });
-      }
-      const sourceProductIds = sourceQuo.items.map(item => item.productId);
-      const invalidItem = items.find(item => !sourceProductIds.includes(item.productId));
-      if (invalidItem) {
-        return res.status(400).json({ error: 'Cannot add new products that are not in the source quotation.' });
-      }
     }
 
     let totalAmount = 0;
@@ -223,18 +228,16 @@ const createOrder = async (req, res) => {
       }
     });
 
-    // Optionally update Quotation status
-    if (quotationId) {
-      await prisma.salesQuotation.update({
-        where: { id: quotationId },
-        data: { status: 'ACCEPTED' }
-      });
-    }
-
+    if (quotationId) await refreshQuotationStatus(prisma, quotationId);
+    const warning = await creditWarning(prisma, {
+      tenantId: req.tenantId,
+      customerId,
+      documentBase: totalAmount * (parseFloat(exchangeRate) || 1)
+    });
+    order.creditWarning = warning;
     res.status(201).json(order);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to create order' });
+    return sendError(res, error, 'Failed to create order');
   }
 };
 
@@ -466,18 +469,23 @@ const createDelivery = async (req, res) => {
       });
 
       if (created.status === 'DELIVERED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GI',
-              quantity: -parseFloat(item.quantity),
-              referenceType: 'SALES_DELIVERY',
-              referenceId: created.id,
-              warehouseId: warehouseId,
-              createdBy: req.user.userId
-            }
+        const savedItems = await tx.salesDeliveryItem.findMany({ where: { deliveryId: created.id } });
+        const posted = await postIssueDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId,
+          items: savedItems,
+          referenceType: 'SALES_DELIVERY',
+          referenceId: created.id,
+          date,
+          createdBy: req.user.userId,
+          description: `Delivery ${finalDeliveryNumber}`,
+          quantitySign: -1
+        });
+        for (const result of posted.results) {
+          if (!result.itemId) continue;
+          await tx.salesDeliveryItem.update({
+            where: { id: result.itemId },
+            data: { unitCost: dec(result.unitCost), costValue: dec(result.value) }
           });
         }
         if (orderId) await updateOrderStatusOnDelivery(orderId, tx);
@@ -487,8 +495,7 @@ const createDelivery = async (req, res) => {
 
     res.status(201).json(delivery);
   } catch (error) {
-    console.error('Create delivery error:', error);
-    res.status(500).json({ error: 'Failed to create delivery' });
+    return sendError(res, error, 'Failed to create delivery');
   }
 };
 
@@ -578,17 +585,23 @@ const updateDelivery = async (req, res) => {
       });
 
       if (updated.status === 'DELIVERED' && existing.status !== 'DELIVERED') {
-        for (const item of items) {
-          await tx.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
-              productId: item.productId,
-              type: 'GI',
-              quantity: -parseFloat(item.quantity),
-              referenceType: 'SALES_DELIVERY',
-              referenceId: updated.id,
-              createdBy: req.user.userId
-            }
+        const savedItems = await tx.salesDeliveryItem.findMany({ where: { deliveryId: updated.id } });
+        const posted = await postIssueDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: existing.warehouseId,
+          items: savedItems,
+          referenceType: 'SALES_DELIVERY',
+          referenceId: updated.id,
+          date: updated.date,
+          createdBy: req.user.userId,
+          description: `Delivery ${existing.deliveryNumber}`,
+          quantitySign: -1
+        });
+        for (const result of posted.results) {
+          if (!result.itemId) continue;
+          await tx.salesDeliveryItem.update({
+            where: { id: result.itemId },
+            data: { unitCost: dec(result.unitCost), costValue: dec(result.value) }
           });
         }
       }
@@ -599,8 +612,7 @@ const updateDelivery = async (req, res) => {
 
     res.json(delivery);
   } catch (error) {
-    console.error('Update delivery error:', error);
-    res.status(500).json({ error: 'Failed to update delivery' });
+    return sendError(res, error, 'Failed to update delivery');
   }
 };
 
@@ -735,33 +747,46 @@ const createInvoice = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    const invoice = await prisma.salesInvoice.create({
-      data: {
-        tenantId: req.tenantId,
-        customerId,
-        orderId: orderId || null,
-        deliveryId: deliveryId || null,
-        invoiceNumber: finalInvoiceNumber,
-        date: new Date(date),
-        status: status || 'UNPAID',
-        total: totalAmount,
-        currencyId: currencyId || null,
-        exchangeRate: parseFloat(exchangeRate) || 1.0,
-        createdBy: req.user.userId,
-        items: {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice),
-            total: parseFloat(item.total)
-          }))
-        }
-      }
+    const invoiceStatus = status || 'UNPAID';
+    const warning = await creditWarning(prisma, {
+      tenantId: req.tenantId,
+      customerId,
+      documentBase: totalAmount * rateOf(exchangeRate)
     });
-
+    const invoice = await prisma.$transaction(async (tx) => {
+      const created = await tx.salesInvoice.create({
+        data: {
+          tenantId: req.tenantId,
+          customerId,
+          orderId: orderId || null,
+          deliveryId: deliveryId || null,
+          invoiceNumber: finalInvoiceNumber,
+          date: new Date(date),
+          status: invoiceStatus,
+          total: totalAmount,
+          subtotal: totalAmount,
+          currencyId: currencyId || null,
+          exchangeRate: rateOf(exchangeRate),
+          createdBy: req.user.userId,
+          items: {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice),
+              total: parseFloat(item.total)
+            }))
+          }
+        }
+      });
+      if (!['DRAFT', 'PENDING'].includes(String(invoiceStatus).toUpperCase())) {
+        return finalizeSalesInvoice(tx, { tenantId: req.tenantId, invoiceId: created.id, createdBy: req.user.userId });
+      }
+      return created;
+    });
+    invoice.creditWarning = warning;
     res.status(201).json(invoice);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create invoice' });
+    return sendError(res, error, 'Failed to create invoice');
   }
 };
 
@@ -864,43 +889,46 @@ const updateInvoice = async (req, res) => {
 
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
+    const nextStatus = status || 'PENDING';
 
-    // Clear old items
-    await prisma.salesInvoiceItem.deleteMany({
-      where: { invoiceId: id }
-    });
-
-    const invoice = await prisma.salesInvoice.update({
-      where: { id },
-      data: {
-        customerId,
-        orderId: orderId || null,
-        deliveryId: deliveryId || null,
-        date: new Date(date),
-        status: status || 'PENDING',
-        total: totalAmount,
-        currencyId: currencyId !== undefined ? currencyId : existing.currencyId,
-        exchangeRate: exchangeRate !== undefined ? parseFloat(exchangeRate) : existing.exchangeRate,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity || 0),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: { 
-        customer: true,
-        currency: true,
-        items: { include: { product: true } }
+    const invoice = await prisma.$transaction(async (tx) => {
+      await tx.salesInvoiceItem.deleteMany({ where: { invoiceId: id } });
+      const updated = await tx.salesInvoice.update({
+        where: { id },
+        data: {
+          customerId,
+          orderId: orderId || null,
+          deliveryId: deliveryId || null,
+          date: new Date(date),
+          status: nextStatus,
+          total: totalAmount,
+          subtotal: totalAmount,
+          currencyId: currencyId !== undefined ? currencyId : existing.currencyId,
+          exchangeRate: exchangeRate !== undefined ? parseFloat(exchangeRate) : existing.exchangeRate,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity || 0),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          customer: true,
+          currency: true,
+          items: { include: { product: true } }
+        }
+      });
+      if (!['DRAFT', 'PENDING'].includes(String(nextStatus).toUpperCase())) {
+        return finalizeSalesInvoice(tx, { tenantId: req.tenantId, invoiceId: id, createdBy: req.user.userId });
       }
+      return updated;
     });
 
     res.json(invoice);
   } catch (error) {
-    console.error('Update invoice error:', error);
-    res.status(500).json({ error: 'Failed to update invoice' });
+    return sendError(res, error, 'Failed to update invoice');
   }
 };
 
@@ -921,12 +949,89 @@ const deleteInvoice = async (req, res) => {
   }
 };
 
+const cancelDelivery = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.salesDelivery.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Delivery not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Delivery is already cancelled.' });
+    const billed = await prisma.salesInvoice.count({
+      where: { deliveryId: id, tenantId: req.tenantId, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
+    });
+    if (billed) return res.status(400).json({ error: 'Cancel the sales invoice before cancelling this delivery.' });
+    await prisma.$transaction(async (tx) => {
+      if (existing.status === 'DELIVERED') {
+        await cancelStockAndJournal(tx, {
+          tenantId: req.tenantId,
+          referenceType: 'SALES_DELIVERY',
+          referenceId: id,
+          date: new Date(),
+          createdBy: req.user?.userId,
+          description: existing.deliveryNumber
+        });
+      }
+      await tx.salesDelivery.update({ where: { id }, data: { status: 'CANCELLED' } });
+      if (existing.orderId) await updateOrderStatusOnDelivery(existing.orderId, tx);
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel delivery');
+  }
+};
+
+const cancelInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.salesInvoice.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Invoice not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Invoice is already cancelled.' });
+    if (money(existing.amountPaid) > 0.0001) {
+      return res.status(400).json({ error: 'Remove the receipt allocation before cancelling this invoice.' });
+    }
+    await prisma.$transaction(async (tx) => {
+      await cancelStockAndJournal(tx, {
+        tenantId: req.tenantId,
+        referenceType: 'SALES_INVOICE',
+        referenceId: id,
+        date: new Date(),
+        createdBy: req.user?.userId,
+        description: existing.invoiceNumber
+      });
+      await tx.salesInvoice.update({ where: { id }, data: { status: 'CANCELLED' } });
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel invoice');
+  }
+};
+
+const getCustomerAging = async (req, res) => {
+  try {
+    res.json(await customerAging(prisma, req.tenantId));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to build customer aging' });
+  }
+};
+
+const getCustomerStatement = async (req, res) => {
+  try {
+    const statement = await customerStatement(prisma, req.tenantId, req.params.id);
+    if (!statement) return res.status(404).json({ error: 'Customer not found' });
+    res.json(statement);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to build customer statement' });
+  }
+};
+
 module.exports = {
   getQuotations, createQuotation, updateQuotation, deleteQuotation,
   getOrders, createOrder, deleteOrder, updateOrder,
-  getDeliveries, createDelivery, deleteDelivery, updateDelivery,
+  getDeliveries, createDelivery, deleteDelivery, updateDelivery, cancelDelivery,
   getInvoices,
   createInvoice,
   updateInvoice,
-  deleteInvoice
+  deleteInvoice,
+  cancelInvoice,
+  getCustomerAging,
+  getCustomerStatement
 };

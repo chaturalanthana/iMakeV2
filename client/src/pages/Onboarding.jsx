@@ -9,7 +9,7 @@ export default function Onboarding() {
   const { showToast } = useToast();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({ 
-    tenantName: '', address: '', currency: 'USD',
+    tenantName: '', address: '', currency: 'LKR',
     email: '', password: '' 
   });
   const [loading, setLoading] = useState(false);
@@ -140,6 +140,7 @@ export default function Onboarding() {
                     className="input-field"
                     style={{ paddingLeft: '48px', appearance: 'none' }}
                   >
+                    <option value="LKR">LKR - Sri Lankan Rupee</option>
                     <option value="USD">USD - US Dollar</option>
                     <option value="EUR">EUR - Euro</option>
                     <option value="INR">INR - Indian Rupee</option>

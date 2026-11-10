@@ -36,7 +36,7 @@ const line = z.object({
 
 const productFields = {
   type: z.enum(['PRODUCT', 'SERVICE'], { error: 'Invalid product type. Must be PRODUCT or SERVICE' }).optional(),
-  costingMethod: z.enum(['FIFO', 'LIFO', 'Moving Average', 'Standard Cost'], { error: 'Invalid costing method' }).optional(),
+  costingMethod: z.enum(['FIFO'], { error: 'Stock is costed with FIFO. Other costing methods are not used.' }).optional(),
   activeStatus: z.enum(['ACTIVE', 'INACTIVE'], { error: 'Invalid active status. Must be ACTIVE or INACTIVE' }).optional(),
   costPrice: optionalNumber('Cost price'),
   sellingPrice: optionalNumber('Selling price'),
@@ -128,6 +128,29 @@ const stockMovement = z.object({
   }).passthrough()).min(1, 'Add at least one product.')
 }).passthrough();
 
+const supplierInvoice = z.object({
+  supplierId: requiredText('Supplier is required.'),
+  date: requiredText('Date is required.'),
+  items: z.array(z.object({
+    productId: requiredText('Product is required.'),
+    quantity: optionalNumber('Quantity'),
+    unitPrice: optionalNumber('Unit price')
+  }).passthrough(), { error: 'Add at least one product.' }).min(1, 'Add at least one product.')
+}).passthrough();
+
+const paymentDocument = z.object({
+  date: requiredText('Date is required.'),
+  method: requiredText('Payment method is required.'),
+  amount: optionalNumber('Amount')
+}).passthrough();
+
+const costingMove = z.object({
+  productId: requiredText('Product is required.'),
+  warehouseId: requiredText('Warehouse is required.'),
+  quantity: optionalNumber('Quantity'),
+  referenceType: requiredText('Reference type is required.')
+}).passthrough();
+
 const paymentTerm = z.object({
   code: requiredText('Payment term code is required.'),
   name: requiredText('Payment term name is required.')
@@ -163,5 +186,10 @@ module.exports = {
   purchaseRequisition,
   goodsReceipt,
   stockLines,
-  stockMovement
+  stockMovement,
+  supplierInvoice,
+  customerReceipt: paymentDocument.extend({ customerId: requiredText('Customer is required.') }),
+  supplierPayment: paymentDocument.extend({ supplierId: requiredText('Supplier is required.') }),
+  costingReceive: costingMove.extend({ unitCost: optionalNumber('Unit cost') }),
+  costingIssue: costingMove
 };

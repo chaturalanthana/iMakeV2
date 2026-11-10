@@ -21,11 +21,16 @@ router.delete('/orders/:id', salesController.deleteOrder);
 router.get('/deliveries', salesController.getDeliveries);
 router.post('/deliveries', validateBody(schemas.deliveryCreate), salesController.createDelivery);
 router.put('/deliveries/:id', validateBody(schemas.documentUpdate), salesController.updateDelivery);
+router.post('/deliveries/:id/cancel', salesController.cancelDelivery);
 router.delete('/deliveries/:id', salesController.deleteDelivery);
 
 router.get('/invoices', salesController.getInvoices);
 router.post('/invoices', validateBody(schemas.salesCreate), salesController.createInvoice);
 router.put('/invoices/:id', validateBody(schemas.documentUpdate), salesController.updateInvoice);
+router.post('/invoices/:id/cancel', salesController.cancelInvoice);
 router.delete('/invoices/:id', salesController.deleteInvoice);
+
+router.get('/customer-aging', salesController.getCustomerAging);
+router.get('/customer-statement/:id', salesController.getCustomerStatement);
 
 module.exports = router;

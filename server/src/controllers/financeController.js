@@ -1,4 +1,10 @@
 const prisma = require('../lib/prisma');
+const { sendError } = require('../services/errors');
+const { DocumentError } = require('../services/errors');
+const { money, rateOf, dec } = require('../services/money');
+const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { allocateCustomerReceipt, allocateSupplierPayment, syncSalesInvoiceStatus, syncSupplierInvoiceStatus, cancelStockAndJournal } = require('../services/documentPosting');
+const { trialBalance } = require('../services/glService');
 
 // --- Accounts (General Ledger) ---
 const getAccounts = async (req, res) => {
@@ -111,55 +117,90 @@ const getPaymentReceipts = async (req, res) => {
   }
 };
 
+function allocationRows(body, invoiceKey) {
+  const fromBody = Array.isArray(body.allocations) ? body.allocations : [];
+  const rows = fromBody
+    .map((row) => ({
+      invoiceId: row.invoiceId || row[invoiceKey],
+      supplierInvoiceId: row.supplierInvoiceId || row.invoiceId,
+      amount: money(row.amount)
+    }))
+    .filter((row) => row.amount > 0 && (row.invoiceId || row.supplierInvoiceId));
+  return rows;
+}
+
 const createPaymentReceipt = async (req, res) => {
   try {
-    const { customerId, accountId, receiptNumber, amount, date, method, reference, bankName, chequeNumber, lines } = req.body;
-    
-    // validate lines sum vs amount
-    let calculatedAmount = 0;
-    if (lines && lines.length > 0) {
+    const { customerId, accountId, receiptNumber, amount, date, method, reference, bankName, chequeNumber, lines, invoiceId } = req.body;
+    const allocations = allocationRows(req.body, 'invoiceId');
+    if (!allocations.length && invoiceId) allocations.push({ invoiceId, amount: money(amount) });
+    if (!allocations.length && lines) {
       for (const line of lines) {
-        calculatedAmount += parseFloat(line.amount || 0);
+        if (line.invoiceId) allocations.push({ invoiceId: line.invoiceId, amount: money(line.amount) });
       }
+    }
+
+    if (allocations.length) {
+      const allocated = money(allocations.reduce((sum, row) => sum + row.amount, 0));
+      if (Math.abs(allocated - money(amount)) > 0.001) {
+        return res.status(400).json({
+          error: 'Receipt amount must equal the allocated invoices.',
+          fields: { amount: 'Receipt amount must equal the allocated invoices.' }
+        });
+      }
+    } else if (lines && lines.length > 0) {
+      let calculatedAmount = 0;
+      for (const line of lines) calculatedAmount += parseFloat(line.amount || 0);
       if (Math.abs(calculatedAmount - parseFloat(amount)) > 0.001) {
         return res.status(400).json({ error: 'Receipt amount must equal the sum of receipt lines.' });
       }
     }
 
-    const receipt = await prisma.paymentReceipt.create({
-      data: {
-        tenantId: req.tenantId,
-        customerId,
-        accountId: accountId || null,
-        receiptNumber,
-        amount: parseFloat(amount),
-        date: new Date(date),
-        method,
-        reference,
-        bankName,
-        chequeNumber,
-        createdBy: req.user.userId,
-        ...(lines && lines.length > 0 && {
-          lines: {
-            create: lines.map(line => ({
-              accountId: line.accountId,
-              invoiceId: line.invoiceId || null,
-              amount: parseFloat(line.amount || 0),
-              description: line.description
-            }))
-          }
-        })
-      },
-      include: { 
-        customer: true,
-        lines: { include: { account: true, invoice: true } }
+    const number = receiptNumber || await generateDocumentNumber(req.tenantId, 'paymentReceipt', 'REC', 'receiptNumber');
+    const receipt = await prisma.$transaction(async (tx) => {
+      const created = await tx.paymentReceipt.create({
+        data: {
+          tenantId: req.tenantId,
+          customerId,
+          accountId: accountId || null,
+          receiptNumber: number,
+          amount: parseFloat(amount),
+          date: new Date(date),
+          method,
+          reference,
+          bankName,
+          chequeNumber,
+          exchangeRate: rateOf(req.body.exchangeRate),
+          createdBy: req.user.userId,
+          ...(!allocations.length && lines && lines.length > 0 && {
+            lines: {
+              create: lines.map(line => ({
+                accountId: line.accountId,
+                invoiceId: line.invoiceId || null,
+                amount: parseFloat(line.amount || 0),
+                description: line.description
+              }))
+            }
+          })
+        }
+      });
+      if (allocations.length) {
+        await allocateCustomerReceipt(tx, {
+          tenantId: req.tenantId,
+          receipt: created,
+          allocations,
+          createdBy: req.user.userId
+        });
       }
+      return tx.paymentReceipt.findUnique({
+        where: { id: created.id },
+        include: { customer: true, lines: { include: { account: true, invoice: true } } }
+      });
     });
 
     res.status(201).json(receipt);
   } catch (error) {
-    console.error('Create payment receipt error:', error);
-    res.status(500).json({ error: 'Failed to create payment receipt' });
+    return sendError(res, error, 'Failed to create payment receipt');
   }
 };
 
@@ -180,51 +221,71 @@ const getPaymentVouchers = async (req, res) => {
 
 const createPaymentVoucher = async (req, res) => {
   try {
-    const { supplierId, voucherNumber, amount, date, method, reference, bankName, chequeNumber, lines } = req.body;
-    
-    // validate lines sum vs amount
-    let calculatedAmount = 0;
-    if (lines && lines.length > 0) {
-      for (const line of lines) {
-        calculatedAmount += parseFloat(line.amount || 0);
+    const { supplierId, voucherNumber, amount, date, method, reference, bankName, chequeNumber, lines, accountId } = req.body;
+    const allocations = (Array.isArray(req.body.allocations) ? req.body.allocations : [])
+      .map((row) => ({ supplierInvoiceId: row.supplierInvoiceId || row.invoiceId, amount: money(row.amount) }))
+      .filter((row) => row.supplierInvoiceId && row.amount > 0);
+
+    if (allocations.length) {
+      const allocated = money(allocations.reduce((sum, row) => sum + row.amount, 0));
+      if (Math.abs(allocated - money(amount)) > 0.001) {
+        return res.status(400).json({
+          error: 'Voucher amount must equal the allocated invoices.',
+          fields: { amount: 'Voucher amount must equal the allocated invoices.' }
+        });
       }
+    } else if (lines && lines.length > 0) {
+      let calculatedAmount = 0;
+      for (const line of lines) calculatedAmount += parseFloat(line.amount || 0);
       if (Math.abs(calculatedAmount - parseFloat(amount)) > 0.001) {
         return res.status(400).json({ error: 'Voucher amount must equal the sum of expense lines.' });
       }
     }
 
-    const voucher = await prisma.paymentVoucher.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId,
-        voucherNumber,
-        amount: parseFloat(amount),
-        date: new Date(date),
-        method,
-        reference,
-        bankName,
-        chequeNumber,
-        createdBy: req.user.userId,
-        ...(lines && lines.length > 0 && {
-          lines: {
-            create: lines.map(line => ({
-              accountId: line.accountId,
-              amount: parseFloat(line.amount || 0),
-              description: line.description
-            }))
-          }
-        })
-      },
-      include: { 
-        supplier: true,
-        lines: { include: { account: true } }
+    const number = voucherNumber || await generateDocumentNumber(req.tenantId, 'paymentVoucher', 'PV', 'voucherNumber');
+    const voucher = await prisma.$transaction(async (tx) => {
+      const created = await tx.paymentVoucher.create({
+        data: {
+          tenantId: req.tenantId,
+          supplierId,
+          voucherNumber: number,
+          amount: parseFloat(amount),
+          date: new Date(date),
+          method,
+          reference,
+          bankName,
+          chequeNumber,
+          accountId: accountId || null,
+          exchangeRate: rateOf(req.body.exchangeRate),
+          createdBy: req.user.userId,
+          ...(!allocations.length && lines && lines.length > 0 && {
+            lines: {
+              create: lines.map(line => ({
+                accountId: line.accountId,
+                amount: parseFloat(line.amount || 0),
+                description: line.description
+              }))
+            }
+          })
+        }
+      });
+      if (allocations.length) {
+        await allocateSupplierPayment(tx, {
+          tenantId: req.tenantId,
+          voucher: created,
+          allocations,
+          createdBy: req.user.userId
+        });
       }
+      return tx.paymentVoucher.findUnique({
+        where: { id: created.id },
+        include: { supplier: true, lines: { include: { account: true } }, allocations: true }
+      });
     });
 
     res.status(201).json(voucher);
   } catch (error) {
-    console.error('Create payment voucher error:', error);
-    res.status(500).json({ error: 'Failed to create payment voucher' });
+    return sendError(res, error, 'Failed to create payment voucher');
   }
 };
 
@@ -360,6 +421,83 @@ const getGeneralLedgerLines = async (req, res) => {
   }
 };
 
+const getTrialBalance = async (req, res) => {
+  try {
+    res.json(await trialBalance(prisma, req.tenantId));
+  } catch (error) {
+    return sendError(res, error, 'Failed to build the trial balance');
+  }
+};
+
+const cancelPaymentReceipt = async (req, res) => {
+  try {
+    const existing = await prisma.paymentReceipt.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: { lines: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Receipt not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Receipt is already cancelled.' });
+    await prisma.$transaction(async (tx) => {
+      for (const line of existing.lines) {
+        if (!line.invoiceId) continue;
+        const invoice = await tx.salesInvoice.findUnique({ where: { id: line.invoiceId } });
+        if (!invoice) continue;
+        await tx.salesInvoice.update({
+          where: { id: invoice.id },
+          data: { amountPaid: dec(Math.max(0, money(invoice.amountPaid) - money(line.amount))) }
+        });
+        await syncSalesInvoiceStatus(tx, invoice.id);
+      }
+      await cancelStockAndJournal(tx, {
+        tenantId: req.tenantId,
+        referenceType: 'PAYMENT_RECEIPT',
+        referenceId: existing.id,
+        date: new Date(),
+        createdBy: req.user?.userId,
+        description: existing.receiptNumber
+      });
+      await tx.paymentReceipt.update({ where: { id: existing.id }, data: { status: 'CANCELLED' } });
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel receipt');
+  }
+};
+
+const cancelPaymentVoucher = async (req, res) => {
+  try {
+    const existing = await prisma.paymentVoucher.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: { allocations: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Voucher not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Voucher is already cancelled.' });
+    await prisma.$transaction(async (tx) => {
+      for (const allocation of existing.allocations) {
+        const invoice = await tx.supplierInvoice.findUnique({ where: { id: allocation.supplierInvoiceId } });
+        if (!invoice) continue;
+        await tx.supplierInvoice.update({
+          where: { id: invoice.id },
+          data: { amountPaid: dec(Math.max(0, money(invoice.amountPaid) - money(allocation.amount))) }
+        });
+        await syncSupplierInvoiceStatus(tx, invoice.id);
+      }
+      await cancelStockAndJournal(tx, {
+        tenantId: req.tenantId,
+        referenceType: 'PAYMENT_VOUCHER',
+        referenceId: existing.id,
+        date: new Date(),
+        createdBy: req.user?.userId,
+        description: existing.voucherNumber
+      });
+      await tx.paymentVoucher.update({ where: { id: existing.id }, data: { status: 'CANCELLED' } });
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel voucher');
+  }
+};
+
 module.exports = {
   getAccounts,
   createAccount,
@@ -371,6 +509,9 @@ module.exports = {
   createJournalEntry,
   getPaymentReceipts,
   createPaymentReceipt,
+  cancelPaymentReceipt,
   getPaymentVouchers,
-  createPaymentVoucher
+  createPaymentVoucher,
+  cancelPaymentVoucher,
+  getTrialBalance
 };

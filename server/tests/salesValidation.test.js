@@ -101,6 +101,11 @@ afterAll(async () => {
   await prisma.unitOfMeasure.deleteMany({ where: { tenantId: tenantA.id } });
   await prisma.user.deleteMany({ where: { tenantId: tenantA.id } });
   await prisma.role.deleteMany({ where: { tenantId: tenantA.id } });
+  await prisma.journalLine.deleteMany({ where: { journalEntry: { tenantId: tenantA.id } } });
+  await prisma.journalEntry.deleteMany({ where: { tenantId: tenantA.id } });
+  await prisma.glAccountMap.deleteMany({ where: { tenantId: tenantA.id } });
+  await prisma.costLayer.deleteMany({ where: { tenantId: tenantA.id } });
+  await prisma.account.deleteMany({ where: { tenantId: tenantA.id } });
   await prisma.tenant.delete({ where: { id: tenantA.id } });
 
   // Cleanup Tenant B
@@ -119,6 +124,11 @@ afterAll(async () => {
   await prisma.unitOfMeasure.deleteMany({ where: { tenantId: tenantB.id } });
   await prisma.user.deleteMany({ where: { tenantId: tenantB.id } });
   await prisma.role.deleteMany({ where: { tenantId: tenantB.id } });
+  await prisma.journalLine.deleteMany({ where: { journalEntry: { tenantId: tenantB.id } } });
+  await prisma.journalEntry.deleteMany({ where: { tenantId: tenantB.id } });
+  await prisma.glAccountMap.deleteMany({ where: { tenantId: tenantB.id } });
+  await prisma.costLayer.deleteMany({ where: { tenantId: tenantB.id } });
+  await prisma.account.deleteMany({ where: { tenantId: tenantB.id } });
   await prisma.tenant.delete({ where: { id: tenantB.id } });
 
   await prisma.$disconnect();

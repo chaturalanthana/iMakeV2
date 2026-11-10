@@ -14,10 +14,7 @@ const TABS = [
 ];
 
 const COSTING_OPTIONS = [
-  { label: 'FIFO', value: 'FIFO' },
-  { label: 'LIFO', value: 'LIFO' },
-  { label: 'Moving Average', value: 'Moving Average' },
-  { label: 'Standard Cost', value: 'Standard Cost' }
+  { label: 'FIFO', value: 'FIFO' }
 ];
 
 const STATUS_OPTIONS = [

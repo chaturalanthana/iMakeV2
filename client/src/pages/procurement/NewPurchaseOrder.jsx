@@ -170,7 +170,20 @@ export default function NewPurchaseOrder() {
             setDate(new Date(prData.date).toISOString().split('T')[0]);
             
             if (prData.items && prData.items.length > 0) {
-              setItems(prData.items.map(item => ({
+              const openLines = prData.items
+                .map(item => {
+                  const remaining = item.remainingQuantity != null ? parseFloat(item.remainingQuantity) : parseFloat(item.quantity);
+                  return {
+                    id: item.id,
+                    productId: item.productId,
+                    productName: item.product?.name || '',
+                    quantity: remaining,
+                    unitPrice: parseFloat(item.unitPrice),
+                    total: remaining * parseFloat(item.unitPrice || 0)
+                  };
+                })
+                .filter(item => item.quantity > 0);
+              setItems(openLines.length ? openLines : prData.items.map(item => ({
                 id: item.id,
                 productId: item.productId,
                 productName: item.product?.name || '',

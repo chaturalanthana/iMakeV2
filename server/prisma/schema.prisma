@@ -14,7 +14,7 @@ model Tenant {
   address               String?
   phone                 String?
   email                 String?
-  currency              String                 @default("USD")
+  currency              String                 @default("LKR")
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
   accounts              Account[]
@@ -72,6 +72,10 @@ model Tenant {
   bankReconciliations          BankReconciliation[]
   bankStatementLines           BankStatementLine[]
   bankReconciliationMatches    BankReconciliationMatch[]
+  costLayers                   CostLayer[]
+  glAccountMaps                GlAccountMap[]
+  supplierInvoices             SupplierInvoice[]
+  supplierPaymentAllocations   SupplierPaymentAllocation[]
 
   @@map("tenants")
 }
@@ -183,7 +187,7 @@ model Supplier {
   activeStatus     String?          @default("ACTIVE") @map("active_status")
   supplierCategory String?          @map("supplier_category")
   leadTime         Int?             @default(0) @map("lead_time")
-  currency         String?          @default("USD")
+  currency         String?          @default("LKR")
   creditSupplier   Boolean?         @default(false) @map("credit_supplier")
   creditPeriod     Int?             @default(0) @map("credit_period")
   paymentTerms     String?          @map("payment_terms")
@@ -203,6 +207,7 @@ model Supplier {
   products         Product[]
   purchaseOrders   PurchaseOrder[]
   purchaseRequisitions PurchaseRequisition[]
+  supplierInvoices SupplierInvoice[]
   accountsPayable  Account?         @relation("SupplierAPAccount", fields: [accountsPayableId], references: [id])
   advancePaymentAccount Account?   @relation("SupplierAdvanceAccount", fields: [advancePaymentAccountId], references: [id])
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -269,6 +274,7 @@ model Currency {
   salesInvoices   SalesInvoice[]
   salesOrders     SalesOrder[]
   salesQuotations SalesQuotation[]
+  supplierInvoices SupplierInvoice[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -292,7 +298,7 @@ model Product {
   uomId                 String?                @map("uom_id")
   productTypeId         String?                @map("product_type_id")
   cpg                   String?
-  currency              String                 @default("USD")
+  currency              String                 @default("LKR")
   hsCode                String?                @map("hs_code")
   isLocked              Boolean                @default(false) @map("is_locked")
   reorderLevel          Int                    @default(0) @map("reorder_level")
@@ -346,6 +352,8 @@ model Product {
   bomComponents         BOMItem[]              @relation("BOMComponentProducts")
   productionJobs        ProductionJob[]
   productionOrders      ProductionOrder[]      @relation("ProductProductionOrders")
+  costLayers            CostLayer[]
+  supplierInvoiceItems  SupplierInvoiceItem[]
 
   @@index([tenantId])
   @@map("products")
@@ -381,6 +389,8 @@ model Account {
   purchaseWithholdingTaxSlabs PurchaseWithholdingTaxSlab[] @relation("PurchaseWithholdingTaxSlabAccount")
   bankReconciliations     BankReconciliation[]
   bankStatementLines      BankStatementLine[]
+  glAccountMaps           GlAccountMap[]
+  supplierPayments        PaymentVoucher[]     @relation("VoucherBankAccount")
 
   @@index([tenantId])
   @@map("accounts")
@@ -433,6 +443,8 @@ model StockMovement {
   updatedAt     DateTime   @updatedAt @map("updated_at")
   createdBy     String?    @map("created_by")
   warehouseId   String?    @map("warehouse_id")
+  unitCost      Decimal    @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  value         Decimal    @default(0) @db.Decimal(19, 4)
   product       Product    @relation(fields: [productId], references: [id])
   tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   warehouse     Warehouse? @relation(fields: [warehouseId], references: [id])
@@ -549,6 +561,8 @@ model SalesDeliveryItem {
   deliveryId String        @map("delivery_id")
   productId  String        @map("product_id")
   quantity   Decimal       @db.Decimal(19, 4)
+  unitCost   Decimal       @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  costValue  Decimal       @default(0) @map("cost_value") @db.Decimal(19, 4)
   delivery   SalesDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   product    Product       @relation(fields: [productId], references: [id])
 
@@ -573,6 +587,9 @@ model SalesInvoice {
   deliveryId          String?              @map("delivery_id")
   currencyId          String?              @map("currency_id")
   exchangeRate        Decimal              @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
+  subtotal            Decimal              @default(0) @db.Decimal(19, 4)
+  taxAmount           Decimal              @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  dueDate             DateTime?            @map("due_date")
   paymentReceiptLines PaymentReceiptLine[]
   paymentReceipts     PaymentReceipt[]
   items               SalesInvoiceItem[]
@@ -616,6 +633,7 @@ model PurchaseOrder {
   exchangeRate Decimal             @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
   prId         String?             @map("pr_id")
   grns         GRN[]
+  supplierInvoices SupplierInvoice[]
   items        PurchaseOrderItem[]
   currency     Currency?           @relation(fields: [currencyId], references: [id])
   supplier     Supplier            @relation(fields: [supplierId], references: [id])
@@ -656,6 +674,7 @@ model GRN {
   currencyId    String?        @map("currency_id")
   exchangeRate  Decimal        @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
   items         GRNItem[]
+  supplierInvoices SupplierInvoice[]
   currency      Currency?      @relation(fields: [currencyId], references: [id])
   purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
   supplier      Supplier       @relation(fields: [supplierId], references: [id])
@@ -672,6 +691,7 @@ model GRNItem {
   productId        String  @map("product_id")
   quantityReceived Decimal @map("quantity_received") @db.Decimal(19, 4)
   quantityOrdered  Decimal @map("quantity_ordered") @db.Decimal(19, 4)
+  unitPrice        Decimal @default(0) @map("unit_price") @db.Decimal(19, 4)
   grn              GRN     @relation(fields: [grnId], references: [id], onDelete: Cascade)
   product          Product @relation(fields: [productId], references: [id])
 
@@ -770,6 +790,8 @@ model PaymentReceipt {
   accountId     String?              @map("account_id")
   bankName      String?              @map("bank_name")
   chequeNumber  String?              @map("cheque_number")
+  exchangeRate  Decimal              @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
+  status        String               @default("POSTED")
   lines         PaymentReceiptLine[]
   account       Account?             @relation(fields: [accountId], references: [id], onDelete: Restrict)
   customer      Customer             @relation(fields: [customerId], references: [id])
@@ -810,7 +832,12 @@ model PaymentVoucher {
   createdBy     String?              @map("created_by")
   bankName      String?              @map("bank_name")
   chequeNumber  String?              @map("cheque_number")
+  accountId     String?              @map("account_id")
+  exchangeRate  Decimal              @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
+  status        String               @default("POSTED")
   lines         PaymentVoucherLine[]
+  allocations   SupplierPaymentAllocation[]
+  account       Account?             @relation("VoucherBankAccount", fields: [accountId], references: [id])
   supplier      Supplier             @relation(fields: [supplierId], references: [id])
   tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -1733,6 +1760,111 @@ model ProductGroup {
 
   @@index([tenantId])
   @@map("product_groups")
+}
+
+// Same cost_layers table and columns as production work orders
+// (receiveLayer / issueFifo in server/src/services/production/fifo.js).
+model CostLayer {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  productId         String   @map("product_id")
+  warehouseId       String?  @map("warehouse_id")
+  quantityReceived  Decimal  @map("quantity_received") @db.Decimal(19, 4)
+  quantityRemaining Decimal  @map("quantity_remaining") @db.Decimal(19, 4)
+  unitCost          Decimal  @map("unit_cost") @db.Decimal(19, 4)
+  sourceType        String   @map("source_type")
+  sourceId          String?  @map("source_id")
+  receivedAt        DateTime @default(now()) @map("received_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([receivedAt])
+  @@map("cost_layers")
+}
+
+model GlAccountMap {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  key       String
+  accountId String   @map("account_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  account   Account  @relation(fields: [accountId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("gl_account_maps")
+}
+
+model SupplierInvoice {
+  id                String                      @id @default(uuid())
+  tenantId          String                      @map("tenant_id")
+  supplierId        String                      @map("supplier_id")
+  poId              String?                     @map("po_id")
+  grnId             String?                     @map("grn_id")
+  invoiceNumber     String                      @map("invoice_number")
+  supplierReference String?                     @map("supplier_reference")
+  date              DateTime
+  dueDate           DateTime?                   @map("due_date")
+  status            String                      @default("UNPAID")
+  currencyId        String?                     @map("currency_id")
+  exchangeRate      Decimal                     @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
+  subtotal          Decimal                     @default(0) @db.Decimal(19, 4)
+  taxAmount         Decimal                     @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  whtAmount         Decimal                     @default(0) @map("wht_amount") @db.Decimal(19, 4)
+  total             Decimal                     @db.Decimal(19, 4)
+  amountPaid        Decimal                     @default(0) @map("amount_paid") @db.Decimal(19, 4)
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+  createdBy         String?                     @map("created_by")
+  items             SupplierInvoiceItem[]
+  allocations       SupplierPaymentAllocation[]
+  currency          Currency?                   @relation(fields: [currencyId], references: [id])
+  grn               GRN?                        @relation(fields: [grnId], references: [id])
+  purchaseOrder     PurchaseOrder?              @relation(fields: [poId], references: [id])
+  supplier          Supplier                    @relation(fields: [supplierId], references: [id])
+  tenant            Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([supplierId])
+  @@map("supplier_invoices")
+}
+
+model SupplierInvoiceItem {
+  id                String          @id @default(uuid())
+  supplierInvoiceId String          @map("supplier_invoice_id")
+  productId         String          @map("product_id")
+  quantity          Decimal         @db.Decimal(19, 4)
+  unitPrice         Decimal         @map("unit_price") @db.Decimal(19, 4)
+  poUnitPrice       Decimal         @default(0) @map("po_unit_price") @db.Decimal(19, 4)
+  total             Decimal         @db.Decimal(19, 4)
+  product           Product         @relation(fields: [productId], references: [id])
+  supplierInvoice   SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([supplierInvoiceId])
+  @@index([productId])
+  @@map("supplier_invoice_items")
+}
+
+model SupplierPaymentAllocation {
+  id                String          @id @default(uuid())
+  tenantId          String          @map("tenant_id")
+  voucherId         String          @map("voucher_id")
+  supplierInvoiceId String          @map("supplier_invoice_id")
+  amount            Decimal         @db.Decimal(19, 4)
+  supplierInvoice   SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id])
+  voucher           PaymentVoucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([voucherId])
+  @@index([supplierInvoiceId])
+  @@map("supplier_payment_allocations")
 }
 
 

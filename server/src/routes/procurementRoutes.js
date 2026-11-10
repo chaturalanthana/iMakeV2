@@ -18,7 +18,14 @@ router.delete('/purchase-orders/:id', procurementController.deletePurchaseOrder)
 
 router.get('/grn', procurementController.getGrns);
 router.post('/grn', validateBody(schemas.goodsReceipt), procurementController.createGrn);
+router.post('/grn/:id/cancel', procurementController.cancelGrn);
 router.delete('/grn/:id', procurementController.deleteGrn);
+
+router.get('/supplier-invoices', procurementController.getSupplierInvoices);
+router.post('/supplier-invoices', validateBody(schemas.supplierInvoice), procurementController.postSupplierInvoice);
+router.post('/supplier-invoices/:id/cancel', procurementController.cancelSupplierInvoice);
+router.get('/supplier-aging', procurementController.getSupplierAging);
+router.get('/supplier-statement/:id', procurementController.getSupplierStatement);
 
 router.use('/tax-groups', purchaseTaxRoutes);
 router.use('/withholding-tax-groups', purchaseWithholdingTaxRoutes);

@@ -325,15 +325,16 @@ export default function NewInvoice() {
         }))
       };
 
-      if (invoiceId) {
-        await axios.put(`/api/sales/invoices/${invoiceId}`, payload, config);
-      } else {
-        const res = await axios.post('/api/sales/invoices', payload, config);
-        setInvoiceId(res.data.id);
-      }
+      const res = invoiceId
+        ? await axios.put(`/api/sales/invoices/${invoiceId}`, payload, config)
+        : await axios.post('/api/sales/invoices', payload, config);
+      if (!invoiceId) setInvoiceId(res.data.id);
       setInvoiceStatus(finalStatus);
       setLoading(false);
-      showToast('Invoice saved successfully!', 'success');
+      if (Number(res.data.taxAmount) > 0) {
+        showToast(`Tax of Rs ${Number(res.data.taxAmount).toFixed(2)} added from the customer tax group.`, 'success');
+      }
+      showToast(res.data.creditWarning ? `Invoice saved. ${res.data.creditWarning}` : 'Invoice saved successfully!', res.data.creditWarning ? 'error' : 'success');
       navigate('/sales/invoices');
     } catch (error) {
       console.error('Failed to save invoice:', error);

@@ -35,6 +35,20 @@ const getPurchaseRequisitionById = async (req, res) => {
     if (!requisition) {
       return res.status(404).json({ error: 'Purchase requisition not found' });
     }
+    const orders = await prisma.purchaseOrder.findMany({
+      where: { prId: requisition.id, tenantId: req.tenantId, status: { not: 'CANCELLED' } },
+      include: { items: true }
+    });
+    const ordered = {};
+    for (const order of orders) {
+      for (const item of order.items) {
+        ordered[item.productId] = (ordered[item.productId] || 0) + parseFloat(item.quantity);
+      }
+    }
+    for (const item of requisition.items) {
+      item.orderedQuantity = ordered[item.productId] || 0;
+      item.remainingQuantity = parseFloat(item.quantity) - item.orderedQuantity;
+    }
     res.json(requisition);
   } catch (error) {
     console.error('Failed to fetch PR details:', error);

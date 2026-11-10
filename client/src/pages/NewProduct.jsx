@@ -810,10 +810,7 @@ export default function NewProduct() {
                   <div style={{ flexGrow: 1, minWidth: 0 }}>
                     <LiveSearchDropdown
                       options={[
-                        { label: 'FIFO', value: 'FIFO' },
-                        { label: 'LIFO', value: 'LIFO' },
-                        { label: 'Moving Average', value: 'Moving Average' },
-                        { label: 'Standard Cost', value: 'Standard Cost' }
+                        { label: 'FIFO', value: 'FIFO' }
                       ]}
                       value={formData.costingMethod}
                       onChange={(val) => setFormData(prev => ({ ...prev, costingMethod: val }))}

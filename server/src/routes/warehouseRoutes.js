@@ -10,6 +10,9 @@ router.use(requireTenant);
 
 router.get('/ledger', warehouseController.getStockLedger);
 router.get('/inventory-report', warehouseController.getInventoryReport);
+router.get('/valuation', warehouseController.getValuation);
+router.post('/costing/receive', validateBody(schemas.costingReceive), warehouseController.costingReceive);
+router.post('/costing/issue', validateBody(schemas.costingIssue), warehouseController.costingIssue);
 router.get('/movements', warehouseController.getStockMovements);
 router.post('/movements', validateBody(schemas.stockMovement), warehouseController.createStockMovement);
 router.delete('/movements/:id', warehouseController.deleteStockMovement);

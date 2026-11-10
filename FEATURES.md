@@ -20,7 +20,7 @@ This document provides a comprehensive directory of all modules, interfaces, and
 ---
 
 ## 🏭 2. Production & Manufacturing Module
-- **Products Register:** Comprehensive product management including pricing, cost tracking, SKU code definitions, category/brand assignments, costing methods (FIFO, LIFO, etc.), and UOM definitions.
+- **Products Register:** Comprehensive product management including pricing, cost tracking, SKU code definitions, category/brand assignments, FIFO costing, and UOM definitions.
 - **Bill of Materials (BOM):** Multi-level structure listing raw materials, component quantities, scrap percentages, and workstation requirements to manufacture finished goods.
 - **Production Calendar:** Interactive schedule for organizing production runs, shifts, and tracking order timelines.
 - **Planning Board:** Drag-and-drop / Kanban-style interface for workstation dispatching, resource allocation, and job sequencing.
@@ -60,7 +60,7 @@ This document provides a comprehensive directory of all modules, interfaces, and
 - **Stock Receipts & Issues:** Log points for manual inventory adjustments, goods arrivals, or materials utilization.
 - **Stock Transfers:** Relocate inventory items across warehouses with system audit trails tracking stock-in-transit.
 - **Stock Adjustments:** Tool for physical stock takes, auto-calculating variances between physical counts and system balances.
-- **Stock Ledger (Movements):** Chronological ledger tracking every inventory transaction (Receipt, Issue, Transfer, Sale, Purchase) to calculate running FIFO/LIFO valuations.
+- **Stock Ledger (Movements):** Chronological ledger of receipts, issues, transfers, and adjustments. On-hand value comes from FIFO cost layers, not from a LIFO or average calculation.
 - **Inventory Report:** Tabulated overview of current stock levels, safety parameters, unit costs, and overall asset values.
 
 ---
