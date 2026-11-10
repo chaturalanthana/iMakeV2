@@ -54,7 +54,9 @@ jobs:
           fi
       - name: Apply database migrations
         working-directory: server
-        run: npx prisma migrate deploy
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
       - name: Server tests
         working-directory: server
         run: npm test
