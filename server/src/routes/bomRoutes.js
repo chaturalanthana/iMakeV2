@@ -2,6 +2,8 @@ const express = require('express');
 const bomController = require('../controllers/bomController');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
+const { validateBody } = require('../validation/validate');
+const schemas = require('../validation/schemas');
 
 const router = express.Router();
 
@@ -11,8 +13,8 @@ router.get('/', bomController.getBOMs);
 router.get('/compare', bomController.compareBOMs);
 router.get('/by-code/:productCode/:bomCode', bomController.getBOMByCode);
 router.get('/:id', bomController.getBOM);
-router.post('/', bomController.createBOM);
-router.put('/:id', bomController.updateBOM);
+router.post('/', validateBody(schemas.bomCreate), bomController.createBOM);
+router.put('/:id', validateBody(schemas.bomUpdate), bomController.updateBOM);
 router.delete('/:id', bomController.deleteBOM);
 router.post('/:id/activate', bomController.activateBOM);
 router.post('/:id/retire', bomController.retireBOM);

@@ -15,6 +15,7 @@ export default function NewWorkstation() {
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [activeTab, setActiveTab] = useState('info');
   const [recordId, setRecordId] = useState(() => (isUuid(id) ? id : ''));
@@ -79,10 +80,19 @@ export default function NewWorkstation() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.code || !formData.name) {
-      showToast('Please fill in Workstation Code and Name.', 'error');
+    const errors = {};
+    if (!String(formData.code || '').trim() || !String(formData.name || '').trim()) {
+      errors.code = 'Code and Name are required';
+      errors.name = 'Code and Name are required';
+    }
+    if (parseFloat(formData.hourlyRate || 0) < 0) errors.hourlyRate = 'Hourly rate cannot be negative';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
       return;
     }
+    setFieldErrors({});
 
     const rateVal = Math.max(0, parseFloat(formData.hourlyRate || 0) || 0);
 
@@ -109,6 +119,7 @@ export default function NewWorkstation() {
       navigate('/production/workstations');
     } catch (error) {
       console.error('Failed to save workstation:', error);
+      setFieldErrors(error.response?.data?.fields || {});
       showToast(error.response?.data?.error || 'Failed to save workstation', 'error');
     } finally {
       setSaving(false);
@@ -360,6 +371,7 @@ export default function NewWorkstation() {
                       value={formData.code}
                       onChange={handleInputChange}
                       placeholder="e.g. CUT-01"
+                      className={fieldErrors.code ? 'field-invalid' : undefined}
                       style={inputStyle}
                       required
                     />
@@ -374,6 +386,7 @@ export default function NewWorkstation() {
                       value={formData.name}
                       onChange={handleInputChange}
                       placeholder="e.g. Primary Laser Cutting Station"
+                      className={fieldErrors.name ? 'field-invalid' : undefined}
                       style={inputStyle}
                       required
                     />

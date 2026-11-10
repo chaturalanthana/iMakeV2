@@ -3,6 +3,8 @@ const { getRoles, getRoleById, createRole, updateRole, deleteRole } = require('.
 const { authenticateToken } = require('../middlewares/authMiddleware');
 const { requirePermission } = require('../middlewares/rbacMiddleware');
 const { MODULES, ACTIONS } = require('../permissions/catalog');
+const { validateBody } = require('../validation/validate');
+const schemas = require('../validation/schemas');
 
 const router = express.Router();
 
@@ -17,8 +19,8 @@ router.get('/catalog', (req, res) => {
 router.get('/:id', getRoleById);
 
 // Requires write permission
-router.post('/', requirePermission('settings', 'write'), createRole);
-router.put('/:id', requirePermission('settings', 'write'), updateRole);
+router.post('/', requirePermission('settings', 'write'), validateBody(schemas.roleBody), createRole);
+router.put('/:id', requirePermission('settings', 'write'), validateBody(schemas.roleBody), updateRole);
 router.delete('/:id', requirePermission('settings', 'write'), deleteRole);
 
 module.exports = router;

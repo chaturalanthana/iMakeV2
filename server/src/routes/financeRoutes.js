@@ -19,8 +19,8 @@ router.use('/tax-groups', taxGroupRoutes);
 // Accounts (General Ledger)
 router.get('/accounts', financeController.getAccounts);
 router.post('/accounts/template', financeController.generateAccountTemplate);
-router.post('/accounts', financeController.createAccount);
-router.put('/accounts/:id', financeController.updateAccount);
+router.post('/accounts', validateBody(schemas.account), financeController.createAccount);
+router.put('/accounts/:id', validateBody(schemas.accountUpdate), financeController.updateAccount);
 router.delete('/accounts/:id', financeController.deleteAccount);
 
 // General Ledger Transaction Lines
@@ -29,7 +29,7 @@ router.get('/trial-balance', financeController.getTrialBalance);
 
 // Journal Entries
 router.get('/journal-entries', financeController.getJournalEntries);
-router.post('/journal-entries', financeController.createJournalEntry);
+router.post('/journal-entries', validateBody(schemas.journalEntry), financeController.createJournalEntry);
 
 // Payment Receipts
 router.get('/payment-receipts', financeController.getPaymentReceipts);

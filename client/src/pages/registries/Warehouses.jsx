@@ -18,6 +18,7 @@ export default function Warehouses() {
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [formData, setFormData] = useState({
     code: '',
     name: '',
@@ -68,10 +69,15 @@ export default function Warehouses() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.code || !formData.name) {
+    const errors = {};
+    if (!formData.code) errors.code = 'Code is required.';
+    if (!formData.name) errors.name = 'Name is required.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
       showToast('Code and Name are required', 'error');
       return;
     }
+    setFieldErrors({});
 
     try {
       const config = { headers: { Authorization: `Bearer ${token}` } };

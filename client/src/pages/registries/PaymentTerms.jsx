@@ -49,8 +49,19 @@ export default function PaymentTerms() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const errors = {};
+    if (!String(formData.code || '').trim()) errors.code = 'Payment term code is required.';
+    if (!String(formData.name || '').trim()) errors.name = 'Payment term name is required.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      showToast(Object.values(errors)[0], 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

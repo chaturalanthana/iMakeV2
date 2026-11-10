@@ -110,8 +110,20 @@ export default function ChartOfAccounts() {
     setIsModalOpen(true);
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const errors = {};
+    if (!String(formData.code || '').trim()) errors.code = 'Account code is required.';
+    if (!String(formData.name || '').trim()) errors.name = 'Account name is required.';
+    if (!String(formData.type || '').trim()) errors.type = 'Account type is required.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      showToast(Object.values(errors)[0], 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

@@ -1,5 +1,18 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { syncLegacy } = require('../services/production/workOrders');
+
+const mirrorOrder = async (order, { receiptOnComplete = false, userId = null, db = prisma } = {}) => {
+  if (!order) return null;
+  return syncLegacy(db, {
+    tenantId: order.tenantId,
+    userId: userId || order.createdBy || null,
+    legacy: order,
+    kind: 'order',
+    sourceType: 'MIGRATED_ORDER',
+    receiptOnComplete
+  });
+};
 
 const getProductionOrders = async (req, res) => {
   try {
@@ -87,6 +100,10 @@ const createProductionOrder = async (req, res) => {
       }
     });
 
+    await mirrorOrder(order, {
+      userId: req.user?.userId || null,
+      receiptOnComplete: (status || 'DRAFT') === 'COMPLETED'
+    });
     res.status(201).json(order);
   } catch (error) {
     console.error('Create production order error:', error);
@@ -147,6 +164,10 @@ const updateProductionOrder = async (req, res) => {
       }
     });
 
+    await mirrorOrder(updated, {
+      userId: req.user?.userId || null,
+      receiptOnComplete: status === 'COMPLETED' && order.status !== 'COMPLETED'
+    });
     res.json(updated);
   } catch (error) {
     console.error('Update production order error:', error);

@@ -703,6 +703,8 @@ async function allocateCustomerReceipt(tx, { tenantId, receipt, allocations, cre
     base = money(base + row.amount * (num(row.invoice.exchangeRate) || 1));
   }
   const bankAccount = receipt.accountId || map[receipt.method === 'CASH' ? 'CASH' : 'BANK'];
+  const cashBase = money(invoices.reduce((sum, row) => sum + row.amount * rateOf(receipt.exchangeRate), 0));
+  const fx = money(cashBase - base);
   await postJournal(tx, {
     tenantId,
     date: receipt.date,
@@ -711,8 +713,10 @@ async function allocateCustomerReceipt(tx, { tenantId, receipt, allocations, cre
     referenceType: 'PAYMENT_RECEIPT',
     referenceId: receipt.id,
     lines: [
-      { accountId: bankAccount, debit: base, credit: 0, description: receipt.receiptNumber },
-      { accountId: map.AR, debit: 0, credit: base, description: receipt.receiptNumber }
+      { accountId: bankAccount, debit: cashBase, credit: 0, description: receipt.receiptNumber },
+      { accountId: map.AR, debit: 0, credit: base, description: receipt.receiptNumber },
+      { accountId: map.FX_GAIN, debit: 0, credit: fx > 0 ? fx : 0, description: 'Realised FX gain' },
+      { accountId: map.FX_LOSS, debit: fx < 0 ? Math.abs(fx) : 0, credit: 0, description: 'Realised FX loss' }
     ]
   });
 }
@@ -758,6 +762,8 @@ async function allocateSupplierPayment(tx, { tenantId, voucher, allocations, cre
   }
   const map = await ensureGlMap(tx, tenantId, createdBy);
   const bankAccount = voucher.accountId || map[voucher.method === 'CASH' ? 'CASH' : 'BANK'];
+  const cashBase = money(invoices.reduce((sum, row) => sum + row.amount * rateOf(voucher.exchangeRate), 0));
+  const fx = money(cashBase - base);
   await postJournal(tx, {
     tenantId,
     date: voucher.date,
@@ -767,7 +773,9 @@ async function allocateSupplierPayment(tx, { tenantId, voucher, allocations, cre
     referenceId: voucher.id,
     lines: [
       { accountId: map.AP, debit: base, credit: 0, description: voucher.voucherNumber },
-      { accountId: bankAccount, debit: 0, credit: base, description: voucher.voucherNumber }
+      { accountId: bankAccount, debit: 0, credit: cashBase, description: voucher.voucherNumber },
+      { accountId: map.FX_LOSS, debit: fx > 0 ? fx : 0, credit: 0, description: 'Realised FX loss' },
+      { accountId: map.FX_GAIN, debit: 0, credit: fx < 0 ? Math.abs(fx) : 0, description: 'Realised FX gain' }
     ]
   });
 }

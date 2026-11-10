@@ -105,6 +105,7 @@ export default function NewBOM() {
   };
 
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -650,14 +651,16 @@ export default function NewBOM() {
 
   const handleSubmit = async (e, shouldRedirect = true) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!formData.productId) {
-      showToast('Parent product is required', 'error');
+    const errors = {};
+    if (!formData.productId) errors.productId = 'Parent product is required';
+    if (formData.items.length === 0) errors.items = 'At least one component is required in the BOM';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
       return;
     }
-    if (formData.items.length === 0) {
-      showToast('At least one component is required in the BOM', 'error');
-      return;
-    }
+    setFieldErrors({});
     if (formData.items.some(item => item.productId === formData.productId)) {
       showToast('A BOM component cannot be the same as the parent product', 'error');
       return;
@@ -1260,6 +1263,7 @@ export default function NewBOM() {
                     <LiveSearchDropdown
                       options={bomApplicableProducts}
                       value={formData.productId}
+                      invalid={!!fieldErrors.productId}
                       onChange={handleParentProductChange}
                       placeholder="Select Finished Good Product..."
                       style={{ input: inputStyle }}

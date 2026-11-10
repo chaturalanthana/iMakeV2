@@ -19,6 +19,7 @@ export default function NewJournalEntry() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [entryNumber, setEntryNumber] = useState(`JE-${Date.now().toString().slice(-6)}`);
   const [description, setDescription] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [lines, setLines] = useState([
     { id: Date.now() + 1, accountId: '', description: '', debit: '', credit: '' },
     { id: Date.now() + 2, accountId: '', description: '', debit: '', credit: '' }
@@ -68,7 +69,16 @@ export default function NewJournalEntry() {
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.001;
 
   const handleSubmit = async () => {
-    if (!description || !entryNumber || !date) return showToast("Please fill header fields.", "error");
+    const errors = {};
+    if (!date) errors.date = 'Date is required.';
+    if (!description) errors.description = 'Description is required.';
+    if (!entryNumber) errors.entryNumber = 'Entry number is required.';
+    if (!lines[0]?.accountId) errors.lines = 'Add at least one account line.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      return showToast(Object.values(errors)[0], 'error');
+    }
+    setFieldErrors({});
     for (let line of lines) {
       if (!line.accountId) return showToast("All lines must have an account selected.", "error");
       if (!line.debit && !line.credit) return showToast("All lines must have a debit or credit amount.", "error");

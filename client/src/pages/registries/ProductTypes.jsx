@@ -48,8 +48,16 @@ export default function ProductTypes() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!String(formData.name || '').trim()) {
+      setFieldErrors({ name: 'Product type name is required.' });
+      showToast('Product type name is required.', 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

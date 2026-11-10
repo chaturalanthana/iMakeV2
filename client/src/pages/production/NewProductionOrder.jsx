@@ -25,6 +25,7 @@ export default function NewProductionOrder() {
   const [boms, setBoms] = useState([]);
   const [availableBoms, setAvailableBoms] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -92,8 +93,15 @@ export default function NewProductionOrder() {
   };
 
   const handleSave = async () => {
-    if (!form.productId) return showToast('Output Product is required', 'error');
-    if (parseFloat(form.quantity) <= 0) return showToast('Quantity must be greater than zero', 'error');
+    const errors = {};
+    if (!form.productId) errors.productId = 'Output Product is required';
+    if (!(parseFloat(form.quantity) > 0)) errors.quantity = 'Quantity must be greater than zero';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
 
     setSaving(true);
     try {
@@ -107,6 +115,7 @@ export default function NewProductionOrder() {
       }
       navigate('/production/orders');
     } catch (err) {
+      setFieldErrors(err.response?.data?.fields || {});
       showToast(err.response?.data?.error || 'Failed to save Production Order', 'error');
     } finally {
       setSaving(false);
@@ -134,6 +143,7 @@ export default function NewProductionOrder() {
             <LiveSearchDropdown
               options={products.map(p => ({ label: `${p.code} - ${p.name}`, value: p.id }))}
               value={form.productId}
+              invalid={!!fieldErrors.productId}
               onChange={handleProductChange}
               placeholder="Select finished or semi-finished product..."
               style={{ input: FIELD_STYLE }}
@@ -147,6 +157,7 @@ export default function NewProductionOrder() {
                 type="number" 
                 value={form.quantity} 
                 onChange={e => setForm(prev => ({ ...prev, quantity: e.target.value }))}
+                className={fieldErrors.quantity ? 'field-invalid' : undefined}
                 style={FIELD_STYLE} 
               />
             </div>

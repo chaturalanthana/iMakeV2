@@ -16,7 +16,17 @@ const DEFAULT_ACCOUNTS = [
   { key: 'REVENUE', code: '4000', name: 'Sales Revenue', type: 'REVENUE' },
   { key: 'COGS', code: '5000', name: 'Cost of Goods Sold', type: 'EXPENSE' },
   { key: 'STOCK_ADJUSTMENT', code: '5100', name: 'Stock Adjustment', type: 'EXPENSE' },
-  { key: 'PPV', code: '5200', name: 'Purchase Price Variance', type: 'EXPENSE' }
+  { key: 'PPV', code: '5200', name: 'Purchase Price Variance', type: 'EXPENSE' },
+  { key: 'INVENTORY_FG', code: '1320', name: 'Finished Goods', type: 'ASSET' },
+  { key: 'WIP', code: '1330', name: 'Work in Progress', type: 'ASSET' },
+  { key: 'ABSORBED_LABOUR', code: '5400', name: 'Absorbed Labour', type: 'EXPENSE' },
+  { key: 'ABSORBED_OVERHEAD', code: '5410', name: 'Absorbed Overhead', type: 'EXPENSE' },
+  { key: 'VARIANCE_MATERIAL', code: '5500', name: 'Production Variance - Material', type: 'EXPENSE' },
+  { key: 'VARIANCE_LABOUR', code: '5510', name: 'Production Variance - Labour', type: 'EXPENSE' },
+  { key: 'VARIANCE_OVERHEAD', code: '5520', name: 'Production Variance - Overhead', type: 'EXPENSE' },
+  { key: 'VARIANCE_SCRAP', code: '5530', name: 'Production Variance - Scrap', type: 'EXPENSE' },
+  { key: 'FX_GAIN', code: '4150', name: 'Realised FX Gain', type: 'REVENUE' },
+  { key: 'FX_LOSS', code: '5300', name: 'Realised FX Loss', type: 'EXPENSE' }
 ];
 
 async function ensureGlMap(tx, tenantId, userId) {
