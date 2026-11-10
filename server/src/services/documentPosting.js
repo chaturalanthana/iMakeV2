@@ -44,7 +44,8 @@ async function postReceiptDocument(tx, { tenantId, warehouseId, items, reference
       referenceId,
       movementType: 'GR',
       createdBy,
-      receivedAt: date
+      receivedAt: date,
+      lotNumber: item.lotNumber || null
     });
     value = money(value + result.value);
   }
@@ -744,6 +745,7 @@ async function allocateSupplierPayment(tx, { tenantId, voucher, allocations, cre
     throw new DocumentError('Allocate invoices that share one currency.', { currencyId: 'Allocate invoices that share one currency.' });
   }
   let base = 0;
+  const settled = [];
   for (const row of invoices) {
     await tx.supplierInvoice.update({
       where: { id: row.invoice.id },
@@ -759,11 +761,31 @@ async function allocateSupplierPayment(tx, { tenantId, voucher, allocations, cre
       }
     });
     base = money(base + row.amount * (num(row.invoice.exchangeRate) || 1));
+    settled.push({ invoice: row.invoice, amount: row.amount, invRate: num(row.invoice.exchangeRate) || 1 });
+  }
+  const supplier = await tx.supplier.findFirst({ where: { id: voucher.supplierId, tenantId } });
+  const slabs = await slabsFor(tx, tenantId, 'wht', supplier?.withholdingTaxGroup);
+  const voucherRate = rateOf(voucher.exchangeRate);
+  let whtForeign = 0;
+  let invoiceWhtForeign = 0;
+  let whtBase = 0;
+  let netCash = 0;
+  let whtAccount = null;
+  for (const row of settled) {
+    const invoiceTotal = num(row.invoice.total);
+    const already = num(row.invoice.whtAmount);
+    const attributed = already > 0 && invoiceTotal > 0 ? money(already * (row.amount / invoiceTotal)) : 0;
+    const parts = attributed > 0 ? [] : applySlabs(row.amount, slabs);
+    const withheld = money(parts.reduce((sum, part) => sum + part.amount, 0));
+    if (!whtAccount) whtAccount = parts.find((part) => part.accountId)?.accountId || null;
+    whtForeign = money(whtForeign + withheld);
+    invoiceWhtForeign = money(invoiceWhtForeign + attributed);
+    whtBase = money(whtBase + withheld * row.invRate);
+    netCash = money(netCash + (row.amount - withheld) * voucherRate);
   }
   const map = await ensureGlMap(tx, tenantId, createdBy);
   const bankAccount = voucher.accountId || map[voucher.method === 'CASH' ? 'CASH' : 'BANK'];
-  const cashBase = money(invoices.reduce((sum, row) => sum + row.amount * rateOf(voucher.exchangeRate), 0));
-  const fx = money(cashBase - base);
+  const fx = money(netCash - (base - whtBase));
   await postJournal(tx, {
     tenantId,
     date: voucher.date,
@@ -773,11 +795,41 @@ async function allocateSupplierPayment(tx, { tenantId, voucher, allocations, cre
     referenceId: voucher.id,
     lines: [
       { accountId: map.AP, debit: base, credit: 0, description: voucher.voucherNumber },
-      { accountId: bankAccount, debit: 0, credit: cashBase, description: voucher.voucherNumber },
+      { accountId: bankAccount, debit: 0, credit: netCash, description: voucher.voucherNumber },
+      { accountId: whtAccount || map.WHT, debit: 0, credit: whtBase, description: 'WHT' },
       { accountId: map.FX_LOSS, debit: fx > 0 ? fx : 0, credit: 0, description: 'Realised FX loss' },
       { accountId: map.FX_GAIN, debit: 0, credit: fx < 0 ? Math.abs(fx) : 0, description: 'Realised FX gain' }
     ]
   });
+
+  const gross = money(settled.reduce((sum, row) => sum + row.amount, 0));
+  const whtTotal = money(whtForeign + invoiceWhtForeign);
+  if (whtTotal > 0) {
+    const slabRate = slabs.length === 1
+      ? num(slabs[0].rate)
+      : money(whtTotal / Math.max(gross, 0.0001) * 100);
+    await tx.paymentVoucher.update({
+      where: { id: voucher.id },
+      data: { whtAmount: dec(whtTotal), whtRate: dec(slabRate) }
+    });
+    const { generateDocumentNumber } = require('../utils/codeGenerator');
+    const certificateNumber = await generateDocumentNumber(tenantId, 'whtCertificate', 'WHT', 'certificateNumber', tx);
+    await tx.whtCertificate.create({
+      data: {
+        tenantId,
+        certificateNumber,
+        voucherId: voucher.id,
+        supplierId: voucher.supplierId,
+        date: voucher.date,
+        grossAmount: dec(gross),
+        whtRate: dec(slabRate),
+        whtAmount: dec(whtTotal),
+        paymentWht: dec(whtForeign),
+        invoiceWht: dec(invoiceWhtForeign),
+        netPaid: dec(money(gross - whtForeign))
+      }
+    });
+  }
 }
 
 async function customerAging(db, tenantId) {

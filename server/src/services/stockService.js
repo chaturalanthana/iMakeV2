@@ -29,7 +29,8 @@ async function receive(tx, {
   referenceId,
   movementType = 'GR',
   createdBy,
-  receivedAt
+  receivedAt,
+  lotNumber = null
 }) {
   const qty = money(quantity);
   if (qty <= 0) {
@@ -52,7 +53,8 @@ async function receive(tx, {
       referenceType,
       referenceId: referenceId || null,
       warehouseId: warehouseId || null,
-      createdBy: createdBy || null
+      createdBy: createdBy || null,
+      lotNumber: lotNumber || null
     }
   });
   const layer = await receiveLayer(tx, {
@@ -63,6 +65,7 @@ async function receive(tx, {
     unitCost: cost,
     sourceType: referenceType,
     sourceId: referenceId || null,
+    lotNumber: lotNumber || null,
     receivedAt: when
   });
   return { layer, movement, unitCost: cost, value, quantity: qty };

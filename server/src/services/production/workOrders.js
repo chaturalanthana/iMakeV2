@@ -768,9 +768,10 @@ async function getWorkOrder(tenantId, id) {
   return wo;
 }
 
-async function createWorkOrder(tenantId, userId, body) {
+async function createWorkOrder(tenantId, userId, body, db = prisma) {
   if (!body.productId) throw new ProductionError('Product is required');
-  return createInside(prisma, {
+  const status = body.status === 'DRAFT' ? 'DRAFT' : 'CREATED';
+  return createInside(db, {
     tenantId,
     userId,
     productId: body.productId,
@@ -786,13 +787,14 @@ async function createWorkOrder(tenantId, userId, body) {
     sourceType: body.sourceType || 'MANUAL',
     sourceId: body.sourceId || null,
     salesOrderId: body.salesOrderId || null,
-    salesOrderItemId: body.salesOrderItemId || null
+    salesOrderItemId: body.salesOrderItemId || null,
+    status
   });
 }
 
 async function updateWorkOrder(tenantId, id, body) {
   const wo = await getWorkOrder(tenantId, id);
-  if (wo.status !== 'CREATED') throw new ProductionError('Only created work orders can be edited');
+  if (!['CREATED', 'DRAFT'].includes(wo.status)) throw new ProductionError('Only draft or created work orders can be edited');
   const quantity = body.quantity !== undefined ? num(body.quantity) : num(wo.quantity);
   if (!(quantity > 0)) throw new ProductionError('Quantity must be greater than zero');
   let warehouseId = wo.warehouseId;
@@ -820,8 +822,8 @@ async function updateWorkOrder(tenantId, id, body) {
 
 async function deleteWorkOrder(tenantId, id) {
   const wo = await getWorkOrder(tenantId, id);
-  if (!['CREATED', 'CANCELLED'].includes(wo.status)) {
-    throw new ProductionError('Only created or cancelled work orders can be deleted');
+  if (!['CREATED', 'DRAFT', 'CANCELLED'].includes(wo.status)) {
+    throw new ProductionError('Only draft, created, or cancelled work orders can be deleted');
   }
   if (wo.legacyJobId) {
     await prisma.productionJob.delete({ where: { id: wo.legacyJobId } });

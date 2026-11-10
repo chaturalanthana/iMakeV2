@@ -30,6 +30,7 @@ async function receiveLayer(db, {
   unitCost = 0,
   sourceType,
   sourceId = null,
+  lotNumber = null,
   receivedAt = null
 }) {
   const qty = round4(quantity);
@@ -44,6 +45,7 @@ async function receiveLayer(db, {
       unitCost: round4(unitCost || 0),
       sourceType,
       sourceId: sourceId || null,
+      lotNumber: lotNumber || null,
       receivedAt: receivedAt || new Date()
     }
   });

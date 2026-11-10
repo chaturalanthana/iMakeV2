@@ -1,5 +1,6 @@
 const express = require('express');
 const hrController = require('../controllers/hrController');
+const complianceController = require('../controllers/complianceController');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
 const { validateBody } = require('../validation/validate');
 const schemas = require('../validation/schemas');
@@ -49,6 +50,9 @@ router.get('/salary-runs/:runId/payslip/:employeeId', hrController.getPaySlip);
 
 // Payroll Preview
 router.get('/payroll-preview', hrController.getPayrollPreview);
+router.get('/statutory-rates', complianceController.statutoryRates);
+router.put('/statutory-rates', validateBody(schemas.statutoryRates), complianceController.saveStatutoryRates);
+router.get('/statutory-report', complianceController.statutoryReport);
 
 // Company Holidays
 router.get('/holidays', hrController.getHolidays);

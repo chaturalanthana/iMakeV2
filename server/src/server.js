@@ -1,6 +1,7 @@
 const app = require('./app');
 const { port } = require('./config');
 const { migrateAllTenants } = require('./services/production/workOrders');
+const { runDueReplenishment } = require('./services/replenishment');
 
 const startServer = () => {
   app.listen(port, () => {
@@ -8,6 +9,15 @@ const startServer = () => {
     migrateAllTenants().catch((error) => {
       console.error('Work order migration skipped:', error.message);
     });
+    if (process.env.NODE_ENV !== 'test') {
+      const tick = () => {
+        runDueReplenishment().catch((error) => {
+          console.error('Replenishment schedule skipped:', error.message);
+        });
+      };
+      setTimeout(tick, 15000);
+      setInterval(tick, 60 * 60 * 1000);
+    }
   });
 };
 

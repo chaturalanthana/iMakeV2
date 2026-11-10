@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import SupplierModal from '../../components/ui/SupplierModal';
@@ -50,6 +51,27 @@ export default function NewGRN() {
   ]);
 
   const isCompleted = !!grnId; // A GRN is considered read-only if it's already created/saved.
+
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => {
+        const merged = mergeScannedProduct(current, hit.product, 'quantityReceived', { onlyExisting: !!poId });
+        if (merged.error) {
+          showToast(merged.error, 'error');
+          return current;
+        }
+        return merged.items;
+      });
+      if (hit.lotNumber) showToast(`Lot ${hit.lotNumber}`, 'success');
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -280,6 +302,8 @@ export default function NewGRN() {
               )}
             </div>
           </div>
+
+          {!isCompleted && <ScanCapture onScan={onScan} placeholder="Scan item or lot" />}
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>

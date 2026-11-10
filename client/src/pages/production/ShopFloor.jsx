@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
+import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import { Factory, ArrowLeft } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -20,7 +21,6 @@ export default function ShopFloor() {
   const [orders, setOrders] = useState([]);
   const [order, setOrder] = useState(null);
   const [reasons, setReasons] = useState([]);
-  const [scan, setScan] = useState('');
   const [forms, setForms] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
 
@@ -72,13 +72,24 @@ export default function ShopFloor() {
     run();
   }, [id, loadList, loadOrder, showToast]);
 
-  const submitScan = async (event) => {
-    event.preventDefault();
+  const onScan = async (code) => {
     try {
-      const res = await axios.get('/api/work-orders/scan', { ...authConfig(), params: { code: scan.trim() } });
-      navigate(`/production/shop-floor/${res.data.id}`);
+      const hit = await lookupScan(code);
+      if (hit.kind === 'workOrder') {
+        if (!id || hit.workOrder.id !== id) navigate(`/production/shop-floor/${hit.workOrder.id}`);
+        return;
+      }
+      if (hit.kind === 'lot' && id && order) {
+        const operation = (order.operations || []).find((row) => row.status !== 'COMPLETE') || order.operations?.[0];
+        if (operation) {
+          setField(operation.id, 'lotNumber', hit.lotNumber);
+          showToast(`Lot ${hit.lotNumber}`, 'success');
+        }
+        return;
+      }
+      showToast('Scan a work order to open it, or a lot to fill the confirmation.', 'error');
     } catch (error) {
-      showToast(error.response?.data?.error || 'Work order not found', 'error');
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
     }
   };
 
@@ -139,18 +150,7 @@ export default function ShopFloor() {
     <AppLayout title="Shop Floor" icon={Factory}>
       {!id ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <form onSubmit={submitScan}>
-            <input
-              autoFocus
-              value={scan}
-              onChange={(event) => setScan(event.target.value)}
-              placeholder="Scan or type work order / job number"
-              inputMode="text"
-              autoCapitalize="characters"
-              autoComplete="off"
-              style={FIELD}
-            />
-          </form>
+          <ScanCapture onScan={onScan} placeholder="Scan or type a work order" />
           {orders.length === 0 && <div style={{ color: '#64748b', padding: '1rem 0' }}>No released work orders.</div>}
           {orders.map((row) => (
             <button
@@ -168,6 +168,7 @@ export default function ShopFloor() {
           <button onClick={() => navigate('/production/shop-floor')} style={{ ...BUTTON, background: 'transparent', color: '#475569', width: 'fit-content', minHeight: '40px' }}>
             <ArrowLeft size={16} /> Back
           </button>
+          <ScanCapture onScan={onScan} placeholder="Scan the next work order or a finished lot" />
           <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem' }}>
             <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{order.orderNumber}</div>
             <div style={{ color: '#475569' }}>{order.product?.code} — {order.product?.name}</div>

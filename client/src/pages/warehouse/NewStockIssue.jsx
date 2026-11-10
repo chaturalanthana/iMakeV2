@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
@@ -175,6 +176,26 @@ export default function NewStockIssue() {
   const isReadOnly = status === 'COMPLETED' || status === 'ISSUED';
   const isCompleted = isReadOnly;
 
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => {
+        const merged = mergeScannedProduct(current, hit.product, 'quantity');
+        if (merged.error) return current;
+        return merged.items.map((item) => ({
+          ...item,
+          total: (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)
+        }));
+      });
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
+
   return (
     <AppLayout title={id ? `Stock Issue - ${giNumber}` : "New Stock Issue"} icon={ArrowUpRight}>
       {isInitialLoad ? (
@@ -217,6 +238,8 @@ export default function NewStockIssue() {
               )}
             </div>
           </div>
+
+          {!isReadOnly && <ScanCapture onScan={onScan} placeholder="Scan item or lot to issue" />}
 
           {/* Header Details */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>

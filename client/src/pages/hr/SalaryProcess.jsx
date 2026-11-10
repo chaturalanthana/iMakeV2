@@ -111,6 +111,7 @@ export default function SalaryProcess() {
               <button onClick={handlePreview} disabled={previewLoading} style={{ height: '40px', padding: '0 1.5rem', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.4)', background: '#fff', color: 'var(--accent)', fontWeight: 800, fontSize: '0.875rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Play size={16} /> {previewLoading ? 'Loading...' : 'Preview Payroll'}
               </button>
+              <button type="button" onClick={() => navigate('/hr/statutory')} style={{ height: '40px', padding: '0 1rem', borderRadius: '8px', border: '2px solid rgba(255,255,255,0.4)', background: 'transparent', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>EPF / ETF</button>
             </div>
           </div>
 
@@ -203,6 +204,7 @@ export default function SalaryProcess() {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 800, color: '#1e293b' }}>{emp.name}</div>
                     <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{emp.empCode}{emp.department ? ` · ${emp.department}` : ''}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#475569' }}>Employer EPF {Number(emp.epfEmployer || 0).toFixed(2)} · ETF {Number(emp.etfEmployer || 0).toFixed(2)}</div>
                   </div>
                   <div style={{ display: 'flex', gap: '2rem', textAlign: 'right' }}>
                     <div><div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase' }}>Gross</div><div style={{ fontWeight: 800, color: '#1e293b' }}>${gross.toFixed(2)}</div></div>

@@ -10,6 +10,7 @@ import CustomerModal from '../../components/ui/CustomerModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DeliveryPrintModal from '../../components/ui/DeliveryPrintModal';
 import TransactionalTable from '../../components/ui/TransactionalTable';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import { Truck, ArrowLeft, Plus, Trash2, Search, Filter, Calendar, User, Package, Calculator, UserPlus, Printer } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -504,6 +505,31 @@ export default function NewDelivery() {
                 )}
               </div>
             </div>
+          )}
+
+          {!isCompleted && (
+            <ScanCapture
+              onScan={async (code) => {
+                try {
+                  const hit = await lookupScan(code);
+                  if (!hit.product) {
+                    showToast('Scan an item or a lot.', 'error');
+                    return;
+                  }
+                  setItems((current) => {
+                    const merged = mergeScannedProduct(current, hit.product, 'quantity', { onlyExisting: !!baseOrderId });
+                    if (merged.error) {
+                      showToast(merged.error, 'error');
+                      return current;
+                    }
+                    return merged.items;
+                  });
+                } catch (error) {
+                  showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+                }
+              }}
+              placeholder="Scan item or lot to deliver"
+            />
           )}
 
           {/* Product Section Header */}
