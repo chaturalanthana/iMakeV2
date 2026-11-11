@@ -5,6 +5,9 @@ import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import { BookOpen, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import ExportButton from '../../components/ui/ExportButton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
+import FormField, { TextControl } from '../../components/ui/FormField';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { useToast } from '../../context/ToastContext';
 
 export default function JournalEntries() {
@@ -17,6 +20,9 @@ export default function JournalEntries() {
   const itemsPerPage = 15;
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const [reverseTarget, setReverseTarget] = useState(null);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => { fetchData(); }, 250);
@@ -41,14 +47,19 @@ export default function JournalEntries() {
     }
   };
 
-  const reverseEntry = async (entry) => {
-    const reason = window.prompt('Reason for reversing this journal');
-    if (!reason) return;
+  const reverseEntry = async () => {
+    if (!reason.trim()) {
+      setReasonError('A reason is required.');
+      showToast('A reason is required.', 'error');
+      return;
+    }
     try {
-      await axios.post(`/api/finance/journal-entries/${entry.id}/reverse`, { reason }, {
+      await axios.post(`/api/finance/journal-entries/${reverseTarget.id}/reverse`, { reason }, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       showToast('Journal reversed', 'success');
+      setReverseTarget(null);
+      setReason('');
       fetchData();
     } catch (error) {
       showToast(error.response?.data?.error || 'Could not reverse the journal', 'error');
@@ -115,13 +126,11 @@ export default function JournalEntries() {
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>{entry.entryNumber}</td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-main)' }}>{entry.description || '-'}</td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem' }}>
-                            <span style={{ color: entry.isPosted ? '#059669' : '#d97706', fontSize: '0.75rem', fontWeight: 700 }}>
-                              {entry.status || (entry.isPosted ? 'POSTED' : 'DRAFT')}
-                            </span>
+                            <StatusBadge status={entry.status || (entry.isPosted ? 'POSTED' : 'DRAFT')} />
                           </td>
                           <td style={{ padding: '0.6rem 1rem', textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                             {entry.isPosted && entry.status !== 'REVERSED' && (
-                              <button type="button" onClick={() => reverseEntry(entry)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fef2f2', color: '#b91c1c', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Reverse</button>
+                              <button type="button" onClick={() => { setReason(''); setReasonError(''); setReverseTarget(entry); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fef2f2', color: '#b91c1c', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Reverse</button>
                             )}
                           </td>
                         </tr>
@@ -144,6 +153,18 @@ export default function JournalEntries() {
               </tbody>
             </table>
           </div>
+          <ConfirmModal
+            isOpen={Boolean(reverseTarget)}
+            onClose={() => setReverseTarget(null)}
+            onConfirm={reverseEntry}
+            title="Reverse journal"
+            message="A reason is required."
+            confirmText="Reverse"
+          >
+            <FormField label="Reason" required error={reasonError} variant="modal">
+              <TextControl value={reason} invalid={Boolean(reasonError)} onChange={(event) => { setReason(event.target.value); setReasonError(''); }} />
+            </FormField>
+          </ConfirmModal>
         </>
       )}
     </AppLayout>

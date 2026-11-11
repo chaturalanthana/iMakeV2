@@ -333,6 +333,10 @@ describe('Work order lifecycle', () => {
   test('sales orders and MRP create draft work orders', async () => {
     await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
     await prisma.costLayer.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.salesOrder.updateMany({
+      where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+      data: { status: 'CANCELLED' }
+    });
     const sales = await request(app)
       .post('/api/sales/orders')
       .set(auth())
@@ -392,6 +396,11 @@ describe('Work order lifecycle', () => {
   });
 
   test('a sales order makes only the quantity stock cannot cover', async () => {
+    await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.salesOrder.updateMany({
+      where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+      data: { status: 'CANCELLED' }
+    });
     await prisma.stockMovement.create({
       data: {
         tenantId: tenant.id,

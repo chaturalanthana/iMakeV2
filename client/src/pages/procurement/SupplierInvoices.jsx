@@ -5,6 +5,8 @@ import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { FileText, Plus } from 'lucide-react';
 
 export default function SupplierInvoices() {
@@ -17,7 +19,10 @@ export default function SupplierInvoices() {
       try {
         const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
         const res = await axios.get('/api/procurement/supplier-invoices', config);
-        setRows(res.data);
+        setRows((res.data || []).map((row) => ({
+          ...row,
+          supplierName: row.supplier?.name || ''
+        })));
       } catch (error) {
         console.error(error);
       } finally {
@@ -31,8 +36,8 @@ export default function SupplierInvoices() {
     { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
     { header: 'Invoice', accessor: 'invoiceNumber', fontWeight: 600 },
     { header: 'Supplier ref', accessor: 'supplierReference', render: (row) => row.supplierReference || '-' },
-    { header: 'Supplier', accessor: 'supplier', render: (row) => row.supplier?.name },
-    { header: 'Status', accessor: 'status' },
+    { header: 'Supplier', accessor: 'supplierName' },
+    { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
     {
       header: 'Total',
       accessor: 'total',
@@ -43,17 +48,18 @@ export default function SupplierInvoices() {
 
   return (
     <AppLayout title="Supplier Invoices" icon={FileText}>
-      {loading ? <PageSkeleton /> : (
+      {loading ? <PageSkeleton type="table" /> : (
         <DataTable
           columns={columns}
           data={rows}
           searchPlaceholder="Search supplier invoices..."
-          searchKeys={['invoiceNumber', 'supplier.name', 'supplierReference']}
+          searchKeys={['invoiceNumber', 'supplierName', 'supplierReference', 'status']}
           onRowClick={(row) => navigate(recordPath('/procurement/supplier-invoices', row, 'invoiceNumber'))}
+          noDataMessage="No supplier invoices found."
           extraActions={(
-            <button onClick={() => navigate('/procurement/supplier-invoices/new')} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '0.55rem 1.25rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
-              <Plus size={16} /> New Invoice
-            </button>
+            <ActionButton icon={Plus} onClick={() => navigate('/procurement/supplier-invoices/new')}>
+              New Invoice
+            </ActionButton>
           )}
         />
       )}

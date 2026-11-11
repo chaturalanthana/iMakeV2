@@ -5,11 +5,27 @@ import AppLayout from '../components/layout/AppLayout';
 import DataTable from '../components/ui/DataTable';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import PageSkeleton from '../components/ui/PageSkeleton';
+import StatusBadge from '../components/ui/StatusBadge';
+import FormField, { TextControl } from '../components/ui/FormField';
 import { CheckCircle, ClipboardList } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { approvalDecisionSchema, firstZodError } from '../validation/controls';
 
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+
+const tabStyle = (active) => ({
+  padding: '0.75rem 0',
+  border: 'none',
+  background: 'none',
+  borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+  color: active ? 'var(--accent)' : 'var(--text-muted)',
+  fontWeight: 600,
+  fontSize: '0.85rem',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px'
+});
 
 export default function Approvals() {
   const navigate = useNavigate();
@@ -18,13 +34,17 @@ export default function Approvals() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState('');
   const [dialog, setDialog] = useState(null);
+  const [selected, setSelected] = useState(null);
 
   const load = async (which = tab) => {
     setLoading(true);
     try {
       const res = await axios.get('/api/approvals', { ...auth(), params: { status: which } });
-      setRows(res.data || []);
+      const list = res.data || [];
+      setRows(list);
+      setSelected(list[0] || null);
     } catch (error) {
       showToast(error.response?.data?.error || 'Could not load approvals', 'error');
     } finally {
@@ -38,7 +58,9 @@ export default function Approvals() {
     if (!dialog) return;
     const parsed = approvalDecisionSchema.safeParse({ action: dialog.action, reason });
     if (!parsed.success) {
-      showToast(firstZodError(parsed.error), 'error');
+      const message = firstZodError(parsed.error);
+      setReasonError(message);
+      showToast(message, 'error');
       return;
     }
     try {
@@ -46,6 +68,7 @@ export default function Approvals() {
       showToast('Approval updated', 'success');
       setDialog(null);
       setReason('');
+      setReasonError('');
       load();
     } catch (error) {
       showToast(error.response?.data?.error || 'Could not update the approval', 'error');
@@ -56,7 +79,7 @@ export default function Approvals() {
     { header: 'Document', accessor: 'documentNumber', fontWeight: 600, render: (row) => row.documentNumber || row.documentId },
     { header: 'Type', accessor: 'documentType' },
     { header: 'Amount', accessor: 'amount' },
-    { header: 'Status', accessor: 'status', render: (row) => <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>{row.status}</span> },
+    { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
     { header: 'Level', accessor: 'currentLevel' },
     {
       header: 'Actions',
@@ -69,9 +92,9 @@ export default function Approvals() {
           )}
           {tab === 'pending' && (
             <>
-              <button type="button" onClick={() => { setReason(''); setDialog({ id: row.id, action: 'APPROVE' }); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#ecfdf5', color: '#047857', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Approve</button>
-              <button type="button" onClick={() => { setReason(''); setDialog({ id: row.id, action: 'RETURN' }); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fffbeb', color: '#b45309', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Return</button>
-              <button type="button" onClick={() => { setReason(''); setDialog({ id: row.id, action: 'REJECT' }); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fef2f2', color: '#b91c1c', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Reject</button>
+              <button type="button" onClick={() => { setReason(''); setReasonError(''); setDialog({ id: row.id, action: 'APPROVE' }); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#ecfdf5', color: '#047857', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Approve</button>
+              <button type="button" onClick={() => { setReason(''); setReasonError(''); setDialog({ id: row.id, action: 'RETURN' }); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fffbeb', color: '#b45309', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Return</button>
+              <button type="button" onClick={() => { setReason(''); setReasonError(''); setDialog({ id: row.id, action: 'REJECT' }); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fef2f2', color: '#b91c1c', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Reject</button>
             </>
           )}
         </div>
@@ -84,21 +107,29 @@ export default function Approvals() {
       {loading && !rows.length ? <PageSkeleton type="table" /> : (
         <>
           <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
-            <button type="button" onClick={() => setTab('pending')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: tab === 'pending' ? '2px solid var(--accent)' : '2px solid transparent', color: tab === 'pending' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>Pending</button>
-            <button type="button" onClick={() => setTab('completed')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: tab === 'completed' ? '2px solid var(--accent)' : '2px solid transparent', color: tab === 'completed' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle size={16} /> Completed</button>
+            <button type="button" onClick={() => setTab('pending')} style={tabStyle(tab === 'pending')}>Pending</button>
+            <button type="button" onClick={() => setTab('completed')} style={tabStyle(tab === 'completed')}><CheckCircle size={16} /> Completed</button>
           </div>
-          <DataTable columns={columns} data={rows} loading={loading} searchPlaceholder="Search by document..." searchKeys={['documentNumber', 'documentType', 'status']} />
-          {tab === 'pending' && rows[0]?.actions && (
+          <DataTable
+            columns={columns}
+            data={rows}
+            loading={loading}
+            searchPlaceholder="Search by document..."
+            searchKeys={['documentNumber', 'documentType', 'status']}
+            noDataMessage="No approvals in this list."
+            onRowClick={setSelected}
+          />
+          {selected?.actions?.length > 0 && (
             <div style={{ marginTop: '1.5rem' }}>
-              <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.75rem' }}>Latest request history</h3>
               <DataTable
                 columns={[
                   { header: 'When', accessor: 'createdAt', render: (row) => new Date(row.createdAt).toLocaleString() },
-                  { header: 'Action', accessor: 'action' },
+                  { header: 'Action', accessor: 'action', render: (row) => <StatusBadge status={row.action} /> },
                   { header: 'Reason', accessor: 'reason' }
                 ]}
-                data={rows[0].actions}
+                data={selected.actions}
                 searchKeys={[]}
+                noDataMessage="No history for this request."
               />
             </div>
           )}
@@ -112,12 +143,14 @@ export default function Approvals() {
             type={dialog?.action === 'APPROVE' ? 'info' : 'danger'}
           >
             {dialog?.action !== 'APPROVE' && (
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Reason"
-                style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.95rem', boxSizing: 'border-box' }}
-              />
+              <FormField label="Reason" required error={reasonError} variant="modal">
+                <TextControl
+                  value={reason}
+                  invalid={Boolean(reasonError)}
+                  onChange={(event) => { setReason(event.target.value); setReasonError(''); }}
+                  placeholder="Reason"
+                />
+              </FormField>
             )}
           </ConfirmModal>
         </>

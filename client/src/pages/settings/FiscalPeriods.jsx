@@ -4,6 +4,8 @@ import { CalendarDays } from 'lucide-react';
 import AppLayout from '../../components/layout/AppLayout';
 import DataTable from '../../components/ui/DataTable';
 import PageSkeleton from '../../components/ui/PageSkeleton';
+import FilterBar from '../../components/ui/FilterBar';
+import FormField, { TextControl, SelectControl } from '../../components/ui/FormField';
 import { useToast } from '../../context/ToastContext';
 
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
@@ -48,6 +50,7 @@ export default function FiscalPeriods() {
       showToast('Stock setting saved', 'success');
     } catch (error) {
       showToast(error.response?.data?.error || 'Could not save the setting', 'error');
+      setAllowNegative(!value);
     }
   };
 
@@ -55,30 +58,30 @@ export default function FiscalPeriods() {
     <AppLayout title="Fiscal periods" icon={CalendarDays}>
       {loading ? <PageSkeleton type="table" /> : (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>Year</label>
-              <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ width: '120px', paddingLeft: '12px', paddingRight: '12px', height: '38px', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.85rem' }} />
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', fontWeight: 600 }}>
+          <FilterBar variant="card">
+            <FormField label="Year" icon={CalendarDays} width="160px">
+              <TextControl type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+            </FormField>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', fontWeight: 600, height: '42px' }}>
               <input type="checkbox" checked={allowNegative} onChange={(e) => saveStock(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }} />
               Allow negative stock
             </label>
-          </div>
+          </FilterBar>
           <DataTable
             columns={[
               { header: 'Period', accessor: 'month', fontWeight: 600, render: (row) => `${MONTHS[row.month - 1]} ${row.year}` },
               { header: 'Status', accessor: 'status', render: (row) => (
-                <select value={row.status} onClick={(e) => e.stopPropagation()} onChange={(e) => setStatus(row, e.target.value)} style={{ height: '32px', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                <SelectControl value={row.status} onClick={(e) => e.stopPropagation()} onChange={(e) => setStatus(row, e.target.value)} style={{ width: '160px' }}>
                   <option value="OPEN">Open</option>
                   <option value="SOFT_CLOSED">Soft-closed</option>
                   <option value="CLOSED">Closed</option>
-                </select>
+                </SelectControl>
               ) }
             ]}
             data={periods}
             searchKeys={['status']}
             searchPlaceholder="Search status..."
+            noDataMessage="No periods for this year."
           />
         </>
       )}
