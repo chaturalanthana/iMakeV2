@@ -19,6 +19,7 @@ const getApprovalCount = async (req, res) => {
     });
     res.json({ count });
   } catch (error) {
+    console.error('Failed to count approvals', error);
     res.status(500).json({ error: 'Failed to count approvals' });
   }
 };
@@ -36,6 +37,7 @@ const getApprovals = async (req, res) => {
     });
     res.json(rows.map(present));
   } catch (error) {
+    console.error('Failed to load approvals', error);
     res.status(500).json({ error: 'Failed to load approvals' });
   }
 };

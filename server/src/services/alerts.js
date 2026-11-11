@@ -248,6 +248,7 @@ async function listAlerts(db, tenantId, role) {
     });
     const covered = new Set();
     policies.forEach((policy) => {
+      if (!policy.product || !policy.warehouse) return;
       covered.add(policy.productId);
       const floor = num(policy.minQty) > 0 ? num(policy.minQty) : num(policy.reorderPoint);
       if (!(floor > 0)) return;

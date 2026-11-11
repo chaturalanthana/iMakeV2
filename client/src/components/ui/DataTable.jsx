@@ -30,6 +30,7 @@ export default function DataTable({
   serverPage = 1
 }) {
   const usingServer = typeof onServerQuery === 'function';
+  const records = Array.isArray(data) ? data : [];
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -194,11 +195,11 @@ export default function DataTable({
   // 1. Handle local search/filtering if searchKeys are provided
   const getFilteredData = () => {
     if (usingServer || !searchQuery.trim() || searchKeys.length === 0) {
-      return data;
+      return records;
     }
     
     const query = searchQuery.toLowerCase();
-    return data.filter(item => 
+    return records.filter(item => 
       searchKeys.some(key => {
         const val = item[key];
         if (val === null || val === undefined) return false;
@@ -256,7 +257,7 @@ export default function DataTable({
 
   useEffect(() => {
     if (!selectable) return;
-    const next = selectedIds.filter((id) => data.some((row) => row.id === id));
+    const next = selectedIds.filter((id) => records.some((row) => row.id === id));
     if (next.length !== selectedIds.length) commitSelection(next);
   }, [data, selectable]);
 
@@ -279,7 +280,7 @@ export default function DataTable({
   const pageNow = usingServer ? serverPage : currentPage;
   const totalPages = Math.ceil(totalRows / itemsPerPage) || 1;
   const startIndex = (pageNow - 1) * itemsPerPage;
-  const paginatedData = usingServer ? data : sortedData.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedData = usingServer ? records : sortedData.slice(startIndex, startIndex + itemsPerPage);
 
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import AppLayout from '../components/layout/AppLayout';
@@ -37,18 +37,29 @@ export default function Approvals() {
   const [reasonError, setReasonError] = useState('');
   const [dialog, setDialog] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const requestRef = useRef(0);
 
   const load = async (which = tab) => {
+    const request = requestRef.current + 1;
+    requestRef.current = request;
     setLoading(true);
+    setLoadError('');
     try {
-      const res = await axios.get('/api/approvals', { ...auth(), params: { status: which } });
-      const list = res.data || [];
+      const res = await axios.get('/api/approvals', { ...auth(), params: { status: which }, timeout: 20000 });
+      if (request !== requestRef.current) return;
+      const list = Array.isArray(res.data) ? res.data : [];
       setRows(list);
-      setSelected(list[0] || null);
+      setSelected((current) => list.find((row) => row.id === current?.id) || list[0] || null);
     } catch (error) {
-      showToast(error.response?.data?.error || 'Could not load approvals', 'error');
+      if (request !== requestRef.current) return;
+      const message = error.response?.data?.error || 'Could not load approvals';
+      setRows([]);
+      setSelected(null);
+      setLoadError(message);
+      showToast(message, 'error');
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) setLoading(false);
     }
   };
 
@@ -104,7 +115,7 @@ export default function Approvals() {
 
   return (
     <AppLayout title="Approvals" icon={ClipboardList}>
-      {loading && !rows.length ? <PageSkeleton type="table" /> : (
+      {loading && !rows.length && !loadError ? <PageSkeleton type="table" /> : (
         <>
           <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
             <button type="button" onClick={() => setTab('pending')} style={tabStyle(tab === 'pending')}>Pending</button>
@@ -116,10 +127,10 @@ export default function Approvals() {
             loading={loading}
             searchPlaceholder="Search by document..."
             searchKeys={['documentNumber', 'documentType', 'status']}
-            noDataMessage="No approvals in this list."
+            noDataMessage={loadError || 'No approvals in this list.'}
             onRowClick={setSelected}
           />
-          {selected?.actions?.length > 0 && (
+          {Array.isArray(selected?.actions) && selected.actions.length > 0 && (
             <div style={{ marginTop: '1.5rem' }}>
               <DataTable
                 columns={[

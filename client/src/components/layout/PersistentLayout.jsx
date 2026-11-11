@@ -7,7 +7,13 @@ import { useLayout } from '../../context/LayoutContext';
 
 export default function PersistentLayout() {
   const isAuthenticated = !!localStorage.getItem('token');
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  let user = {};
+  try {
+    const stored = JSON.parse(localStorage.getItem('user') || '{}');
+    user = stored && typeof stored === 'object' ? stored : {};
+  } catch {
+    user = {};
+  }
   const { title, icon: Icon } = useLayout();
   const navigate = useNavigate();
   const [alertCount, setAlertCount] = useState(0);
