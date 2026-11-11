@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import axios from 'axios';
 import App from './App.jsx';
+import { DialogHost } from './components/ui/appDialog.jsx';
 import './index.css';
 
 // Global Axios response interceptor to handle token expiry / invalidation
@@ -20,5 +21,6 @@ axios.interceptors.response.use(
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
+    <DialogHost />
   </React.StrictMode>,
 );

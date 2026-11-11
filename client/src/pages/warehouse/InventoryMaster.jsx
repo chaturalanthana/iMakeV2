@@ -10,6 +10,7 @@ import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
 import { Layers, Plus } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { promptDialog } from '../../components/ui/appDialog';
 
 export default function InventoryMaster({ kind }) {
   const config = MASTERS[kind];
@@ -216,7 +217,7 @@ const MASTERS = {
       { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
       { header: 'Retest', accessor: 'retestStatus', render: (row) => <StatusBadge status={row.retestStatus} /> },
       actionColumn('Release', async (row) => {
-        const proposed = window.prompt('Revised expiry (YYYY-MM-DD)', '2027-12-31');
+        const proposed = await promptDialog({ title: 'QA retest', message: 'Revised expiry (YYYY-MM-DD)', defaultValue: '2027-12-31', confirmText: 'Propose' });
         if (!proposed) return;
         try {
           await axios.post(`/api/inventory/batches/${row.id}/retest`, { proposedExpiry: proposed, evidence: 'Lab note' }, { headers: headers() });
@@ -254,7 +255,7 @@ const MASTERS = {
       { header: 'Warehouse', accessor: 'warehouse', render: (row) => row.warehouse?.code || '-' },
       { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
       actionColumn('Renumber', async (row) => {
-        const code = window.prompt('New pallet code');
+        const code = await promptDialog({ title: 'Renumber pallet', message: 'New pallet code', confirmText: 'Renumber' });
         if (!code) return;
         try {
           await axios.post(`/api/inventory/pallets/${row.id}/renumber`, { code }, { headers: headers() });

@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, ScrollText, Briefcase
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, ScrollText, Briefcase, Boxes
 } from 'lucide-react';
 
 export default function Sidebar() {

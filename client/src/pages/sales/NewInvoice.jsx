@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
@@ -353,7 +354,7 @@ export default function NewInvoice() {
   };
 
   const handleDeleteInvoice = async () => {
-    if (!window.confirm("Are you sure you want to permanently delete this sales invoice? This action cannot be undone. Consider appending a credit note instead if this was finalized.")) return;
+    if (!(await confirmDialog({ title: 'Delete invoice', message: 'Permanently delete this sales invoice? A credit note is the usual way to correct a finalized invoice. This cannot be undone.' }))) return;
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { 
   Calendar, ChevronLeft, ChevronRight, Plus, X, CheckCircle, 
   Trash2, Pencil, Clock, Settings, ShieldAlert, Sliders, Play
@@ -182,7 +183,7 @@ export default function ProductionCalendar() {
 
   const handleDeleteEvent = async (id, name, e) => {
     if (e) e.stopPropagation();
-    if (!window.confirm(`Delete event "${name}"?`)) return;
+    if (!(await confirmDialog({ title: 'Delete event', message: `Delete event "${name}"?` }))) return;
     try {
       await axios.delete(`/api/production-calendar/events/${id}`, authConfig());
       showToast('Event deleted successfully', 'success');
@@ -239,7 +240,7 @@ export default function ProductionCalendar() {
   };
 
   const handleDeleteShift = async (id, name) => {
-    if (!window.confirm(`Delete shift pattern "${name}"?`)) return;
+    if (!(await confirmDialog({ title: 'Delete shift', message: `Delete shift pattern "${name}"?` }))) return;
     try {
       await axios.delete(`/api/production-calendar/shifts/${id}`, authConfig());
       showToast('Shift pattern removed', 'success');

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useMatch, useNavigate, useParams } from 'react-router-dom';
+import { promptDialog } from '../../components/ui/appDialog';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
@@ -376,7 +377,7 @@ export function RfqDetail() {
     }
   };
   const select = async (quotationId) => {
-    const reason = window.prompt('Why was this supplier selected?');
+    const reason = await promptDialog({ title: 'Select supplier', message: 'Why was this supplier selected?', confirmText: 'Select' });
     if (!reason) return;
     try {
       await axios.post(`/api/phase2/rfqs/${id}/select`, { quotationId, reason, savePrices: true }, authConfig());

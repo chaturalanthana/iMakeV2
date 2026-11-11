@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
@@ -316,7 +317,7 @@ export default function NewOrder() {
   };
 
   const handleDeleteOrder = async () => {
-    if (!window.confirm("Are you sure you want to permanently delete this sales order? This action cannot be undone.")) return;
+    if (!(await confirmDialog({ title: 'Delete sales order', message: 'Permanently delete this sales order? This cannot be undone.' }))) return;
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

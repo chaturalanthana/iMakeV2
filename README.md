@@ -24,7 +24,7 @@ npm ci
 npm ci --prefix server
 npm ci --prefix client
 npm --prefix server run db:migrate
-npx --prefix server prisma generate
+npm --prefix server exec -- prisma generate
 ```
 
 4. Run the API and the React app:

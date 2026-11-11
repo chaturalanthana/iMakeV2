@@ -8,6 +8,7 @@ import {
   Unlink, PlusCircle, Printer, Link2
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { confirmDialog } from '../../components/ui/appDialog';
 
 export default function BankReconciliation() {
   const { showToast } = useToast();
@@ -209,7 +210,7 @@ export default function BankReconciliation() {
     } catch (err) {
       console.error(err);
       if (err.response?.data?.difference) {
-        if (window.confirm(`${err.response.data.error}\nDo you want to FORCE approve as authorized manager?`)) {
+        if (await confirmDialog({ title: 'Force approval', message: `${err.response.data.error} Force approve as an authorized manager?`, confirmText: 'Force approve', type: 'primary' })) {
           handleFinalize(true);
           return;
         }

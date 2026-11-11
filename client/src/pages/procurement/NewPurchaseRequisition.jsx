@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
@@ -283,7 +284,7 @@ export default function NewPurchaseRequisition() {
   };
 
   const handleDeleteRequisition = async () => {
-    if (!window.confirm("Are you sure you want to permanently delete this purchase requisition? This action cannot be undone.")) return;
+    if (!(await confirmDialog({ title: 'Delete requisition', message: 'Permanently delete this purchase requisition? This cannot be undone.' }))) return;
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

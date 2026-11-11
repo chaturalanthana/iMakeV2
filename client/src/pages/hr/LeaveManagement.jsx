@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import { CalendarDays, Plus, X, CheckCircle, Pencil, Trash2, Clock, Check, XCircle } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { confirmDialog } from '../../components/ui/appDialog';
 
 const FIELD_STYLE = { width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none', fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box' };
 const LABEL_STYLE = { fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' };
@@ -92,7 +93,7 @@ export default function LeaveManagement() {
   };
 
   const handleDeleteType = async (id, name) => {
-    if (!window.confirm(`Delete leave type "${name}"?`)) return;
+    if (!(await confirmDialog({ title: 'Delete leave type', message: `Delete leave type "${name}"?` }))) return;
     try {
       await axios.delete(`/api/hr/leave-types/${id}`, authConfig());
       showToast('Leave type deleted', 'success');

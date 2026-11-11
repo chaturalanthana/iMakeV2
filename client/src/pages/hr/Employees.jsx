@@ -5,6 +5,7 @@ import AppLayout from '../../components/layout/AppLayout';
 import DataTable from '../../components/ui/DataTable';
 import { Users, Plus, Pencil, Trash2, X, CheckCircle, Briefcase, Phone, Mail, Calendar } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { confirmDialog } from '../../components/ui/appDialog';
 
 const FIELD_STYLE = { width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none', fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box' };
 const LABEL_STYLE = { fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' };
@@ -80,7 +81,7 @@ export default function Employees() {
   };
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Delete employee "${name}"?`)) return;
+    if (!(await confirmDialog({ title: 'Delete employee', message: `Delete employee "${name}"?` }))) return;
     try {
       await axios.delete(`/api/hr/employees/${id}`, authConfig());
       showToast('Employee deleted', 'success');
