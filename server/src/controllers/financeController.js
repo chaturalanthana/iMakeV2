@@ -89,7 +89,9 @@ const createJournalEntry = async (req, res) => {
             accountId: line.accountId,
             debit: parseFloat(line.debit || 0),
             credit: parseFloat(line.credit || 0),
-            description: line.description
+            description: line.description,
+            costCenterId: line.costCenterId || null,
+            profitCenterId: line.profitCenterId || null
           }))
         }
       },

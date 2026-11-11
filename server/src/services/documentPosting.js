@@ -3,6 +3,7 @@ const { ensureGlMap, postJournal, reverseJournal } = require('./glService');
 const { slabsFor, applySlabs, sumBucket } = require('./taxService');
 const { DocumentError } = require('./errors');
 const { num, money, dec, rateOf, addDays } = require('./money');
+const { capitalDebitKey, recordCwipReceipt } = require('./phase2/capitalTreatment');
 
 function requireWarehouse(warehouseId) {
   if (!warehouseId) {
@@ -208,6 +209,7 @@ async function grnUnitPrice(tx, { poId, productId, item }) {
 
 async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, createdBy }) {
   const rate = rateOf(grn.exchangeRate);
+  const debitKey = await capitalDebitKey(tx, tenantId, grn.poId);
   if (grn.poId) {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: grn.poId, tenantId },
@@ -247,19 +249,23 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
       where: { id: item.id },
       data: { unitPrice: dec(unitPrice) }
     });
-    const result = await receive(tx, {
-      tenantId,
-      productId: item.productId,
-      warehouseId: grn.warehouseId,
-      quantity: qty,
-      unitCost: baseUnitCost,
-      referenceType: 'GRN',
-      referenceId: grn.id,
-      movementType: 'GR',
-      createdBy,
-      receivedAt: grn.date
-    });
-    inventoryValue = money(inventoryValue + result.value);
+    if (debitKey === 'CWIP') {
+      inventoryValue = money(inventoryValue + money(qty * baseUnitCost));
+    } else {
+      const result = await receive(tx, {
+        tenantId,
+        productId: item.productId,
+        warehouseId: grn.warehouseId,
+        quantity: qty,
+        unitCost: baseUnitCost,
+        referenceType: 'GRN',
+        referenceId: grn.id,
+        movementType: 'GR',
+        createdBy,
+        receivedAt: grn.date
+      });
+      inventoryValue = money(inventoryValue + result.value);
+    }
   }
 
   await inventoryJournal(tx, {
@@ -269,10 +275,13 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
     referenceType: 'GRN',
     referenceId: grn.id,
     description: `Goods receipt ${grn.grnNumber}`,
-    debitKey: 'INVENTORY',
+    debitKey,
     creditKey: 'GRNI',
     amount: inventoryValue
   });
+  if (debitKey === 'CWIP') {
+    await recordCwipReceipt(tx, { tenantId, grn, amount: inventoryValue, createdBy });
+  }
   await refreshPoReceiptStatus(tx, grn.poId);
   return inventoryValue;
 }
