@@ -1,4 +1,5 @@
 const { DocumentError } = require('../errors');
+const { writeAudit } = require('../auditService');
 const { money, num, dec, rateOf } = require('../money');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
 
@@ -274,7 +275,7 @@ async function createRfq(tx, input) {
     throw new DocumentError('Add at least one product.', { lines: 'Add at least one product.' });
   }
   const rfqNumber = await generateDocumentNumber(input.tenantId, 'requestForQuotation', 'RFQ', 'rfqNumber', tx);
-  return tx.requestForQuotation.create({
+  const created = await tx.requestForQuotation.create({
     data: {
       tenantId: input.tenantId,
       rfqNumber,
@@ -296,6 +297,35 @@ async function createRfq(tx, input) {
     },
     include: { lines: true, invitations: true }
   });
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'CREATE',
+    entity: 'RFQ',
+    entityId: created.id,
+    after: { rfqNumber, status: created.status }
+  });
+  return created;
+}
+
+async function cancelRfq(tx, input) {
+  const text = String(input.reason || '').trim();
+  if (text.length < 3) throw new DocumentError('A reason is required.', { reason: 'A reason is required.' });
+  const rfq = await tx.requestForQuotation.findFirst({ where: { id: input.id, tenantId: input.tenantId } });
+  if (!rfq) throw new DocumentError('RFQ not found.', { id: 'RFQ not found.' });
+  if (rfq.status === 'CANCELLED') throw new DocumentError('This RFQ is already cancelled.', { status: 'This RFQ is already cancelled.' });
+  if (rfq.status === 'CLOSED') throw new DocumentError('A closed RFQ is kept. It cannot be deleted.', { status: 'A closed RFQ is kept. It cannot be deleted.' });
+  const updated = await tx.requestForQuotation.update({ where: { id: rfq.id }, data: { status: 'CANCELLED' } });
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'STATUS',
+    entity: 'RFQ',
+    entityId: rfq.id,
+    before: { status: rfq.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function addQuotation(tx, input) {
@@ -585,6 +615,7 @@ module.exports = {
   assertPoGuards,
   saveTradeProfile,
   createRfq,
+  cancelRfq,
   addQuotation,
   selectQuotation,
   comparison,

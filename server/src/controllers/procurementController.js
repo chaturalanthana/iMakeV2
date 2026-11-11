@@ -3,6 +3,9 @@ const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { sendError } = require('../services/errors');
 const { purchaseLineQuantities } = require('../services/inventory/itemMaster');
 const { money } = require('../services/money');
+const { writeAudit } = require('../services/auditService');
+const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
+const { respondList } = require('../services/listQuery');
 const {
   postGrn,
   assertPrQuantity,
@@ -18,17 +21,28 @@ const { assertPoGuards, saveTradeProfile, copyClassification } = require('../ser
 // --- PURCHASE ORDERS ---
 const getPurchaseOrders = async (req, res) => {
   try {
-    const orders = await prisma.purchaseOrder.findMany({
+    await respondList(req, res, {
+      model: prisma.purchaseOrder,
       where: { tenantId: req.tenantId },
-      include: { 
+      include: {
         supplier: true,
         currency: true,
         items: { include: { product: true } },
         grns: { where: { status: { not: 'CANCELLED' } }, include: { items: true } }
       },
-      orderBy: { date: 'desc' }
+      search: ['poNumber', 'status', 'supplier.name'],
+      sortFields: ['date', 'poNumber', 'total', 'status', 'createdAt'],
+      defaultSort: 'date',
+      filename: 'purchase-orders.xlsx',
+      exportHeaders: ['date', 'poNumber', 'supplier', 'total', 'status'],
+      toExport: (row) => ({
+        date: row.date?.toISOString?.().slice(0, 10) || '',
+        poNumber: row.poNumber,
+        supplier: row.supplier?.name || '',
+        total: String(row.total),
+        status: row.status
+      })
     });
-    res.json(orders);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch purchase orders' });
   }
@@ -47,6 +61,10 @@ const createPurchaseOrder = async (req, res) => {
       tradeType === 'IMPORT' ? 'IPO' : 'PO',
       'poNumber'
     );
+    const rule = await loadRule(prisma, req.tenantId, 'PO');
+    const needed = levelsForAmount(rule, totalAmount);
+    const hold = Boolean(rule?.enabled && needed.length);
+    const requestedStatus = status || 'PENDING';
 
     const order = await prisma.$transaction(async (tx) => {
       if (prId) await assertPrQuantity(tx, { tenantId: req.tenantId, prId, items: items || [] });
@@ -67,7 +85,7 @@ const createPurchaseOrder = async (req, res) => {
           supplierId,
           poNumber,
           date: new Date(date),
-          status: status || 'PENDING',
+          status: hold ? 'PENDING_APPROVAL' : requestedStatus,
           total: totalAmount,
           currencyId: currencyId || null,
           exchangeRate: parseFloat(exchangeRate) || 1.0,
@@ -101,6 +119,24 @@ const createPurchaseOrder = async (req, res) => {
       for (const row of guards.exceptions) {
         await tx.priceException.create({ data: { tenantId: req.tenantId, poId: created.id, ...row } });
       }
+      if (rule?.enabled) {
+        await submitForApproval(tx, {
+          tenantId: req.tenantId,
+          documentType: 'PO',
+          documentId: created.id,
+          documentNumber: created.poNumber,
+          amount: totalAmount,
+          userId: req.user.userId
+        });
+      }
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user.userId,
+        action: 'CREATE',
+        entity: 'PO',
+        entityId: created.id,
+        after: created
+      });
       return created;
     });
 
@@ -113,10 +149,51 @@ const createPurchaseOrder = async (req, res) => {
 const deletePurchaseOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.purchaseOrder.delete({ where: { id, tenantId: req.tenantId } });
+    const existing = await prisma.purchaseOrder.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Purchase order not found' });
+    if (String(existing.status).toUpperCase() !== 'DRAFT') {
+      return res.status(400).json({ error: 'Purchase orders cannot be deleted. Cancel an unposted order, or reverse its receipts first.' });
+    }
+    await prisma.purchaseOrder.delete({ where: { id } });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user?.userId,
+      action: 'DELETE',
+      entity: 'PO',
+      entityId: id,
+      before: existing,
+      after: null
+    });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete purchase order' });
+  }
+};
+
+const cancelPurchaseOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
+    const existing = await prisma.purchaseOrder.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Purchase order not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Purchase order is already cancelled.' });
+    if (['RECEIVED', 'PARTIALLY_RECEIVED'].includes(existing.status)) {
+      return res.status(400).json({ error: 'Reverse the goods receipts before cancelling this purchase order.' });
+    }
+    const updated = await prisma.purchaseOrder.update({ where: { id }, data: { status: 'CANCELLED' } });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user?.userId,
+      action: 'STATUS',
+      entity: 'PO',
+      entityId: id,
+      before: existing,
+      after: { ...updated, reason }
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel purchase order');
   }
 };
 
@@ -194,6 +271,12 @@ const createGrn = async (req, res) => {
     if (!warehouseId) {
       return res.status(400).json({ error: 'Warehouse is required' });
     }
+    if (poId) {
+      const po = await prisma.purchaseOrder.findFirst({ where: { id: poId, tenantId: req.tenantId } });
+      if (po && ['PENDING_APPROVAL', 'REJECTED', 'RETURNED', 'CANCELLED'].includes(po.status)) {
+        return res.status(400).json({ error: 'This purchase order is not approved for receipt.' });
+      }
+    }
 
     let grnPrefix = 'GRN';
     if (poId) {
@@ -270,6 +353,8 @@ const cancelGrn = async (req, res) => {
     const existing = await prisma.gRN.findFirst({ where: { id, tenantId: req.tenantId } });
     if (!existing) return res.status(404).json({ error: 'GRN not found' });
     if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'GRN is already cancelled.' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
     const billed = await prisma.supplierInvoice.count({
       where: { grnId: id, tenantId: req.tenantId, status: { not: 'CANCELLED' } }
     });
@@ -286,6 +371,15 @@ const cancelGrn = async (req, res) => {
       });
       await tx.gRN.update({ where: { id }, data: { status: 'CANCELLED' } });
       await refreshPoReceiptStatus(tx, existing.poId);
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user?.userId,
+        action: 'REVERSE',
+        entity: 'GRN',
+        entityId: id,
+        before: existing,
+        after: { status: 'CANCELLED', reason }
+      });
     });
     res.json({ success: true, cancelled: true });
   } catch (error) {
@@ -293,7 +387,28 @@ const cancelGrn = async (req, res) => {
   }
 };
 
-const deleteGrn = async (req, res) => cancelGrn(req, res);
+const deleteGrn = async (req, res) => {
+  try {
+    const existing = await prisma.gRN.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'GRN not found' });
+    if (String(existing.status).toUpperCase() !== 'DRAFT') {
+      return res.status(400).json({ error: 'Posted receipts cannot be deleted. Reverse the receipt and give a reason.' });
+    }
+    await prisma.gRN.delete({ where: { id: existing.id } });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user?.userId,
+      action: 'DELETE',
+      entity: 'GRN',
+      entityId: existing.id,
+      before: existing,
+      after: null
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete GRN' });
+  }
+};
 
 const getSupplierInvoices = async (req, res) => {
   try {
@@ -337,6 +452,14 @@ const postSupplierInvoice = async (req, res) => {
       qtyTolerance: req.body.qtyTolerance != null ? parseFloat(req.body.qtyTolerance) : 0,
       createdBy: req.user.userId
     }));
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      action: 'CREATE',
+      entity: 'SUPPLIER_INVOICE',
+      entityId: invoice.id,
+      after: { invoiceNumber: invoice.invoiceNumber, supplierReference: invoice.supplierReference, total: String(invoice.total) }
+    });
     res.status(201).json(invoice);
   } catch (error) {
     return sendError(res, error, 'Failed to create supplier invoice');
@@ -349,6 +472,8 @@ const cancelSupplierInvoice = async (req, res) => {
     const existing = await prisma.supplierInvoice.findFirst({ where: { id, tenantId: req.tenantId } });
     if (!existing) return res.status(404).json({ error: 'Supplier invoice not found' });
     if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Supplier invoice is already cancelled.' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
     if (money(existing.amountPaid) > 0.0001) {
       return res.status(400).json({ error: 'Remove the payment allocation before cancelling this invoice.' });
     }
@@ -362,6 +487,15 @@ const cancelSupplierInvoice = async (req, res) => {
         description: existing.invoiceNumber
       });
       await tx.supplierInvoice.update({ where: { id }, data: { status: 'CANCELLED' } });
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user?.userId,
+        action: 'REVERSE',
+        entity: 'SUPPLIER_INVOICE',
+        entityId: id,
+        before: existing,
+        after: { status: 'CANCELLED', reason }
+      });
     });
     res.json({ success: true, cancelled: true });
   } catch (error) {
@@ -409,6 +543,7 @@ module.exports = {
   createPurchaseOrder,
   updatePurchaseOrder,
   deletePurchaseOrder,
+  cancelPurchaseOrder,
   getGrns,
   createGrn,
   deleteGrn,

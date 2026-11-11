@@ -9,6 +9,7 @@ import DatePicker from '../../components/ui/DatePicker';
 import CustomerModal from '../../components/ui/CustomerModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import OrderPrintModal from '../../components/ui/OrderPrintModal';
+import ActivityPanel from '../../components/ui/ActivityPanel';
 import TransactionalTable from '../../components/ui/TransactionalTable';
 import { Receipt, ArrowLeft, Plus, Trash2, Search, Filter, Calendar, User, Package, Calculator, UserPlus, Printer } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -459,7 +460,11 @@ export default function NewInvoice() {
             <button onClick={() => setActiveTab('primary')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'primary' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'primary' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Receipt size={16} /> Primary Details
             </button>
+            <button onClick={() => setActiveTab('history')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'history' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'history' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Receipt size={16} /> Activity / History
+            </button>
           </div>
+          {activeTab === 'history' && <ActivityPanel entity="SALES_INVOICE" entityId={invoiceId} />}
 
           {activeTab === 'primary' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
@@ -520,6 +525,7 @@ export default function NewInvoice() {
             </div>
           )}
 
+          {activeTab !== 'history' && <>
           {/* Product Section Header */}
           {!isCompleted && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '2.5rem' }}>
@@ -542,6 +548,7 @@ export default function NewInvoice() {
               lockLines={!!baseOrderId || !!baseDeliveryId}
             />
           </div>
+          </>}
 
           <OrderPrintModal 
             isOpen={isPrintModalOpen} 

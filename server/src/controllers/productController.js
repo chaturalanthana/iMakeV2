@@ -1,21 +1,16 @@
 const prisma = require('../lib/prisma');
+const { respondList } = require('../services/listQuery');
+const { writeAudit } = require('../services/auditService');
 const { DocumentError, sendError } = require('../services/errors');
 const { prepareItem, SENSITIVE_BULK, OPERATIONAL_BULK } = require('../services/inventory/itemMaster');
 
 const getProducts = async (req, res) => {
   try {
-    const q = String(req.query.q || '').trim();
     const where = { tenantId: req.tenantId };
-    if (q) {
-      where.OR = [
-        { code: { contains: q, mode: 'insensitive' } },
-        { name: { contains: q, mode: 'insensitive' } },
-        { barcode: { contains: q, mode: 'insensitive' } },
-        { sku: { contains: q, mode: 'insensitive' } },
-        { description: { contains: q, mode: 'insensitive' } }
-      ];
-    }
-    const products = await prisma.product.findMany({
+    if (req.query.categoryId) where.categoryId = req.query.categoryId;
+    if (req.query.brand) where.brand = { name: String(req.query.brand) };
+    await respondList(req, res, {
+      model: prisma.product,
       where,
       include: {
         category: true,
@@ -31,9 +26,19 @@ const getProducts = async (req, res) => {
         currencyRel: true,
         productGroupRel: true
       },
-      orderBy: { createdAt: 'desc' }
+      search: ['code', 'name', 'barcode', 'sku', 'description'],
+      sortFields: ['code', 'name', 'createdAt', 'sellingPrice', 'costPrice'],
+      defaultSort: 'createdAt',
+      filename: 'items.xlsx',
+      exportHeaders: ['code', 'name', 'sellingPrice', 'costPrice', 'activeStatus'],
+      toExport: (row) => ({
+        code: row.code,
+        name: row.name,
+        sellingPrice: String(row.sellingPrice ?? ''),
+        costPrice: String(row.costPrice ?? ''),
+        activeStatus: row.activeStatus || ''
+      })
     });
-    res.json(products);
   } catch (error) {
     console.error('Fetch products error:', error);
     res.status(500).json({ error: 'Failed to fetch products' });

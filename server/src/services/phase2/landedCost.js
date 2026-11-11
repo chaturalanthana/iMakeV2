@@ -1,4 +1,5 @@
 const { DocumentError } = require('../errors');
+const { writeAudit } = require('../auditService');
 const { ensureGlMap, postJournal } = require('../glService');
 const { money, num, dec, rateOf } = require('../money');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
@@ -158,6 +159,14 @@ async function postLandedCost(tx, input) {
       });
     }
   }
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'POST',
+    entity: 'LANDED_COST',
+    entityId: created.id,
+    after: { status: created.status, grnId: grn.id }
+  });
   return created;
 }
 

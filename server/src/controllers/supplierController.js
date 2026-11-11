@@ -1,12 +1,24 @@
 const prisma = require('../lib/prisma');
+const { respondList } = require('../services/listQuery');
+const { writeAudit } = require('../services/auditService');
 
 const getSuppliers = async (req, res) => {
   try {
-    const suppliers = await prisma.supplier.findMany({
+    await respondList(req, res, {
+      model: prisma.supplier,
       where: { tenantId: req.tenantId },
-      orderBy: { createdAt: 'desc' }
+      search: ['code', 'name', 'email', 'phone'],
+      sortFields: ['name', 'code', 'createdAt'],
+      defaultSort: 'createdAt',
+      filename: 'suppliers.xlsx',
+      exportHeaders: ['code', 'name', 'email', 'phone'],
+      toExport: (row) => ({
+        code: row.code,
+        name: row.name,
+        email: row.email || '',
+        phone: row.phone || ''
+      })
     });
-    res.json(suppliers);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch suppliers' });
   }

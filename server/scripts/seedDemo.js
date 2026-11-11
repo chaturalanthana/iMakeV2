@@ -12,6 +12,7 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../src/lib/prisma');
 const { seedTenantRoles } = require('../src/permissions/catalog');
 const { seedTenantFinance } = require('../src/services/glService');
+const { ensureDefaultRules } = require('../src/services/approvalService');
 const { postReceiptDocument } = require('../src/services/documentPosting');
 const { syncRoutingForBom } = require('../src/services/production/routing');
 const { ensureReasonCodes } = require('../src/services/production/workOrders');
@@ -215,6 +216,7 @@ async function main() {
     });
     await seedTenantRoles(tx, created.id);
     await seedTenantFinance(tx, created.id, 'LKR');
+    await ensureDefaultRules(tx, created.id);
     const role = await tx.role.findUnique({
       where: { tenantId_name: { tenantId: created.id, name: 'Super Admin' } }
     });

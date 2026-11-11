@@ -1,5 +1,6 @@
 const { DocumentError } = require('../errors');
 const { ensureGlMap, postJournal } = require('../glService');
+const { setFiscalStatus } = require('../periodService');
 const { money, num, dec } = require('../money');
 const { allocateShares } = require('./math');
 const { runDepreciation } = require('./assets');
@@ -64,11 +65,19 @@ async function completeStep(tx, input) {
   });
   const remaining = close.steps.filter((row) => row.id !== step.id && row.status === 'PENDING');
   const nextStatus = remaining.length ? 'OPEN' : 'SOFT';
-  return tx.periodClose.update({
+  const saved = await tx.periodClose.update({
     where: { id: close.id },
     data: { status: nextStatus },
     include: { steps: { orderBy: { sequence: 'asc' } } }
   });
+  const fiscal = await setFiscalStatus(tx, {
+    tenantId: input.tenantId,
+    year: close.year,
+    month: close.month,
+    status: nextStatus === 'SOFT' ? 'SOFT_CLOSED' : 'OPEN',
+    userId: input.completedBy || input.createdBy || null
+  });
+  return { ...saved, fiscalStatus: fiscal.status };
 }
 
 async function runAllocations(tx, input) {
@@ -184,11 +193,19 @@ async function postClosingEntries(tx, input) {
   }
   await runAllocations(tx, { tenantId: input.tenantId, year: close.year, month: close.month, createdBy: input.createdBy });
   await closeProfitAndLoss(tx, { tenantId: input.tenantId, year: close.year, month: close.month, createdBy: input.createdBy, closeId: close.id });
-  return tx.periodClose.update({
+  const saved = await tx.periodClose.update({
     where: { id: close.id },
     data: { status: 'HARD' },
     include: { steps: { orderBy: { sequence: 'asc' } } }
   });
+  const fiscal = await setFiscalStatus(tx, {
+    tenantId: input.tenantId,
+    year: close.year,
+    month: close.month,
+    status: 'CLOSED',
+    userId: input.createdBy || null
+  });
+  return { ...saved, fiscalStatus: fiscal.status };
 }
 
 async function saveAllocationRule(tx, input) {

@@ -43,20 +43,24 @@ router.post('/material-requests', validateBody(schemas.materialRequest), invento
 router.post('/material-requests/:id/approve', inventory.approveRequest);
 router.post('/material-requests/:id/pick', inventory.pickRequest);
 router.post('/material-requests/:id/fulfil', validateBody(schemas.inventoryFulfil), inventory.fulfilRequest);
+router.post('/material-requests/:id/cancel', inventory.cancelRequest);
 
 router.get('/transfers', inventory.listTransfers);
 router.post('/transfers', validateBody(schemas.inventoryTransfer), inventory.saveTransfer);
 router.post('/transfers/:id/ship', inventory.shipTransfer);
 router.post('/transfers/:id/receive', inventory.receiveTransfer);
+router.post('/transfers/:id/cancel', inventory.cancelTransfer);
 
 router.get('/returns', inventory.listReturns);
 router.post('/returns', validateBody(schemas.inventoryReturn), inventory.saveReturn);
 router.post('/returns/:id/post', inventory.postReturn);
+router.post('/returns/:id/cancel', inventory.cancelReturn);
 
 router.get('/cycle-counts', inventory.listCounts);
 router.post('/cycle-counts', validateBody(schemas.inventoryCount), inventory.saveCount);
 router.post('/cycle-counts/:id/finance', validateBody(schemas.inventoryDecision), inventory.financeCount);
 router.post('/cycle-counts/:id/post', inventory.postCount);
+router.post('/cycle-counts/:id/cancel', inventory.cancelCount);
 
 router.get('/allocations', inventory.listAllocations);
 

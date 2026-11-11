@@ -6,6 +6,7 @@ import FilterBar from '../../components/ui/FilterBar';
 import ActionButton from '../../components/ui/ActionButton';
 import SummaryCard from '../../components/ui/SummaryCard';
 import Section, { EmptyState } from '../../components/ui/Section';
+import ExportButton from '../../components/ui/ExportButton';
 import { Scale, Printer, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -36,9 +37,12 @@ export default function TrialBalance() {
       <FilterBar
         variant="inline"
         actions={(
-          <ActionButton variant="secondary" icon={Printer} onClick={() => window.print()}>
-            Print Report
-          </ActionButton>
+          <>
+            <ExportButton url="/api/finance/trial-balance" filename="trial-balance.xlsx" />
+            <ActionButton variant="secondary" icon={Printer} onClick={() => window.print()}>
+              Print Report
+            </ActionButton>
+          </>
         )}
       >
         <span style={{ fontSize: '0.85rem', fontWeight: 600, color: balanced ? '#16a34a' : '#dc2626' }}>

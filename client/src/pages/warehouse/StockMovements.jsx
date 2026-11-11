@@ -6,6 +6,8 @@ import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import { Layers, ArrowDownRight, ArrowUpRight, BarChart2, Search, FileText, Calendar } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import ExportButton from '../../components/ui/ExportButton';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 
@@ -28,7 +30,8 @@ export default function StockMovements() {
   const [endDate, setEndDate] = useState(today);
 
   // Ledger Data
-  const [ledger, setLedger] = useState({ openingBalance: 0, movements: [] });
+  const [ledger, setLedger] = useState({ openingBalance: 0, movements: [], total: 0, page: 1 });
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     fetchInitialData();
@@ -40,7 +43,7 @@ export default function StockMovements() {
     } else {
       setLedger({ openingBalance: 0, movements: [] });
     }
-  }, [selectedProduct, startDate, endDate, warehouseId]);
+  }, [selectedProduct, startDate, endDate, warehouseId, page]);
 
   const fetchInitialData = async () => {
     try {
@@ -65,6 +68,8 @@ export default function StockMovements() {
       const token = localStorage.getItem('token');
       const params = {
         productId: selectedProduct.id,
+        page,
+        pageSize: 15
       };
       if (warehouseId) params.warehouseId = warehouseId;
       if (startDate) {
@@ -242,6 +247,18 @@ export default function StockMovements() {
                     <tr style={{ backgroundColor: '#f0fdf4', borderTop: '2px solid #e2e8f0' }}>
                       <td colSpan="5" style={{ padding: '1rem', fontSize: '0.9rem', fontWeight: 800, color: '#065f46', textAlign: 'right', textTransform: 'uppercase' }}>End Balance</td>
                       <td style={{ padding: '1rem', fontSize: '1rem', fontWeight: 800, color: '#065f46', textAlign: 'right' }}>{closingBalance}</td>
+                    </tr>
+                    <tr>
+                      <td colSpan="6" style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Page {ledger.page || page} of {Math.max(1, Math.ceil((ledger.total || 0) / 15))}</span>
+                          <ExportButton url="/api/warehouse/movements" filename="stock-movements.xlsx" params={{ productId: selectedProduct?.id, type: undefined }} />
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: '5px', borderRadius: '4px', border: '1px solid var(--border-color)', background: '#fff' }}><ChevronLeft size={18} /></button>
+                            <button type="button" onClick={() => setPage((p) => p + 1)} disabled={page >= Math.ceil((ledger.total || 0) / 15)} style={{ padding: '5px', borderRadius: '4px', border: '1px solid var(--border-color)', background: '#fff' }}><ChevronRight size={18} /></button>
+                          </div>
+                        </div>
+                      </td>
                     </tr>
                   </>
                 )}

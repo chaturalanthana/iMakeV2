@@ -2,6 +2,11 @@ import React from 'react';
 
 const COLORS = {
   PENDING: '#d97706',
+  PENDING_APPROVAL: '#d97706',
+  RETURNED: '#d97706',
+  SOFT_CLOSED: '#d97706',
+  REJECTED: '#dc2626',
+  REVERSED: '#dc2626',
   CREATED: '#475569',
   DRAFT: '#64748b',
   CONFIRMED: '#0369a1',
@@ -20,7 +25,6 @@ const COLORS = {
   RECEIVED: '#059669',
   IN_TRANSIT: '#7c3aed',
   COUNTED: '#d97706',
-  REJECTED: '#dc2626',
   SUPERSEDED: '#64748b',
   MATCHED: '#059669',
   PAID: '#059669',
@@ -38,7 +42,6 @@ const COLORS = {
   CWIP: '#7c3aed',
   DISPOSED: '#475569',
   BOUNCED: '#dc2626',
-  REJECTED: '#dc2626',
   APPROVED: '#059669',
   MATCHED_WITH_VARIANCE: '#d97706',
   WARNING: '#d97706',

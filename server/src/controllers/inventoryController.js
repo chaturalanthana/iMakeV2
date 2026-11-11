@@ -19,16 +19,20 @@ const {
   postBatchReceipt,
   createMaterialRequest,
   approveMaterialRequest,
+  cancelMaterialRequest,
   buildPickList,
   fulfilMaterialRequest,
   createTransfer,
   shipTransfer,
+  cancelTransfer,
   receiveTransfer,
   createReturn,
   postReturn,
+  cancelReturn,
   createCycleCount,
   financeCycleCount,
   postCycleCount,
+  cancelCycleCount,
   movementReport,
   agingReport,
   positionReport,
@@ -264,6 +268,18 @@ module.exports = {
   }),
   postCount: wrap(async (req, res) => {
     res.json(await prisma.$transaction((tx) => postCycleCount(tx, { tenantId: tenant(req), id: req.params.id, createdBy: req.user?.userId })));
+  }),
+  cancelCount: wrap(async (req, res) => {
+    res.json(await prisma.$transaction((tx) => cancelCycleCount(tx, { tenantId: tenant(req), id: req.params.id, createdBy: req.user?.userId, reason: req.body?.reason })));
+  }),
+  cancelRequest: wrap(async (req, res) => {
+    res.json(await prisma.$transaction((tx) => cancelMaterialRequest(tx, { tenantId: tenant(req), id: req.params.id, createdBy: req.user?.userId, reason: req.body?.reason })));
+  }),
+  cancelTransfer: wrap(async (req, res) => {
+    res.json(await prisma.$transaction((tx) => cancelTransfer(tx, { tenantId: tenant(req), id: req.params.id, createdBy: req.user?.userId, reason: req.body?.reason })));
+  }),
+  cancelReturn: wrap(async (req, res) => {
+    res.json(await prisma.$transaction((tx) => cancelReturn(tx, { tenantId: tenant(req), id: req.params.id, createdBy: req.user?.userId, reason: req.body?.reason })));
   }),
   listAllocations: wrap(async (req, res) => {
     await releaseExpired(prisma, tenant(req));

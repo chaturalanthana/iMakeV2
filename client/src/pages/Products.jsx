@@ -8,6 +8,7 @@ import LiveSearchDropdown from '../components/ui/LiveSearchDropdown';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import PageSkeleton from '../components/ui/PageSkeleton';
 import DataTable from '../components/ui/DataTable';
+import ExportButton from '../components/ui/ExportButton';
 import ProductBatchModal from '../components/ui/ProductBatchModal';
 import ColumnSelector from '../components/ui/ColumnSelector';
 import { Plus, Archive, SlidersHorizontal, Trash2 } from 'lucide-react';
@@ -54,11 +55,13 @@ export default function Products() {
   const [filterBrand, setFilterBrand] = useState('');
   const [columnKeys, setColumnKeys] = useState(DEFAULT_COLUMN_KEYS);
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+  const [query, setQuery] = useState({ page: 1, q: '', sort: 'createdAt', dir: 'desc' });
+  const [total, setTotal] = useState(0);
   const columnSaveTimer = useRef(null);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [query, filterCategory, filterBrand]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -67,13 +70,14 @@ export default function Products() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
       const [prodRes, attrRes, taxRes, columnRes] = await Promise.all([
-        axios.get('/api/products', config),
+        axios.get('/api/products', { ...config, params: { page: query.page, pageSize: 15, q: query.q || undefined, sort: query.sort || undefined, dir: query.dir || undefined, categoryId: filterCategory || undefined, brand: filterBrand || undefined } }),
         axios.get('/api/products/attributes', config),
         axios.get('/api/finance/tax-groups', config).catch(() => ({ data: [] })),
         axios.get('/api/me/preferences/products-columns', config).catch(() => ({ data: { value: null } }))
       ]);
       
-      setProducts(prodRes.data);
+      setProducts(prodRes.data.items || []);
+      setTotal(prodRes.data.total || 0);
       setAttributes(attrRes.data);
       setTaxGroups(taxRes.data || []);
       const savedColumns = Array.isArray(columnRes.data?.value)
@@ -127,11 +131,7 @@ export default function Products() {
   };
 
   // Pre-filtering for DataTable
-  const filteredProducts = products.filter(item => {
-    const matchesCategory = filterCategory === '' || item.categoryId === filterCategory;
-    const matchesBrand = filterBrand === '' || item.brand?.name === filterBrand;
-    return matchesCategory && matchesBrand;
-  });
+  const filteredProducts = products;
 
   const columns = [
     ...columnKeys.map((key) => COLUMN_DEFS.find((column) => column.key === key)).filter(Boolean),
@@ -195,6 +195,7 @@ export default function Products() {
           <SlidersHorizontal size={16} /> Update {selectedIds.length}
         </button>
       )}
+      <ExportButton url="/api/products" filename="items.xlsx" params={{ q: query.q, sort: query.sort, dir: query.dir, categoryId: filterCategory, brand: filterBrand }} />
       <button onClick={() => navigate('/products/new')} style={{
         display: 'flex', alignItems: 'center', gap: '7px',
         padding: '0.55rem 1.25rem',
@@ -228,6 +229,9 @@ export default function Products() {
             loading={loading}
             searchPlaceholder="Search by name or SKU..."
             searchKeys={['name', 'code']}
+            onServerQuery={(next) => setQuery((prev) => ({ ...prev, q: next.q ?? prev.q, page: next.page || 1, sort: next.sort || prev.sort, dir: next.dir || prev.dir }))}
+            serverTotal={total}
+            serverPage={query.page}
             extraActions={extraActions}
             selectable
             selectedIds={selectedIds}

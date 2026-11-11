@@ -77,6 +77,9 @@ describe('phase 1 inventory and warehouse', () => {
       await prisma.customer.deleteMany({ where });
       await prisma.supplier.deleteMany({ where });
       await prisma.account.deleteMany({ where });
+      await prisma.auditLog.deleteMany({ where });
+      await prisma.approvalAction.deleteMany({ where });
+      await prisma.approvalRequest.deleteMany({ where });
       await prisma.user.deleteMany({ where });
       await prisma.role.deleteMany({ where });
       await prisma.tenant.delete({ where: { id } }).catch(() => {});

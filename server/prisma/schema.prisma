@@ -94,6 +94,11 @@ model Tenant {
   operationsSetting            OperationsSetting?
   statutorySetting             StatutorySetting?
   whtCertificates              WhtCertificate[]
+  approvalRules                ApprovalRule[]
+  approvalRequests             ApprovalRequest[]
+  approvalActions              ApprovalAction[]
+  auditLogs                    AuditLog[]
+  fiscalPeriods                FiscalPeriod[]
   financeSetting               FinanceSetting?
   orgCenters                   OrgCenter[]
   budgets                      Budget[]
@@ -519,6 +524,7 @@ model JournalEntry {
   referenceType String?       @map("reference_type")
   referenceId   String?       @map("reference_id")
   isPosted      Boolean       @default(false) @map("is_posted")
+  status        String        @default("POSTED")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   createdBy     String?       @map("created_by")
@@ -2310,8 +2316,9 @@ model ReplenishmentLine {
 model OperationsSetting {
   id              String    @id @default(uuid())
   tenantId        String    @unique @map("tenant_id")
-  replenishDaily  Boolean   @default(false) @map("replenish_daily")
-  lastReplenishOn DateTime? @map("last_replenish_on")
+  replenishDaily     Boolean   @default(false) @map("replenish_daily")
+  allowNegativeStock Boolean   @default(false) @map("allow_negative_stock")
+  lastReplenishOn    DateTime? @map("last_replenish_on")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2480,6 +2487,112 @@ model OperationTimeLog {
   @@index([tenantId])
   @@index([operationId])
   @@map("operation_time_logs")
+}
+
+// Sequential approval. Delegation and escalation are reserved columns only.
+model ApprovalRule {
+  id               String          @id @default(uuid())
+  tenantId         String          @map("tenant_id")
+  documentType     String          @map("document_type")
+  enabled          Boolean         @default(false)
+  allowSelfApprove Boolean         @default(false) @map("allow_self_approve")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  levels           ApprovalLevel[]
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, documentType])
+  @@index([tenantId])
+  @@map("approval_rules")
+}
+
+model ApprovalLevel {
+  id                 String       @id @default(uuid())
+  tenantId           String       @map("tenant_id")
+  ruleId             String       @map("rule_id")
+  sequence           Int
+  threshold          Decimal      @default(0) @db.Decimal(19, 4)
+  approverRoleId     String?      @map("approver_role_id")
+  approverUserId     String?      @map("approver_user_id")
+  delegateUserId     String?      @map("delegate_user_id")
+  escalateAfterHours Int?         @map("escalate_after_hours")
+  rule               ApprovalRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, sequence])
+  @@index([tenantId])
+  @@map("approval_levels")
+}
+
+model ApprovalRequest {
+  id             String           @id @default(uuid())
+  tenantId       String           @map("tenant_id")
+  documentType   String           @map("document_type")
+  documentId     String           @map("document_id")
+  documentNumber String           @default("") @map("document_number")
+  amount         Decimal          @default(0) @db.Decimal(19, 4)
+  status         String           @default("PENDING")
+  currentLevel   Int              @default(1) @map("current_level")
+  requestedBy    String?          @map("requested_by")
+  payload        Json?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  actions        ApprovalAction[]
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, documentType, documentId])
+  @@map("approval_requests")
+}
+
+model ApprovalAction {
+  id                  String          @id @default(uuid())
+  tenantId            String          @map("tenant_id")
+  requestId           String          @map("request_id")
+  level               Int             @default(0)
+  action              String
+  actorId             String?         @map("actor_id")
+  reason              String?
+  delegatedFromUserId String?         @map("delegated_from_user_id")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  request             ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([requestId])
+  @@map("approval_actions")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String?  @map("user_id")
+  action    String
+  entity    String
+  entityId  String   @map("entity_id")
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId])
+  @@map("audit_logs")
+}
+
+model FiscalPeriod {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  year      Int
+  month     Int
+  status    String   @default("OPEN")
+  updatedBy String?  @map("updated_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, year, month])
+  @@index([tenantId])
+  @@map("fiscal_periods")
 }
 
 // Phase 2 procurement, landed cost, and finance. New tables only.

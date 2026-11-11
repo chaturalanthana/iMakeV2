@@ -108,6 +108,13 @@ const createRfq = guard('Could not save the RFQ.', async (req, res) => {
   ok(res, 201, row);
 });
 
+const cancelRfq = guard('Could not cancel the RFQ.', async (req, res) => {
+  const row = await prisma.$transaction((tx) => procurement.cancelRfq(tx, {
+    tenantId: req.tenantId, id: req.params.id, createdBy: actor(req), reason: req.body?.reason
+  }));
+  ok(res, 200, row);
+});
+
 const getRfq = guard('Could not load the RFQ.', async (req, res) => {
   ok(res, 200, await procurement.comparison(prisma, req.tenantId, req.params.id));
 });
@@ -191,6 +198,13 @@ const createNote = guard('Could not post the note.', async (req, res) => {
   ok(res, 201, row);
 });
 
+const cancelNote = guard('Could not cancel the note.', async (req, res) => {
+  const row = await prisma.$transaction((tx) => treasury.cancelPartyNote(tx, {
+    tenantId: req.tenantId, id: req.params.id, createdBy: actor(req), reason: req.body?.reason
+  }));
+  ok(res, 200, row);
+});
+
 const listCollections = guard('Could not load collections.', async (req, res) => {
   const cases = await prisma.collectionCase.findMany({ where: { tenantId: req.tenantId } });
   const activities = await prisma.collectionActivity.findMany({ where: { tenantId: req.tenantId }, orderBy: { date: 'desc' } });
@@ -209,6 +223,13 @@ const listCheques = guard('Could not load cheques.', async (req, res) => {
 const createCheque = guard('Could not record the cheque.', async (req, res) => {
   const row = await prisma.$transaction((tx) => treasury.createCheque(tx, { ...req.body, tenantId: req.tenantId, createdBy: actor(req) }));
   ok(res, 201, row);
+});
+
+const cancelCheque = guard('Could not cancel the cheque.', async (req, res) => {
+  const row = await prisma.$transaction((tx) => treasury.cancelCheque(tx, {
+    tenantId: req.tenantId, id: req.params.id, createdBy: actor(req), reason: req.body?.reason
+  }));
+  ok(res, 200, row);
 });
 
 const chequeAction = (next) => guard('Could not update the cheque.', async (req, res) => {
@@ -234,13 +255,27 @@ const createIou = guard('Could not issue the IOU.', async (req, res) => {
   ok(res, 201, row);
 });
 
+const cancelIou = guard('Could not cancel the IOU.', async (req, res) => {
+  const row = await prisma.$transaction((tx) => treasury.cancelIou(tx, {
+    tenantId: req.tenantId, id: req.params.id, createdBy: actor(req), reason: req.body?.reason
+  }));
+  ok(res, 200, row);
+});
+
 const settleIou = guard('Could not settle the IOU.', async (req, res) => {
   const row = await prisma.$transaction((tx) => treasury.settleIou(tx, { ...req.body, tenantId: req.tenantId, iouId: req.params.id, createdBy: actor(req) }));
   ok(res, 200, row);
 });
 
 const listCloses = guard('Could not load the close checklist.', async (req, res) => {
-  ok(res, 200, await prisma.periodClose.findMany({ where: { tenantId: req.tenantId }, include: { steps: { orderBy: { sequence: 'asc' } } }, orderBy: [{ year: 'desc' }, { month: 'desc' }] }));
+  const rows = await prisma.periodClose.findMany({
+    where: { tenantId: req.tenantId },
+    include: { steps: { orderBy: { sequence: 'asc' } } },
+    orderBy: [{ year: 'desc' }, { month: 'desc' }]
+  });
+  const periods = await prisma.fiscalPeriod.findMany({ where: { tenantId: req.tenantId } });
+  const locks = new Map(periods.map((period) => [`${period.year}-${period.month}`, period.status]));
+  ok(res, 200, rows.map((row) => ({ ...row, fiscalStatus: locks.get(`${row.year}-${row.month}`) || 'OPEN' })));
 });
 
 const openClose = guard('Could not open the period.', async (req, res) => {
@@ -331,6 +366,7 @@ module.exports = {
   createContract,
   listRfqs,
   createRfq,
+  cancelRfq,
   getRfq,
   addQuote,
   selectQuote,
@@ -348,15 +384,18 @@ module.exports = {
   transfer,
   listNotes,
   createNote,
+  cancelNote,
   listCollections,
   saveCollection,
   listCheques,
   createCheque,
+  cancelCheque,
   chequeAction,
   listFunds,
   createFund,
   listIous,
   createIou,
+  cancelIou,
   settleIou,
   listCloses,
   openClose,

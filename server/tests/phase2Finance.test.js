@@ -113,6 +113,8 @@ describe('phase 2 procurement, landed cost and finance', () => {
     await prisma.supplier.deleteMany({ where });
     await prisma.warehouse.deleteMany({ where });
     await prisma.currency.deleteMany({ where });
+    await prisma.auditLog.deleteMany({ where });
+    await prisma.fiscalPeriod.deleteMany({ where });
     await prisma.user.deleteMany({ where });
     await prisma.role.deleteMany({ where });
     await prisma.tenant.delete({ where: { id: tenant.id } });

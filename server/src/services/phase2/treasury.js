@@ -1,7 +1,15 @@
 const { DocumentError } = require('../errors');
-const { ensureGlMap, postJournal } = require('../glService');
+const { ensureGlMap, postJournal, reverseJournal } = require('../glService');
 const { money, num, dec, rateOf } = require('../money');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
+const { writeAudit } = require('../auditService');
+const { loadRule, levelsForAmount, submitForApproval, cancelOpenRequests } = require('../approvalService');
+
+function requireReason(reason) {
+  const text = String(reason || '').trim();
+  if (text.length < 3) throw new DocumentError('A reason is required.', { reason: 'A reason is required.' });
+  return text;
+}
 
 async function applySales(tx, invoiceId, delta) {
   const invoice = await tx.salesInvoice.findUnique({ where: { id: invoiceId } });
@@ -76,6 +84,8 @@ async function postPartyNote(tx, input) {
   }
   const prefix = partyType === 'CUSTOMER' ? (kind === 'CREDIT' ? 'CN' : 'DN') : (kind === 'CREDIT' ? 'SCN' : 'SDN');
   const noteNumber = await generateDocumentNumber(input.tenantId, 'partyNote', prefix, 'noteNumber', tx);
+  const rule = await loadRule(tx, input.tenantId, 'PARTY_NOTE');
+  const hold = Boolean(rule?.enabled && levelsForAmount(rule, total).length);
   const note = await tx.partyNote.create({
     data: {
       tenantId: input.tenantId,
@@ -93,50 +103,123 @@ async function postPartyNote(tx, input) {
       exchangeRate: dec(rate),
       costCenterId: input.costCenterId || null,
       profitCenterId: input.profitCenterId || null,
+      status: hold ? 'PENDING_APPROVAL' : 'POSTED',
       createdBy: input.createdBy || null
     }
   });
-  const map = await ensureGlMap(tx, input.tenantId, input.createdBy);
-  const baseSub = money(subtotal * rate);
-  const baseTax = money(taxAmount * rate);
-  const baseTotal = money(total * rate);
-  const dims = { costCenterId: input.costCenterId || null, profitCenterId: input.profitCenterId || null };
+  if (hold) {
+    await submitForApproval(tx, {
+      tenantId: input.tenantId,
+      documentType: 'PARTY_NOTE',
+      documentId: note.id,
+      documentNumber: note.noteNumber,
+      amount: total,
+      userId: input.createdBy
+    });
+  } else {
+    await postNoteJournal(tx, note, input.createdBy);
+  }
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: hold ? 'STATUS' : 'POST',
+    entity: 'PARTY_NOTE',
+    entityId: note.id,
+    after: { status: note.status, noteNumber, total }
+  });
+  return note;
+}
+
+async function postNoteJournal(tx, note, createdBy) {
+  const map = await ensureGlMap(tx, note.tenantId, createdBy);
+  const rate = num(note.exchangeRate) || 1;
+  const baseSub = money(num(note.subtotal) * rate);
+  const baseTax = money(num(note.taxAmount) * rate);
+  const baseTotal = money(num(note.total) * rate);
+  const dims = { costCenterId: note.costCenterId || null, profitCenterId: note.profitCenterId || null };
+  const partyType = note.partyType;
+  const kind = note.kind;
   let lines;
   if (partyType === 'CUSTOMER' && kind === 'CREDIT') {
     lines = [
-      { accountId: map.REVENUE, debit: baseSub, credit: 0, ...dims, description: noteNumber },
+      { accountId: map.REVENUE, debit: baseSub, credit: 0, ...dims, description: note.noteNumber },
       { accountId: map.VAT_OUTPUT, debit: baseTax, credit: 0, ...dims, description: 'VAT adjustment' },
-      { accountId: map.AR, debit: 0, credit: baseTotal, ...dims, description: noteNumber }
+      { accountId: map.AR, debit: 0, credit: baseTotal, ...dims, description: note.noteNumber }
     ];
   } else if (partyType === 'CUSTOMER') {
     lines = [
-      { accountId: map.AR, debit: baseTotal, credit: 0, ...dims, description: noteNumber },
-      { accountId: map.REVENUE, debit: 0, credit: baseSub, ...dims, description: noteNumber },
+      { accountId: map.AR, debit: baseTotal, credit: 0, ...dims, description: note.noteNumber },
+      { accountId: map.REVENUE, debit: 0, credit: baseSub, ...dims, description: note.noteNumber },
       { accountId: map.VAT_OUTPUT, debit: 0, credit: baseTax, ...dims, description: 'VAT' }
     ];
   } else if (kind === 'CREDIT') {
     lines = [
-      { accountId: map.AP, debit: baseTotal, credit: 0, ...dims, description: noteNumber },
+      { accountId: map.AP, debit: baseTotal, credit: 0, ...dims, description: note.noteNumber },
       { accountId: map.VAT_INPUT, debit: 0, credit: baseTax, ...dims, description: 'VAT input reversal' },
-      { accountId: map.PPV, debit: 0, credit: baseSub, ...dims, description: noteNumber }
+      { accountId: map.PPV, debit: 0, credit: baseSub, ...dims, description: note.noteNumber }
     ];
   } else {
     lines = [
-      { accountId: map.PPV, debit: baseSub, credit: 0, ...dims, description: noteNumber },
+      { accountId: map.PPV, debit: baseSub, credit: 0, ...dims, description: note.noteNumber },
       { accountId: map.VAT_INPUT, debit: baseTax, credit: 0, ...dims, description: 'VAT input' },
-      { accountId: map.AP, debit: 0, credit: baseTotal, ...dims, description: noteNumber }
+      { accountId: map.AP, debit: 0, credit: baseTotal, ...dims, description: note.noteNumber }
     ];
   }
   await postJournal(tx, {
-    tenantId: input.tenantId,
+    tenantId: note.tenantId,
     date: note.date,
-    createdBy: input.createdBy,
-    description: `${partyType === 'CUSTOMER' ? 'Customer' : 'Supplier'} ${kind.toLowerCase()} note ${noteNumber}`,
+    createdBy,
+    description: `${partyType === 'CUSTOMER' ? 'Customer' : 'Supplier'} ${kind.toLowerCase()} note ${note.noteNumber}`,
     referenceType: 'PARTY_NOTE',
     referenceId: note.id,
     lines
   });
-  return note;
+}
+
+async function postHeldPartyNote(tx, { tenantId, id, createdBy }) {
+  const note = await tx.partyNote.findFirst({ where: { id, tenantId } });
+  if (!note || note.status === 'POSTED' || note.status === 'CANCELLED') return note;
+  await postNoteJournal(tx, note, createdBy);
+  const posted = await tx.partyNote.update({ where: { id: note.id }, data: { status: 'POSTED' } });
+  await writeAudit(tx, {
+    tenantId,
+    userId: createdBy,
+    action: 'POST',
+    entity: 'PARTY_NOTE',
+    entityId: note.id,
+    before: { status: note.status },
+    after: { status: 'POSTED' }
+  });
+  return posted;
+}
+
+async function cancelPartyNote(tx, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const note = await tx.partyNote.findFirst({ where: { id, tenantId } });
+  if (!note) throw new DocumentError('Note not found.', { id: 'Note not found.' });
+  if (note.status === 'CANCELLED') throw new DocumentError('This note is already cancelled.', { status: 'This note is already cancelled.' });
+  if (note.status === 'POSTED') {
+    await reverseJournal(tx, {
+      tenantId,
+      referenceType: 'PARTY_NOTE',
+      referenceId: note.id,
+      date: new Date(),
+      createdBy,
+      description: text
+    });
+  }
+  await cancelOpenRequests(tx, { tenantId, documentId: note.id });
+  const updated = await tx.partyNote.update({ where: { id: note.id }, data: { status: 'CANCELLED' } });
+  await writeAudit(tx, {
+    tenantId,
+    userId: createdBy,
+    action: note.status === 'POSTED' ? 'REVERSE' : 'STATUS',
+    entity: 'PARTY_NOTE',
+    entityId: note.id,
+    before: { status: note.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function saveCollection(tx, input) {
@@ -241,7 +324,48 @@ async function createCheque(tx, input) {
       ]
     });
   }
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'POST',
+    entity: 'CHEQUE',
+    entityId: cheque.id,
+    after: { status: cheque.status, chequeNumber: cheque.chequeNumber, amount }
+  });
   return cheque;
+}
+
+async function cancelCheque(tx, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const cheque = await tx.cheque.findFirst({ where: { id, tenantId } });
+  if (!cheque) throw new DocumentError('Cheque not found.', { id: 'Cheque not found.' });
+  if (cheque.status === 'CANCELLED') throw new DocumentError('This cheque is already cancelled.', { status: 'This cheque is already cancelled.' });
+  if (['REALISED', 'BOUNCED'].includes(cheque.status)) {
+    throw new DocumentError('A realised or bounced cheque is reversed with the bounce action.', { status: 'A realised or bounced cheque is reversed with the bounce action.' });
+  }
+  await reverseJournal(tx, {
+    tenantId,
+    referenceType: 'CHEQUE',
+    referenceId: cheque.id,
+    date: new Date(),
+    createdBy,
+    description: text
+  });
+  if (cheque.invoiceId) {
+    if (cheque.direction === 'IN') await applySales(tx, cheque.invoiceId, -num(cheque.amount));
+    else await applySupplier(tx, cheque.invoiceId, -num(cheque.amount));
+  }
+  const updated = await tx.cheque.update({ where: { id: cheque.id }, data: { status: 'CANCELLED' } });
+  await writeAudit(tx, {
+    tenantId,
+    userId: createdBy,
+    action: 'REVERSE',
+    entity: 'CHEQUE',
+    entityId: cheque.id,
+    before: { status: cheque.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function setChequeStatus(tx, input, next) {
@@ -372,7 +496,50 @@ async function issueIou(tx, input) {
       { accountId: source === 'PETTY_CASH' ? map.PETTY_CASH : map.BANK, debit: 0, credit: amount, description: input.employeeName }
     ]
   });
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'POST',
+    entity: 'IOU',
+    entityId: iou.id,
+    after: { status: iou.status, reference, amount }
+  });
   return iou;
+}
+
+async function cancelIou(tx, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const iou = await tx.iouAdvance.findFirst({ where: { id, tenantId }, include: { fund: true } });
+  if (!iou) throw new DocumentError('IOU not found.', { id: 'IOU not found.' });
+  if (iou.status === 'CANCELLED') throw new DocumentError('This IOU is already cancelled.', { status: 'This IOU is already cancelled.' });
+  if (iou.status !== 'OPEN' || num(iou.settled) > 0.0001) {
+    throw new DocumentError('Settle or reverse the open amount before cancelling this IOU.', { status: 'Settle or reverse the open amount before cancelling this IOU.' });
+  }
+  await reverseJournal(tx, {
+    tenantId,
+    referenceType: 'IOU',
+    referenceId: iou.id,
+    date: new Date(),
+    createdBy,
+    description: text
+  });
+  if (iou.fund) {
+    await tx.pettyCashFund.update({
+      where: { id: iou.fund.id },
+      data: { balance: dec(money(num(iou.fund.balance) + num(iou.amount))) }
+    });
+  }
+  const updated = await tx.iouAdvance.update({ where: { id: iou.id }, data: { status: 'CANCELLED' } });
+  await writeAudit(tx, {
+    tenantId,
+    userId: createdBy,
+    action: 'REVERSE',
+    entity: 'IOU',
+    entityId: iou.id,
+    before: { status: iou.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function settleIou(tx, input) {
@@ -437,10 +604,14 @@ async function settleIou(tx, input) {
 
 module.exports = {
   postPartyNote,
+  postHeldPartyNote,
+  cancelPartyNote,
   saveCollection,
   createCheque,
+  cancelCheque,
   setChequeStatus,
   openPettyCash,
   issueIou,
+  cancelIou,
   settleIou
 };

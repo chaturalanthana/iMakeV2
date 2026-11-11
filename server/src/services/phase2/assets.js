@@ -1,5 +1,6 @@
 const { DocumentError } = require('../errors');
 const { ensureGlMap, postJournal } = require('../glService');
+const { writeAudit } = require('../auditService');
 const { money, num, dec } = require('../money');
 const { daysInMonth, daysInUse, depreciationAmount } = require('./math');
 
@@ -43,7 +44,7 @@ async function capitalizeAsset(tx, input) {
       { accountId: map.CWIP, debit: 0, credit: amount, costCenterId: asset.costCenterId, profitCenterId: asset.profitCenterId, description: asset.code }
     ]
   });
-  return tx.fixedAsset.update({
+  const capitalized = await tx.fixedAsset.update({
     where: { id: asset.id },
     data: {
       classId: assetClass.id,
@@ -67,6 +68,15 @@ async function capitalizeAsset(tx, input) {
     },
     include: { assetClass: true }
   });
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'POST',
+    entity: 'FIXED_ASSET',
+    entityId: asset.id,
+    after: { status: 'ACTIVE', code: asset.code }
+  });
+  return capitalized;
 }
 
 async function depreciateAsset(tx, asset, { year, month, createdBy, map, tenantId }) {
@@ -243,7 +253,7 @@ async function disposeAsset(tx, input) {
       { accountId: map.DISPOSAL_GAIN, debit: 0, credit: gain > 0 ? gain : 0, description: 'Gain on disposal' }
     ]
   });
-  return tx.fixedAsset.update({
+  const disposed = await tx.fixedAsset.update({
     where: { id: asset.id },
     data: {
       status: 'DISPOSED',
@@ -262,6 +272,16 @@ async function disposeAsset(tx, input) {
       }
     }
   });
+  await writeAudit(tx, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'REVERSE',
+    entity: 'FIXED_ASSET',
+    entityId: asset.id,
+    before: { status: asset.status },
+    after: { status: 'DISPOSED' }
+  });
+  return disposed;
 }
 
 async function impairAsset(tx, input) {

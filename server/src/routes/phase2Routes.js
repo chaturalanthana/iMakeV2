@@ -20,6 +20,7 @@ router.get('/contracts', controller.listContracts);
 router.post('/contracts', validateBody(schemas.contract), controller.createContract);
 router.get('/rfqs', controller.listRfqs);
 router.post('/rfqs', validateBody(schemas.rfq), controller.createRfq);
+router.post('/rfqs/:id/cancel', controller.cancelRfq);
 router.get('/rfqs/:id', controller.getRfq);
 router.post('/rfqs/:id/quotes', validateBody(schemas.quotation), controller.addQuote);
 router.post('/rfqs/:id/select', validateBody(schemas.selection), controller.selectQuote);
@@ -40,11 +41,13 @@ router.post('/depreciation-runs', validateBody(schemas.depreciation), controller
 
 router.get('/notes', controller.listNotes);
 router.post('/notes', validateBody(schemas.partyNote), controller.createNote);
+router.post('/notes/:id/cancel', controller.cancelNote);
 router.get('/collections', controller.listCollections);
 router.post('/collections', validateBody(schemas.collection), controller.saveCollection);
 
 router.get('/cheques', controller.listCheques);
 router.post('/cheques', validateBody(schemas.cheque), controller.createCheque);
+router.post('/cheques/:id/cancel', controller.cancelCheque);
 router.post('/cheques/:id/deposit', controller.chequeAction('DEPOSITED'));
 router.post('/cheques/:id/realise', controller.chequeAction('REALISED'));
 router.post('/cheques/:id/bounce', controller.chequeAction('BOUNCED'));
@@ -53,6 +56,7 @@ router.get('/petty-cash', controller.listFunds);
 router.post('/petty-cash', validateBody(schemas.pettyCash), controller.createFund);
 router.get('/ious', controller.listIous);
 router.post('/ious', validateBody(schemas.iou), controller.createIou);
+router.post('/ious/:id/cancel', controller.cancelIou);
 router.post('/ious/:id/settle', validateBody(schemas.iouSettle), controller.settleIou);
 
 router.get('/period-closes', controller.listCloses);

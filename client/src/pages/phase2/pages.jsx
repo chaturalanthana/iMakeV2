@@ -932,7 +932,8 @@ export function Closes() {
       columns={[
         { header: 'Year', accessor: 'year', fontWeight: 600 },
         { header: 'Month', accessor: 'month' },
-        { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+        { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+        { header: 'Posting lock', accessor: 'fiscalStatus', render: (row) => <StatusBadge status={row.fiscalStatus || 'OPEN'} /> }
       ]}
     />
   );
@@ -965,6 +966,9 @@ export function CloseDetail() {
   };
   return (
     <AppLayout title={`Close ${close.year}-${String(close.month).padStart(2, '0')}`} icon={Calendar}>
+      <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: '#64748b' }}>
+        Posting lock: {close.fiscalStatus === 'CLOSED' ? 'Closed' : close.fiscalStatus === 'SOFT_CLOSED' ? 'Soft-closed' : 'Open'}. Completing every step soft-closes this month. Posting closing entries closes it.
+      </p>
       <DataTable
         columns={[
           { header: 'Step', accessor: 'sequence' },

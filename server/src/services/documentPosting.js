@@ -415,23 +415,42 @@ async function refreshQuotationStatus(tx, quotationId) {
   await tx.salesQuotation.update({ where: { id: quotationId }, data: { status } });
 }
 
-async function creditWarning(db, { tenantId, customerId, documentBase }) {
+async function assessCredit(db, { tenantId, customerId, documentBase }) {
   const customer = await db.customer.findFirst({ where: { id: customerId, tenantId } });
-  if (!customer) return null;
+  if (!customer) return { blocked: false, message: null, open: 0, limit: 0, overdue: false };
   const limit = num(customer.creditLimit);
-  if (limit <= 0) return null;
   const invoices = await db.salesInvoice.findMany({
     where: { tenantId, customerId, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
   });
   let open = 0;
+  let overdue = false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   for (const invoice of invoices) {
-    open = money(open + (num(invoice.total) - num(invoice.amountPaid)) * (num(invoice.exchangeRate) || 1));
+    const balance = (num(invoice.total) - num(invoice.amountPaid)) * (num(invoice.exchangeRate) || 1);
+    if (balance <= 0.0001) continue;
+    open = money(open + balance);
+    let due = invoice.dueDate ? new Date(invoice.dueDate) : null;
+    if (!due && num(customer.creditPeriod) > 0) due = addDays(invoice.date, customer.creditPeriod);
+    if (due) {
+      const dueDay = new Date(due);
+      dueDay.setHours(0, 0, 0, 0);
+      if (dueDay < today) overdue = true;
+    }
   }
   const next = money(documentBase);
-  if (open + next > limit + 0.0001) {
-    return `Credit limit of ${limit.toFixed(2)} LKR is exceeded. Open balance ${open.toFixed(2)}, this document ${next.toFixed(2)}.`;
-  }
-  return null;
+  const overLimit = limit > 0 && open + next > limit + 0.0001;
+  if (!overLimit && !overdue) return { blocked: false, message: null, open, limit, overdue };
+  if (limit <= 0 && !overdue) return { blocked: false, message: null, open, limit, overdue };
+  const message = overdue
+    ? `Customer has overdue invoices. Open balance ${open.toFixed(2)} LKR.`
+    : `Credit limit of ${limit.toFixed(2)} LKR is exceeded. Open balance ${open.toFixed(2)}, this document ${next.toFixed(2)}.`;
+  return { blocked: true, message, open, limit, overdue, overLimit };
+}
+
+async function creditWarning(db, args) {
+  const result = await assessCredit(db, args);
+  return result.message;
 }
 
 function ageBucket(date, today = new Date()) {
@@ -551,6 +570,22 @@ async function createSupplierInvoice(tx, input) {
   }
   const supplier = await tx.supplier.findFirst({ where: { id: supplierId, tenantId } });
   if (!supplier) throw new DocumentError('Supplier is required.', { supplierId: 'Supplier is required.' });
+  const vendorInvoiceNo = String(supplierReference || '').trim();
+  if (vendorInvoiceNo) {
+    const duplicate = await tx.supplierInvoice.findFirst({
+      where: {
+        tenantId,
+        supplierId,
+        supplierReference: vendorInvoiceNo,
+        status: { not: 'CANCELLED' }
+      }
+    });
+    if (duplicate) {
+      throw new DocumentError('This supplier invoice number is already used for this supplier.', {
+        supplierReference: 'This supplier invoice number is already used for this supplier.'
+      });
+    }
+  }
 
   let po = null;
   if (poId) {
@@ -639,7 +674,7 @@ async function createSupplierInvoice(tx, input) {
       poId: po?.id || poId || null,
       grnId: grnId || null,
       invoiceNumber,
-      supplierReference: supplierReference || null,
+      supplierReference: vendorInvoiceNo || null,
       date: new Date(date),
       dueDate,
       status: 'UNPAID',
@@ -1036,6 +1071,7 @@ module.exports = {
   refreshPrStatus,
   assertQuotationQuantity,
   refreshQuotationStatus,
+  assessCredit,
   creditWarning,
   finalizeSalesInvoice,
   createSupplierInvoice,

@@ -3,7 +3,10 @@ const { num, dec, money } = require('../money');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
 const { receive, issue } = require('../stockService');
 const { receiveLayer } = require('../production/fifo');
-const { postAdjustmentDocument, postIssueDocument } = require('../documentPosting');
+const { postAdjustmentDocument, postIssueDocument, cancelStockAndJournal } = require('../documentPosting');
+const { writeAudit } = require('../auditService');
+const { loadRule, levelsForAmount, submitForApproval, cancelOpenRequests } = require('../approvalService');
+const { reverseIssue, reverseReceipt } = require('../stockService');
 const { itemUsable } = require('./itemMaster');
 const { recordBatch, assertConsumable, suggestPicks, productWithType } = require('./batches');
 const { syncHard, consumeSource } = require('./allocations');
@@ -159,10 +162,16 @@ const mrInclude = {
   pickLists: { include: { lines: true } }
 };
 
-async function approveMaterialRequest(db, { tenantId, id, userId }) {
+function requireReason(reason) {
+  const text = String(reason || '').trim();
+  if (text.length < 3) throw new DocumentError('A reason is required.', { reason: 'A reason is required.' });
+  return text;
+}
+
+async function releaseMaterialRequest(db, { tenantId, id, userId }) {
   const mr = await db.materialRequest.findFirst({ where: { id, tenantId }, include: { items: true } });
   if (!mr) throw new DocumentError('Material request was not found.');
-  if (!['DRAFT', 'SUBMITTED'].includes(mr.status)) {
+  if (!['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL'].includes(mr.status)) {
     throw new DocumentError('This material request is already approved.');
   }
   await syncHard(db, {
@@ -176,11 +185,50 @@ async function approveMaterialRequest(db, { tenantId, id, userId }) {
       quantity: item.quantity
     }))
   });
-  return db.materialRequest.update({
+  const updated = await db.materialRequest.update({
     where: { id: mr.id },
     data: { status: 'APPROVED', approvalStatus: 'APPROVED' },
     include: mrInclude
   });
+  await writeAudit(db, {
+    tenantId,
+    userId,
+    action: 'APPROVE',
+    entity: 'MATERIAL_REQUEST',
+    entityId: mr.id,
+    before: { status: mr.status },
+    after: { status: 'APPROVED' }
+  });
+  return updated;
+}
+
+async function approveMaterialRequest(db, { tenantId, id, userId }) {
+  const mr = await db.materialRequest.findFirst({ where: { id, tenantId }, include: { items: true } });
+  if (!mr) throw new DocumentError('Material request was not found.');
+  if (mr.status === 'PENDING_APPROVAL') {
+    throw new DocumentError('This material request is waiting in the approvals worklist.');
+  }
+  if (!['DRAFT', 'SUBMITTED'].includes(mr.status)) {
+    throw new DocumentError('This material request is already approved.');
+  }
+  const rule = await loadRule(db, tenantId, 'MATERIAL_REQUEST');
+  const amount = mr.items.reduce((sum, item) => sum + num(item.quantity), 0);
+  if (rule?.enabled && levelsForAmount(rule, amount).length) {
+    await submitForApproval(db, {
+      tenantId,
+      documentType: 'MATERIAL_REQUEST',
+      documentId: mr.id,
+      documentNumber: mr.number,
+      amount,
+      userId
+    });
+    return db.materialRequest.update({
+      where: { id: mr.id },
+      data: { status: 'PENDING_APPROVAL', approvalStatus: 'PENDING' },
+      include: mrInclude
+    });
+  }
+  return releaseMaterialRequest(db, { tenantId, id, userId });
 }
 
 async function buildPickList(db, { tenantId, id }) {
@@ -405,11 +453,50 @@ async function shipTransfer(db, input) {
       holdInTransit: mode === 'IN_TRANSIT'
     });
   }
-  return db.inventoryTransfer.update({
+  const posted = await db.inventoryTransfer.update({
     where: { id: transfer.id },
     data: { status: mode === 'IN_TRANSIT' ? 'IN_TRANSIT' : 'POSTED', mode },
     include: transferInclude
   });
+  await writeAudit(db, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'POST',
+    entity: 'INVENTORY_TRANSFER',
+    entityId: transfer.id,
+    before: { status: transfer.status },
+    after: { status: posted.status }
+  });
+  return posted;
+}
+
+async function cancelTransfer(db, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const transfer = await db.inventoryTransfer.findFirst({ where: { id, tenantId } });
+  if (!transfer) throw new DocumentError('Transfer was not found.');
+  if (transfer.status === 'CANCELLED') throw new DocumentError('This transfer is already cancelled.');
+  if (transfer.status === 'RECEIVED' || transfer.status === 'POSTED') {
+    await reverseReceipt(db, { tenantId, referenceType: 'GT', referenceId: id, createdBy });
+  }
+  if (transfer.status !== 'DRAFT') {
+    await reverseIssue(db, { tenantId, referenceType: 'GT', referenceId: id, createdBy });
+    await db.inventoryTransferLeg.updateMany({ where: { transferId: id }, data: { quantityRemaining: dec(0) } });
+  }
+  const updated = await db.inventoryTransfer.update({
+    where: { id },
+    data: { status: 'CANCELLED', reason: text },
+    include: transferInclude
+  });
+  await writeAudit(db, {
+    tenantId,
+    userId: createdBy,
+    action: transfer.status === 'DRAFT' ? 'STATUS' : 'REVERSE',
+    entity: 'INVENTORY_TRANSFER',
+    entityId: id,
+    before: { status: transfer.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function receiveTransfer(db, { tenantId, id, createdBy }) {
@@ -559,7 +646,45 @@ async function postReturn(db, { tenantId, id, createdBy }) {
       }
     }
   }
-  return db.stockReturn.update({ where: { id: doc.id }, data: { status: 'POSTED' }, include: returnInclude });
+  const posted = await db.stockReturn.update({ where: { id: doc.id }, data: { status: 'POSTED' }, include: returnInclude });
+  await writeAudit(db, {
+    tenantId,
+    userId: createdBy,
+    action: 'POST',
+    entity: 'STOCK_RETURN',
+    entityId: doc.id,
+    before: { status: doc.status },
+    after: { status: 'POSTED' }
+  });
+  return posted;
+}
+
+async function cancelReturn(db, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const doc = await db.stockReturn.findFirst({ where: { id, tenantId } });
+  if (!doc) throw new DocumentError('Return was not found.');
+  if (doc.status === 'CANCELLED') throw new DocumentError('This return is already cancelled.');
+  if (doc.status === 'POSTED') {
+    await cancelStockAndJournal(db, {
+      tenantId,
+      referenceType: 'RETURN',
+      referenceId: doc.id,
+      date: new Date(),
+      createdBy,
+      description: text
+    });
+  }
+  const updated = await db.stockReturn.update({ where: { id }, data: { status: 'CANCELLED' }, include: returnInclude });
+  await writeAudit(db, {
+    tenantId,
+    userId: createdBy,
+    action: doc.status === 'POSTED' ? 'REVERSE' : 'STATUS',
+    entity: 'STOCK_RETURN',
+    entityId: id,
+    before: { status: doc.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function createCycleCount(db, input) {
@@ -598,7 +723,7 @@ async function createCycleCount(db, input) {
       unitCost: dec(unit)
     });
   }
-  return db.cycleCount.create({
+  const created = await db.cycleCount.create({
     data: {
       tenantId: input.tenantId,
       number,
@@ -613,6 +738,15 @@ async function createCycleCount(db, input) {
     },
     include: { lines: { include: { product: true } }, warehouse: true }
   });
+  await writeAudit(db, {
+    tenantId: input.tenantId,
+    userId: input.createdBy,
+    action: 'CREATE',
+    entity: 'CYCLE_COUNT',
+    entityId: created.id,
+    after: { number, status: 'COUNTED' }
+  });
+  return created;
 }
 
 async function financeCycleCount(db, { tenantId, id, decision }) {
@@ -629,15 +763,11 @@ async function financeCycleCount(db, { tenantId, id, decision }) {
   });
 }
 
-async function postCycleCount(db, { tenantId, id, createdBy }) {
+async function postApprovedCycleCount(db, { tenantId, id, createdBy }) {
   const count = await db.cycleCount.findFirst({ where: { id, tenantId }, include: { lines: true } });
   if (!count) throw new DocumentError('Cycle count was not found.');
-  if (count.financeStatus !== 'APPROVED') {
-    throw new DocumentError('Finance has to approve the variance before it can post.', {
-      financeStatus: 'Finance has to approve the variance before it can post.'
-    });
-  }
-  if (count.status === 'POSTED') throw new DocumentError('This count is already posted.');
+  if (count.status === 'POSTED') return count;
+  if (count.status === 'CANCELLED') throw new DocumentError('This count is cancelled.');
   await postAdjustmentDocument(db, {
     tenantId,
     warehouseId: count.warehouseId,
@@ -650,11 +780,129 @@ async function postCycleCount(db, { tenantId, id, createdBy }) {
       unitPrice: line.unitCost
     }))
   });
-  return db.cycleCount.update({
+  const posted = await db.cycleCount.update({
     where: { id },
-    data: { status: 'POSTED' },
+    data: { status: 'POSTED', financeStatus: 'APPROVED' },
     include: { lines: { include: { product: true } }, warehouse: true }
   });
+  await writeAudit(db, {
+    tenantId,
+    userId: createdBy,
+    action: 'POST',
+    entity: 'CYCLE_COUNT',
+    entityId: id,
+    before: { status: count.status },
+    after: { status: 'POSTED' }
+  });
+  return posted;
+}
+
+async function postCycleCount(db, { tenantId, id, createdBy }) {
+  const count = await db.cycleCount.findFirst({ where: { id, tenantId }, include: { lines: true } });
+  if (!count) throw new DocumentError('Cycle count was not found.');
+  if (count.status === 'POSTED') throw new DocumentError('This count is already posted.');
+  if (count.status === 'CANCELLED') throw new DocumentError('This count is cancelled.');
+  const rule = await loadRule(db, tenantId, 'CYCLE_COUNT');
+  const amount = count.lines.reduce((sum, line) => sum + Math.abs(num(line.varianceValue) || num(line.varianceQty) * num(line.unitCost)), 0);
+  if (rule?.enabled && levelsForAmount(rule, amount).length) {
+    const approved = await db.approvalRequest.findFirst({
+      where: { tenantId, documentType: 'CYCLE_COUNT', documentId: count.id, status: 'APPROVED' }
+    });
+    if (!approved) {
+      await submitForApproval(db, {
+        tenantId,
+        documentType: 'CYCLE_COUNT',
+        documentId: count.id,
+        documentNumber: count.number,
+        amount,
+        userId: createdBy
+      });
+      return db.cycleCount.update({
+        where: { id },
+        data: { status: 'PENDING_APPROVAL', financeStatus: 'PENDING_APPROVAL' },
+        include: { lines: { include: { product: true } }, warehouse: true }
+      });
+    }
+    return postApprovedCycleCount(db, { tenantId, id, createdBy });
+  }
+  if (count.financeStatus !== 'APPROVED') {
+    throw new DocumentError('Finance has to approve the variance before it can post.', {
+      financeStatus: 'Finance has to approve the variance before it can post.'
+    });
+  }
+  return postApprovedCycleCount(db, { tenantId, id, createdBy });
+}
+
+async function cancelCycleCount(db, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const count = await db.cycleCount.findFirst({ where: { id, tenantId } });
+  if (!count) throw new DocumentError('Cycle count was not found.');
+  if (count.status === 'CANCELLED') throw new DocumentError('This count is already cancelled.');
+  if (count.status === 'POSTED') {
+    await cancelStockAndJournal(db, {
+      tenantId,
+      referenceType: 'ADJ',
+      referenceId: count.id,
+      date: new Date(),
+      createdBy,
+      description: text
+    });
+  }
+  await cancelOpenRequests(db, { tenantId, documentId: count.id });
+  const updated = await db.cycleCount.update({
+    where: { id },
+    data: { status: 'CANCELLED', financeStatus: 'CANCELLED' },
+    include: { lines: { include: { product: true } }, warehouse: true }
+  });
+  await writeAudit(db, {
+    tenantId,
+    userId: createdBy,
+    action: count.status === 'POSTED' ? 'REVERSE' : 'STATUS',
+    entity: 'CYCLE_COUNT',
+    entityId: id,
+    before: { status: count.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
+}
+
+async function cancelMaterialRequest(db, { tenantId, id, createdBy, reason }) {
+  const text = requireReason(reason);
+  const mr = await db.materialRequest.findFirst({ where: { id, tenantId }, include: { items: true } });
+  if (!mr) throw new DocumentError('Material request was not found.');
+  if (mr.status === 'CANCELLED') throw new DocumentError('This material request is already cancelled.');
+  const transfers = await db.inventoryTransfer.findMany({
+    where: { tenantId, mrId: mr.id, status: { not: 'CANCELLED' } }
+  });
+  for (const transfer of transfers) {
+    await cancelTransfer(db, { tenantId, id: transfer.id, createdBy, reason: text });
+  }
+  await cancelStockAndJournal(db, {
+    tenantId,
+    referenceType: 'MR',
+    referenceId: mr.id,
+    date: new Date(),
+    createdBy,
+    description: text
+  });
+  const { releaseSource } = require('./allocations');
+  await releaseSource(db, tenantId, 'MATERIAL_REQUEST', mr.id);
+  await cancelOpenRequests(db, { tenantId, documentId: mr.id });
+  const updated = await db.materialRequest.update({
+    where: { id },
+    data: { status: 'CANCELLED', approvalStatus: 'CANCELLED' },
+    include: mrInclude
+  });
+  await writeAudit(db, {
+    tenantId,
+    userId: createdBy,
+    action: 'STATUS',
+    entity: 'MATERIAL_REQUEST',
+    entityId: id,
+    before: { status: mr.status },
+    after: { status: 'CANCELLED', reason: text }
+  });
+  return updated;
 }
 
 async function movementReport(db, tenantId, { from, to, warehouseId }) {
@@ -799,16 +1047,22 @@ module.exports = {
   postBatchReceipt,
   createMaterialRequest,
   approveMaterialRequest,
+  releaseMaterialRequest,
+  cancelMaterialRequest,
   buildPickList,
   fulfilMaterialRequest,
   createTransfer,
   shipTransfer,
+  cancelTransfer,
   receiveTransfer,
   createReturn,
   postReturn,
+  cancelReturn,
   createCycleCount,
   financeCycleCount,
   postCycleCount,
+  postApprovedCycleCount,
+  cancelCycleCount,
   movementReport,
   agingReport,
   positionReport,
