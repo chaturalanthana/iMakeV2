@@ -187,13 +187,14 @@ async function listAlerts(db, tenantId, role) {
       include: { lines: true }
     });
     runs.forEach((run) => {
-      if (!run.lines.length) return;
+      const purchaseLines = run.lines.filter((line) => line.kind !== 'MAKE');
+      if (!purchaseLines.length) return;
       alerts.push({
         id: `approval:${run.id}`,
         type: 'PENDING_APPROVAL',
         severity: 'medium',
         title: `${run.runNumber} is waiting for approval`,
-        detail: `${run.lines.length} draft purchase and work order lines.`,
+        detail: `${purchaseLines.length} draft purchase ${purchaseLines.length === 1 ? 'line' : 'lines'}.`,
         href: '/production/replenishment',
         documentNumber: run.runNumber
       });
@@ -246,13 +247,16 @@ async function listAlerts(db, tenantId, role) {
       if (!(floor > 0)) return;
       const have = stock.byWarehouse.get(`${policy.productId}|${policy.warehouseId}`) || 0;
       if (have > floor + 0.00005) return;
+      const made = Boolean(policy.product.bomApplicable);
       alerts.push({
         id: `low:${policy.id}`,
         type: 'LOW_STOCK',
         severity: 'medium',
         title: `${policy.product.code} is low at ${policy.warehouse.code}`,
-        detail: `On hand ${have}, minimum ${floor}.`,
-        href: '/production/replenishment',
+        detail: made
+          ? `On hand ${have}, minimum ${floor}. Made items are planned in MRP.`
+          : `On hand ${have}, minimum ${floor}.`,
+        href: made ? '/production/mrp' : '/production/replenishment',
         documentNumber: policy.product.code
       });
     });
