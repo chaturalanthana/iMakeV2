@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { Package, Plus } from 'lucide-react';
 
 const LISTS = {
@@ -19,7 +21,7 @@ const LISTS = {
       { header: 'Document', accessor: 'number', fontWeight: 600 },
       { header: 'Party', accessor: 'requestingParty' },
       { header: 'Kind', accessor: 'kind' },
-      { header: 'Status', accessor: 'status', render: (row) => <Status value={row.status} /> }
+      { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
     ]
   },
   transfer: {
@@ -35,7 +37,7 @@ const LISTS = {
       { header: 'From', accessor: 'fromWarehouse', render: (row) => row.fromWarehouse?.name || '-' },
       { header: 'To', accessor: 'toWarehouse', render: (row) => row.toWarehouse?.name || '-' },
       { header: 'Mode', accessor: 'mode' },
-      { header: 'Status', accessor: 'status', render: (row) => <Status value={row.status} /> }
+      { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
     ]
   },
   return: {
@@ -50,7 +52,7 @@ const LISTS = {
       { header: 'Document', accessor: 'number', fontWeight: 600 },
       { header: 'Type', accessor: 'kind' },
       { header: 'Warehouse', accessor: 'warehouse', render: (row) => row.warehouse?.name || '-' },
-      { header: 'Status', accessor: 'status', render: (row) => <Status value={row.status} /> }
+      { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
     ]
   },
   count: {
@@ -64,8 +66,8 @@ const LISTS = {
       { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
       { header: 'Document', accessor: 'number', fontWeight: 600 },
       { header: 'Warehouse', accessor: 'warehouse', render: (row) => row.warehouse?.name || '-' },
-      { header: 'Finance', accessor: 'financeStatus' },
-      { header: 'Status', accessor: 'status', render: (row) => <Status value={row.status} /> }
+      { header: 'Finance', accessor: 'financeStatus', render: (row) => <StatusBadge status={row.financeStatus} /> },
+      { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
     ]
   }
 };
@@ -87,13 +89,7 @@ export default function InventoryList({ kind }) {
   }, [kind]);
 
   const extraActions = (
-    <button onClick={() => navigate(`${config.path}/new`)}
-      style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '0.55rem 1.25rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', border: 'none', borderRadius: '8px', color: '#ffffff', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s', whiteSpace: 'nowrap' }}
-      onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-    >
-      <Plus size={16} /> {config.button}
-    </button>
+    <ActionButton icon={Plus} onClick={() => navigate(`${config.path}/new`)}>{config.button}</ActionButton>
   );
 
   return (
@@ -113,7 +109,3 @@ export default function InventoryList({ kind }) {
   );
 }
 
-function Status({ value }) {
-  const done = ['POSTED', 'FULFILLED', 'RECEIVED', 'APPROVED'].includes(value);
-  return <span style={{ fontSize: '0.75rem', fontWeight: 700, color: done ? '#059669' : '#d97706' }}>{value}</span>;
-}

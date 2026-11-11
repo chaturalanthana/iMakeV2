@@ -3,6 +3,7 @@ import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { ClipboardList } from 'lucide-react';
 
 export default function Allocations() {
@@ -26,10 +27,10 @@ export default function Allocations() {
     { header: 'Item', accessor: 'code', fontWeight: 700 },
     { header: 'Name', accessor: 'name' },
     { header: 'Source', accessor: 'sourceType' },
-    { header: 'Kind', accessor: 'kind' },
+    { header: 'Kind', accessor: 'kind', render: (row) => <StatusBadge status={row.kind} /> },
     { header: 'Qty', accessor: 'quantity' },
     { header: 'Released', accessor: 'released' },
-    { header: 'Status', accessor: 'status', render: (row) => <span style={{ fontSize: '0.75rem', fontWeight: 700, color: row.status === 'OPEN' ? '#d97706' : '#059669' }}>{row.status}</span> }
+    { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
   ];
 
   return (

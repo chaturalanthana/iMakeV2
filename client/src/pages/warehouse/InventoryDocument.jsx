@@ -6,7 +6,11 @@ import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
-import { ArrowLeft, Plus, Trash2, Save, CheckCircle, Calendar, FileText, Package, Printer } from 'lucide-react';
+import PageHeader from '../../components/ui/PageHeader';
+import FormField from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
+import { Plus, Trash2, Save, CheckCircle, Calendar, FileText, Package, Printer } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 const CONFIG = {
@@ -57,28 +61,18 @@ const CONFIG = {
   }
 };
 
-const fieldLabel = {
-  fontSize: '0.75rem',
-  fontWeight: 700,
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  display: 'flex',
-  alignItems: 'center',
-  gap: '4px'
-};
-
 const textInput = {
   width: '100%',
   height: '42px',
-  padding: '0 1rem',
+  padding: '0 0.85rem',
   borderRadius: '8px',
-  border: '1px solid #e2e8f0',
+  border: '1px solid var(--border-color)',
   backgroundColor: '#fff',
   outline: 'none',
   fontWeight: 500,
   boxSizing: 'border-box',
   color: 'var(--text-main)',
-  fontSize: '0.85rem'
+  fontSize: '0.9rem'
 };
 
 export default function InventoryDocument({ kind }) {
@@ -345,66 +339,27 @@ export default function InventoryDocument({ kind }) {
     <AppLayout title={id ? `${config.title} - ${number}` : `New ${config.title}`} icon={Icon}>
       {isInitialLoad ? <PageSkeleton type="form" /> : (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <button onClick={() => navigate(config.list)} style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', padding: '0.4rem', display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }}>
-                <ArrowLeft size={18} />
-              </button>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  {id ? number : `New ${config.title} (${config.code})`}
-                  <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '12px', background: readOnly ? '#ecfdf5' : '#fef3c7', color: readOnly ? '#059669' : '#d97706', fontWeight: 700, border: `1px solid ${readOnly ? '#a7f3d0' : '#fde68a'}` }}>
-                    {status}
-                  </span>
-                </h2>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{config.subtitle}</span>
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              {id && (
-                <button type="button" onClick={() => window.print()} style={{ background: '#fff', color: '#64748b', border: '1px solid #e2e8f0', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Printer size={16} /> Print
-                </button>
-              )}
-              {!id && (
-                <button onClick={handleSubmit} disabled={loading} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)', opacity: loading ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={16} /> {config.confirm}
-                </button>
-              )}
-              {id && kind === 'mr' && status === 'DRAFT' && (
-                <button onClick={() => act('approve')} disabled={loading} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={16} /> Approve
-                </button>
-              )}
-              {id && kind === 'mr' && ['APPROVED', 'PARTIAL'].includes(status) && (
-                <>
-                  <button onClick={() => act('pick')} disabled={loading} style={{ padding: '0.5rem 1.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', background: '#fff', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Save size={16} /> Pick List
-                  </button>
-                  <button onClick={() => fulfilOpen()} disabled={loading} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CheckCircle size={16} /> Fulfil
-                  </button>
-                </>
-              )}
-              {id && kind === 'transfer' && status === 'IN_TRANSIT' && (
-                <button onClick={() => act('receive')} disabled={loading} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={16} /> Receive
-                </button>
-              )}
-              {id && kind === 'count' && status !== 'POSTED' && doc?.financeStatus !== 'APPROVED' && (
-                <button onClick={() => act('finance', { decision: 'APPROVED' })} disabled={loading} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={16} /> Finance Approve
-                </button>
-              )}
-              {id && kind === 'count' && doc?.financeStatus === 'APPROVED' && status !== 'POSTED' && (
-                <button onClick={() => act('post')} disabled={loading} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={16} /> Post Variance
-                </button>
-              )}
-            </div>
-          </div>
+          <PageHeader
+            onBack={() => navigate(config.list)}
+            title={<><span>{id ? number : `New ${config.title} (${config.code})`}</span> <StatusBadge status={status} /></>}
+            subtitle={config.subtitle}
+            actions={(
+              <>
+                {id && <ActionButton variant="secondary" icon={Printer} onClick={() => window.print()}>Print</ActionButton>}
+                {!id && <ActionButton variant="submit" icon={CheckCircle} disabled={loading} onClick={handleSubmit}>{config.confirm}</ActionButton>}
+                {id && kind === 'mr' && status === 'DRAFT' && <ActionButton variant="submit" icon={CheckCircle} disabled={loading} onClick={() => act('approve')}>Approve</ActionButton>}
+                {id && kind === 'mr' && ['APPROVED', 'PARTIAL'].includes(status) && (
+                  <>
+                    <ActionButton variant="discard" icon={Save} disabled={loading} onClick={() => act('pick')}>Pick List</ActionButton>
+                    <ActionButton variant="submit" icon={CheckCircle} disabled={loading} onClick={() => fulfilOpen()}>Fulfil</ActionButton>
+                  </>
+                )}
+                {id && kind === 'transfer' && status === 'IN_TRANSIT' && <ActionButton variant="submit" icon={CheckCircle} disabled={loading} onClick={() => act('receive')}>Receive</ActionButton>}
+                {id && kind === 'count' && status !== 'POSTED' && doc?.financeStatus !== 'APPROVED' && <ActionButton variant="submit" icon={CheckCircle} disabled={loading} onClick={() => act('finance', { decision: 'APPROVED' })}>Finance Approve</ActionButton>}
+                {id && kind === 'count' && doc?.financeStatus === 'APPROVED' && status !== 'POSTED' && <ActionButton variant="submit" icon={CheckCircle} disabled={loading} onClick={() => act('post')}>Post Variance</ActionButton>}
+              </>
+            )}
+          />
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
             <Field label={<><Calendar size={14} /> Date *</>} width="220px" error={fieldErrors.date}>
@@ -592,15 +547,12 @@ function blankLine() {
 const th = { borderBottom: '1px solid var(--border-color)', padding: '0.5rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 };
 const tdCenter = { borderBottom: '1px solid var(--border-color)', padding: '0.25rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' };
 
-function Field({ label, width, error, children }) {
+function Field({ label, width, error, icon, children }) {
+  const text = typeof label === 'string' ? label.replace(' *', '') : label;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width }}>
-      <div style={{ display: 'flex', alignItems: 'center', height: '20px' }}>
-        <label style={fieldLabel}>{label}</label>
-      </div>
+    <FormField label={text} required={typeof label === 'string' && label.includes('*')} error={error} width={width} icon={icon}>
       {children}
-      {error && <div style={{ color: 'var(--error)', fontSize: '0.75rem' }}>{error}</div>}
-    </div>
+    </FormField>
   );
 }
 
@@ -630,8 +582,7 @@ function PartyPicker({ kind, onChange }) {
     setName('');
   }, [kind]);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '280px', marginTop: '-1rem', marginBottom: '1rem' }}>
-      <label style={fieldLabel}>{kind === 'SUPPLIER' ? 'Supplier *' : 'Customer *'}</label>
+    <FormField label={kind === 'SUPPLIER' ? 'Supplier' : 'Customer'} required width="280px">
       <input
         list="party-list"
         value={name}
@@ -643,11 +594,12 @@ function PartyPicker({ kind, onChange }) {
           else onChange({ customerId: match?.id || '', supplierId: '' });
         }}
         placeholder={kind === 'SUPPLIER' ? 'Search supplier...' : 'Search customer...'}
+        className="field-control"
         style={textInput}
       />
       <datalist id="party-list">
         {rows.map((row) => <option key={row.id} value={row.name} />)}
       </datalist>
-    </div>
+    </FormField>
   );
 }

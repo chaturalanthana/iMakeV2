@@ -2,22 +2,14 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
-import Modal from '../../components/ui/Modal';
+import FormModal from '../../components/ui/FormModal';
+import FormField, { TextControl, SelectControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
-import { Layers, Plus, Trash2 } from 'lucide-react';
+import { Layers, Plus } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-
-const inputStyle = {
-  width: '100%',
-  padding: '0.7rem 0.85rem',
-  borderRadius: '8px',
-  border: '1px solid var(--border-color)',
-  outline: 'none',
-  boxSizing: 'border-box',
-  fontSize: '0.9rem',
-  backgroundColor: '#fff'
-};
 
 export default function InventoryMaster({ kind }) {
   const config = MASTERS[kind];
@@ -82,7 +74,7 @@ export default function InventoryMaster({ kind }) {
   const extraActions = (
     <div style={{ display: 'flex', gap: '0.5rem' }}>
       {config.ensure && (
-        <button type="button" onClick={async () => {
+        <ActionButton variant="secondary" onClick={async () => {
           try {
             await axios.post(config.ensure, {}, { headers: headers() });
             showToast('Defaults are ready', 'success');
@@ -90,12 +82,10 @@ export default function InventoryMaster({ kind }) {
           } catch (error) {
             showToast(error.response?.data?.error || 'Failed to prepare defaults', 'error');
           }
-        }} style={ghostButton}>Load defaults</button>
+        }}>Load defaults</ActionButton>
       )}
       {config.button && (
-        <button onClick={openModal} style={primaryButton} onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }} onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}>
-          <Plus size={16} /> {config.button}
-        </button>
+        <ActionButton icon={Plus} onClick={openModal}>{config.button}</ActionButton>
       )}
     </div>
   );
@@ -112,49 +102,36 @@ export default function InventoryMaster({ kind }) {
             searchKeys={config.keys}
             extraActions={extraActions}
           />
-          <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={config.modalTitle} subtitle={config.subtitle} icon={Layers}>
-            <form onSubmit={handleSubmit} style={{ padding: '1.75rem' }} autoComplete="off">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {config.fields.map((field) => (
-                  <div key={field.key}>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-                      {field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}
-                    </label>
-                    {field.type === 'select' ? (
-                      <select value={form[field.key] || ''} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} style={inputStyle}>
-                        <option value="">Select</option>
-                        {(field.options ? field.options : extras[field.source] || []).map((option) => (
-                          <option key={option.id || option.value} value={option.id || option.value}>{option.name || option.label}{option.code ? ` (${option.code})` : ''}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input type={field.type || 'text'} name={field.key} value={form[field.key] || ''} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} placeholder={field.placeholder} style={{ ...inputStyle, border: fieldErrors[field.key] ? '1px solid var(--error)' : '1px solid var(--border-color)' }} />
-                    )}
-                    {fieldErrors[field.key] && <div style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '0.35rem' }}>{fieldErrors[field.key]}</div>}
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '0.65rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.65rem 2rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#ffffff' }}>Create</button>
-              </div>
-            </form>
-          </Modal>
+          <FormModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            title={config.modalTitle}
+            subtitle={config.subtitle}
+            icon={Layers}
+            onSubmit={handleSubmit}
+            submitLabel="Create"
+          >
+            {config.fields.map((field) => (
+              <FormField key={field.key} label={field.label} required={field.required} error={fieldErrors[field.key]} variant="modal">
+                {field.type === 'select' ? (
+                  <SelectControl invalid={!!fieldErrors[field.key]} value={form[field.key] || ''} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} style={{ height: 'auto', padding: '0.7rem 0.85rem' }}>
+                    <option value="">Select</option>
+                    {(field.options ? field.options : extras[field.source] || []).map((option) => (
+                      <option key={option.id || option.value} value={option.id || option.value}>{option.name || option.label}{option.code ? ` (${option.code})` : ''}</option>
+                    ))}
+                  </SelectControl>
+                ) : (
+                  <TextControl invalid={!!fieldErrors[field.key]} type={field.type || 'text'} name={field.key} value={form[field.key] || ''} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} placeholder={field.placeholder} style={{ height: 'auto', padding: '0.7rem 0.85rem' }} />
+                )}
+              </FormField>
+            ))}
+          </FormModal>
           <ConfirmModal isOpen={!!confirmConfig.isOpen} onClose={() => setConfirmConfig({ isOpen: false })} onConfirm={confirmConfig.onConfirm} title={confirmConfig.title} message={confirmConfig.message} confirmText="Confirm" />
         </>
       )}
     </AppLayout>
   );
 }
-
-const primaryButton = {
-  display: 'flex', alignItems: 'center', gap: '7px', padding: '0.55rem 1.25rem',
-  background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)',
-  border: 'none', borderRadius: '8px', color: '#ffffff', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap'
-};
-const ghostButton = {
-  background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.55rem 1rem', fontWeight: 600, cursor: 'pointer'
-};
 
 function actionColumn(label, onClick) {
   return {
@@ -236,8 +213,8 @@ const MASTERS = {
       { header: 'Lot', accessor: 'lotNumber', fontWeight: 700 },
       { header: 'Item', accessor: 'product', render: (row) => row.product?.code || '-' },
       { header: 'Expiry', accessor: 'expiryDate', render: (row) => row.expiryDate ? String(row.expiryDate).slice(0, 10) : '-' },
-      { header: 'Status', accessor: 'status' },
-      { header: 'Retest', accessor: 'retestStatus' },
+      { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+      { header: 'Retest', accessor: 'retestStatus', render: (row) => <StatusBadge status={row.retestStatus} /> },
       actionColumn('Release', async (row) => {
         const proposed = window.prompt('Revised expiry (YYYY-MM-DD)', '2027-12-31');
         if (!proposed) return;
@@ -275,7 +252,7 @@ const MASTERS = {
     columns: (setConfirm, headers, load, showToast) => [
       { header: 'Code', accessor: 'code', fontWeight: 700 },
       { header: 'Warehouse', accessor: 'warehouse', render: (row) => row.warehouse?.code || '-' },
-      { header: 'Status', accessor: 'status' },
+      { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
       actionColumn('Renumber', async (row) => {
         const code = window.prompt('New pallet code');
         if (!code) return;
@@ -313,5 +290,3 @@ const MASTERS = {
   }
 };
 
-void Trash2;
-void ConfirmModal;

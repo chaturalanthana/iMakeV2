@@ -3,6 +3,9 @@ import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
+import FilterBar from '../../components/ui/FilterBar';
+import FormField, { TextControl, SelectControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
 import { Package, Search, Download } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -70,35 +73,31 @@ export default function StockReports() {
     <AppLayout title="Stock Reports" icon={Package}>
       {loading ? <PageSkeleton /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', backgroundColor: '#fff', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ display: 'flex', gap: '1.5rem', flex: 1, flexWrap: 'wrap' }}>
-              <Filter label="Report">
-                <select value={report} onChange={(e) => setReport(e.target.value)} style={selectStyle}>
-                  {REPORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                </select>
-              </Filter>
-              <Filter label={<><Search size={14} /> Search</>}>
-                <div style={{ position: 'relative' }}>
-                  <input value={report === 'trace' ? lot : searchQuery} onChange={(e) => report === 'trace' ? setLot(e.target.value) : setSearchQuery(e.target.value)} placeholder={report === 'trace' ? 'Lot number' : 'Search by name or code...'} style={searchStyle} />
-                  <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                </div>
-              </Filter>
-              {report !== 'trace' && (
-                <Filter label="Warehouse Filter">
-                  <WarehouseSearchDropdown
-                    warehouses={warehouses}
-                    value={warehouseName}
-                    onChange={(name, wh) => { setWarehouseName(name); setWarehouseId(wh?.id || ''); }}
-                    placeholder="All Warehouses"
-                    style={{ wrapper: { height: '42px', boxSizing: 'border-box' } }}
-                  />
-                </Filter>
-              )}
-            </div>
-            <button onClick={() => window.print()} style={exportButton}>
-              <Download size={16} /> Export
-            </button>
-          </div>
+          <FilterBar actions={<ActionButton variant="secondary" icon={Download} onClick={() => window.print()}>Export</ActionButton>}>
+            <FormField label="Report" icon={Search} width="220px">
+              <SelectControl value={report} onChange={(e) => setReport(e.target.value)}>
+                {REPORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </SelectControl>
+            </FormField>
+            <FormField label={report === 'trace' ? 'Lot number' : 'Search'} icon={Search} width="280px">
+              <TextControl
+                value={report === 'trace' ? lot : searchQuery}
+                onChange={(e) => report === 'trace' ? setLot(e.target.value) : setSearchQuery(e.target.value)}
+                placeholder={report === 'trace' ? 'Lot number' : 'Search by name or code...'}
+              />
+            </FormField>
+            {report !== 'trace' && (
+              <FormField label="Warehouse" width="250px">
+                <WarehouseSearchDropdown
+                  warehouses={warehouses}
+                  value={warehouseName}
+                  onChange={(name, wh) => { setWarehouseName(name); setWarehouseId(wh?.id || ''); }}
+                  placeholder="All Warehouses"
+                  style={{ wrapper: { height: '42px', boxSizing: 'border-box' } }}
+                />
+              </FormField>
+            )}
+          </FilterBar>
 
           <div style={{ backgroundColor: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
             <div style={{ overflowX: 'auto' }}>
@@ -108,15 +107,6 @@ export default function StockReports() {
         </div>
       )}
     </AppLayout>
-  );
-}
-
-function Filter({ label, children }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '250px' }}>
-      <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>{label}</label>
-      {children}
-    </div>
   );
 }
 
@@ -188,10 +178,3 @@ function format(value) {
   return value;
 }
 
-const searchStyle = {
-  width: '100%', padding: '10px 12px 10px 36px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box'
-};
-const selectStyle = { ...searchStyle, padding: '10px 12px', height: '42px' };
-const exportButton = {
-  display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '10px 16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer'
-};
