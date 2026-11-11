@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -13,15 +14,15 @@ import { useToast } from '../../context/ToastContext';
 export default function NewPurchaseRequisition() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
 
   const [activeTab, setActiveTab] = useState('primary');
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [prId, setPrId] = useState(id || null);
-  const [isInitialLoad, setIsInitialLoad] = useState(!!id);
+  const [prId, setPrId] = useState(() => (isUuid(routeKey) ? routeKey : null));
+  const [isInitialLoad, setIsInitialLoad] = useState(!!routeKey);
   const [prNumber, setPrNumber] = useState('Drafting...');
   const [lastSaved, setLastSaved] = useState(null);
   const [status, setStatus] = useState('PENDING'); // PENDING, APPROVED, CONVERTED
@@ -124,6 +125,7 @@ export default function NewPurchaseRequisition() {
       const res = await axios.post('/api/procurement/purchase-requisitions', payload, config);
       setPrId(res.data.id);
       setPrNumber(res.data.prNumber);
+      showRecord(navigate, '/procurement/purchase-requisitions', res.data, 'prNumber');
       setLastSaved(new Date().toLocaleTimeString());
       setSaving(false);
     } catch (error) {
@@ -134,7 +136,7 @@ export default function NewPurchaseRequisition() {
 
   useEffect(() => {
     fetchData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -152,11 +154,19 @@ export default function NewPurchaseRequisition() {
       setProducts(prodRes.data);
       setCurrencies(curRes.data);
 
-      if (id) {
+      if (routeKey) {
         // Load an existing PR
-        const res = await axios.get(`/api/procurement/purchase-requisitions/${id}`, config);
+        let currentId = isUuid(routeKey) ? routeKey : null;
+        if (!currentId) {
+          const list = await axios.get('/api/procurement/purchase-requisitions', config);
+          currentId = findByRouteKey(list.data, routeKey, 'prNumber')?.id || null;
+        }
+        if (!currentId) return;
+        setPrId(currentId);
+        const res = await axios.get(`/api/procurement/purchase-requisitions/${currentId}`, config);
         const currentPr = res.data;
         if (currentPr) {
+          showRecord(navigate, '/procurement/purchase-requisitions', currentPr, 'prNumber');
           setPrNumber(currentPr.prNumber);
           setSupplierId(currentPr.supplierId || '');
           setSupplierName(currentPr.supplier?.name || '');
@@ -288,7 +298,7 @@ export default function NewPurchaseRequisition() {
 
   return (
     <AppLayout title="Purchase Requisition" icon={ClipboardList}>
-      {isInitialLoad && id ? (
+      {isInitialLoad && routeKey ? (
         <PageSkeleton type="form" />
       ) : (
         <>
@@ -340,7 +350,7 @@ export default function NewPurchaseRequisition() {
                 <>
                   {prId && (
                     <button 
-                      onClick={() => navigate(`/procurement/purchase-orders/new?prId=${prId}`)}
+                      onClick={() => navigate(`/procurement/purchase-orders/new?prId=${queryRef(prNumber)}`)}
                       style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1.25rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}
                     >
                       <ArrowUpRight size={16} /> Convert to PO

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { queryRef, recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -108,7 +109,7 @@ export default function Invoices() {
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
           {row.status !== 'PAID' && row.status !== 'PENDING' && (
             <button 
-              onClick={(e) => { e.stopPropagation(); navigate(`/finance/payment-receipts/new?invoiceId=${row.id}`); }} 
+              onClick={(e) => { e.stopPropagation(); navigate(`/finance/payment-receipts/new?invoiceId=${queryRef(row.invoiceNumber)}`); }} 
               style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#ecfdf5', color: '#059669', border: 'none', cursor: 'pointer', fontWeight: 600 }}
             >
               Collect
@@ -183,7 +184,7 @@ export default function Invoices() {
             searchPlaceholder="Search by invoice number or customer..."
             searchKeys={['invoiceNumber', 'customer.name']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/sales/invoices/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/sales/invoices', row, 'invoiceNumber'))}
           />
 
           <ConfirmModal 

@@ -25,7 +25,6 @@ export default function NewWorkstation() {
     code: '',
     name: '',
     description: '',
-    hourlyRate: '0.00',
     status: 'ACTIVE'
   });
 
@@ -48,7 +47,6 @@ export default function NewWorkstation() {
             code: ws.code || '',
             name: ws.name || '',
             description: ws.description || '',
-            hourlyRate: parseFloat(ws.hourlyRate || 0).toFixed(2),
             status: ws.status || 'ACTIVE'
           });
           const readable = workstationPath(ws);
@@ -85,7 +83,6 @@ export default function NewWorkstation() {
       errors.code = 'Code and Name are required';
       errors.name = 'Code and Name are required';
     }
-    if (parseFloat(formData.hourlyRate || 0) < 0) errors.hourlyRate = 'Hourly rate cannot be negative';
     if (Object.keys(errors).length) {
       setFieldErrors(errors);
       const messages = Object.values(errors);
@@ -93,8 +90,6 @@ export default function NewWorkstation() {
       return;
     }
     setFieldErrors({});
-
-    const rateVal = Math.max(0, parseFloat(formData.hourlyRate || 0) || 0);
 
     setSaving(true);
     try {
@@ -105,7 +100,6 @@ export default function NewWorkstation() {
         code: formData.code,
         name: formData.name,
         description: formData.description,
-        hourlyRate: rateVal,
         status: formData.status
       };
 

@@ -37,7 +37,7 @@ const detailInclude = {
   salesOrder: { select: { id: true, orderNumber: true } },
   components: { include: { product: { select: { id: true, code: true, name: true } } } },
   operations: {
-    include: { workstation: { select: { id: true, code: true, name: true, hourlyRate: true, capacity: true, efficiency: true } } },
+    include: { workstation: { select: { id: true, code: true, name: true, capacity: true, efficiency: true } } },
     orderBy: { sequence: 'asc' }
   },
   reservations: true,
@@ -215,7 +215,7 @@ async function buildSnapshot(db, { tenantId, productId, bomId, quantity }) {
     noOfWorkers: operation.noOfWorkers || 1,
     isSubcontract: operation.isSubcontract,
     subcontractCostPerUnit: num(operation.subcontractCostPerUnit),
-    machineRatePerHour: num(operation.workstation?.hourlyRate),
+    machineRatePerHour: 0,
     instructions: operation.instructions || null
   }));
 
@@ -252,14 +252,17 @@ async function buildSnapshot(db, { tenantId, productId, bomId, quantity }) {
   return { product, bom, routing, settings, components, operations, planned };
 }
 
-function suggestEnd(start, operations, quantity, hoursPerDay) {
+function plannedSpanDays(operations, quantity, hoursPerDay) {
   let minutes = 0;
-  operations.forEach((operation) => {
+  (operations || []).forEach((operation) => {
     minutes += num(operation.setupMinutes) + num(operation.runMinutesPerUnit) * quantity;
   });
-  const days = Math.max(1, Math.ceil((minutes / 60) / (num(hoursPerDay) || 8)));
+  return Math.max(1, Math.ceil((minutes / 60) / (num(hoursPerDay) || 8)));
+}
+
+function suggestEnd(start, operations, quantity, hoursPerDay) {
   const end = new Date(start);
-  end.setDate(end.getDate() + days - 1);
+  end.setDate(end.getDate() + plannedSpanDays(operations, quantity, hoursPerDay) - 1);
   return end;
 }
 
@@ -307,9 +310,12 @@ async function createInside(db, args) {
     quantity
   });
   const warehouseId = await defaultWarehouseId(db, args.tenantId, args.warehouseId);
-  const start = parseDate(args.startDate) || new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = parseDate(args.endDate) || suggestEnd(start, snapshot.operations, quantity, snapshot.settings.hoursPerDay);
+  const requestedStart = parseDate(args.startDate);
+  const requestedEnd = parseDate(args.endDate);
+  const leaveOpen = args.unscheduled === true && !requestedStart && !requestedEnd;
+  const start = leaveOpen ? null : (requestedStart || new Date());
+  if (start) start.setHours(0, 0, 0, 0);
+  const end = leaveOpen ? null : (requestedEnd || suggestEnd(start, snapshot.operations, quantity, snapshot.settings.hoursPerDay));
   const issueMode = ['MANUAL', 'BACKFLUSH'].includes(args.issueMode) ? args.issueMode : (snapshot.settings.issueMode || 'BACKFLUSH');
   const orderNumber = args.orderNumber || await generateDocumentNumber(args.tenantId, 'workOrder', 'WO', 'orderNumber', db);
   const planned = snapshot.planned;
@@ -745,20 +751,29 @@ async function migrateAllTenants() {
 
 async function listWorkOrders(tenantId, query = {}) {
   await migrateMissing(prisma, tenantId);
+  const settings = await getSettings(prisma, tenantId);
   const where = { tenantId };
   if (query.status) {
     const statuses = String(query.status).split(',').map((status) => status.trim()).filter(Boolean);
     if (statuses.length) where.status = { in: statuses };
   }
   if (query.productId) where.productId = query.productId;
-  return prisma.workOrder.findMany({
+  const orders = await prisma.workOrder.findMany({
     where,
     include: {
-      product: { select: { id: true, code: true, name: true } },
+      product: { select: { id: true, code: true, name: true, stockUom: { select: { name: true } } } },
       bom: { select: { id: true, code: true, version: true } },
-      warehouse: { select: { id: true, code: true, name: true } }
+      warehouse: { select: { id: true, code: true, name: true } },
+      operations: { select: { setupMinutes: true, runMinutesPerUnit: true } }
     },
     orderBy: { createdAt: 'desc' }
+  });
+  return orders.map((order) => {
+    const { operations, ...rest } = order;
+    return {
+      ...rest,
+      plannedDays: plannedSpanDays(operations, num(order.quantity), settings.hoursPerDay)
+    };
   });
 }
 
@@ -792,9 +807,29 @@ async function createWorkOrder(tenantId, userId, body, db = prisma) {
   });
 }
 
+function planDatesOnly(body) {
+  const keys = Object.keys(body).filter((key) => body[key] !== undefined);
+  return keys.length > 0 && keys.every((key) => key === 'startDate' || key === 'endDate');
+}
+
 async function updateWorkOrder(tenantId, id, body) {
   const wo = await getWorkOrder(tenantId, id);
-  if (!['CREATED', 'DRAFT'].includes(wo.status)) throw new ProductionError('Only draft or created work orders can be edited');
+  if (!['CREATED', 'DRAFT'].includes(wo.status)) {
+    if (planDatesOnly(body) && ['IN_PROGRESS', 'TECO', 'CLOSED'].includes(wo.status)) {
+      throw new ProductionError('Started work orders stay on the plan');
+    }
+    if (wo.status === 'RELEASED' && planDatesOnly(body)) {
+      await prisma.workOrder.update({
+        where: { id },
+        data: {
+          startDate: body.startDate !== undefined ? parseDate(body.startDate) : wo.startDate,
+          endDate: body.endDate !== undefined ? parseDate(body.endDate) : wo.endDate
+        }
+      });
+      return getWorkOrder(tenantId, id);
+    }
+    throw new ProductionError('Only draft or created work orders can be edited');
+  }
   const quantity = body.quantity !== undefined ? num(body.quantity) : num(wo.quantity);
   if (!(quantity > 0)) throw new ProductionError('Quantity must be greater than zero');
   let warehouseId = wo.warehouseId;
@@ -1253,7 +1288,7 @@ async function quoteRollup(tenantId, { productId, quantity, bomId }) {
     bom: snapshot.bom ? { id: snapshot.bom.id, code: snapshot.bom.code, version: snapshot.bom.version } : null,
     quantity: qty,
     ...snapshot.planned,
-    note: 'Material uses standard cost, then the next open FIFO layer, then the last receipt, then cost price. Labour uses the tenant labour rate. Machine uses the workstation hourly rate. Overhead is the tenant percent on labour, machine, and subcontract.'
+    note: 'Material uses standard cost, then the next open FIFO layer, then the last receipt, then cost price. Labour uses the tenant labour rate. Overhead is the tenant percent on labour and subcontract.'
   };
 }
 
@@ -1361,10 +1396,55 @@ async function scanWorkOrder(tenantId, code) {
   return wo;
 }
 
+function takeQty(bucket, productId, quantity) {
+  const have = Math.max(0, num(bucket.get(productId)));
+  const used = Math.min(have, Math.max(0, num(quantity)));
+  bucket.set(productId, round4(have - used));
+  return round4(used);
+}
+
+async function freeFinishedStock(db, tenantId, productIds, exceptSalesOrderId) {
+  const pool = new Map();
+  for (const productId of productIds) {
+    pool.set(productId, await onHand(db, tenantId, productId, null));
+  }
+  if (!productIds.length) return pool;
+  const others = await db.salesOrder.findMany({
+    where: {
+      tenantId,
+      id: { not: exceptSalesOrderId },
+      status: { notIn: ['CANCELLED', 'CLOSED'] }
+    },
+    include: {
+      items: { where: { productId: { in: productIds } } },
+      deliveries: { where: { status: 'DELIVERED' }, include: { items: true } }
+    }
+  });
+  for (const other of others) {
+    const shipped = new Map();
+    for (const delivery of other.deliveries) {
+      for (const line of delivery.items) {
+        shipped.set(line.productId, round4((shipped.get(line.productId) || 0) + num(line.quantity)));
+      }
+    }
+    for (const item of other.items) {
+      const shippedQty = takeQty(shipped, item.productId, item.quantity);
+      const remaining = round4(num(item.quantity) - shippedQty);
+      if (remaining > 0.00005 && pool.has(item.productId)) {
+        pool.set(item.productId, round4(pool.get(item.productId) - remaining));
+      }
+    }
+  }
+  return pool;
+}
+
 async function createDraftsForSalesOrder({ tenantId, userId, salesOrderId }) {
   const order = await prisma.salesOrder.findFirst({
     where: { id: salesOrderId, tenantId },
-    include: { items: { include: { product: true } } }
+    include: {
+      items: { include: { product: true } },
+      deliveries: { where: { status: 'DELIVERED' }, include: { items: true } }
+    }
   });
   if (!order) return [];
 
@@ -1374,17 +1454,31 @@ async function createDraftsForSalesOrder({ tenantId, userId, salesOrderId }) {
   });
   const used = new Set();
   const result = [];
+  const makeableIds = [...new Set(order.items.filter((item) => item.product?.bomApplicable).map((item) => item.productId))];
+  const pool = await freeFinishedStock(prisma, tenantId, makeableIds, order.id);
+  const shipped = new Map();
+  for (const delivery of order.deliveries) {
+    for (const line of delivery.items) {
+      shipped.set(line.productId, round4((shipped.get(line.productId) || 0) + num(line.quantity)));
+    }
+  }
 
   for (const item of order.items) {
     if (!item.product || !item.product.bomApplicable) continue;
+    const ordered = num(item.quantity);
+    const alreadyShipped = takeQty(shipped, item.productId, ordered);
+    const stillNeeded = round4(ordered - alreadyShipped);
+    const covered = takeQty(pool, item.productId, stillNeeded);
+    const shortfall = round4(stillNeeded - covered);
+    if (!(shortfall > 0.00005)) continue;
     const draft = drafts.find((row) => !used.has(row.id) && row.productId === item.productId);
     if (draft) {
       used.add(draft.id);
-      if (num(draft.quantity) !== num(item.quantity) || draft.salesOrderItemId !== item.id) {
+      if (round4(num(draft.quantity)) !== shortfall || draft.salesOrderItemId !== item.id) {
         await prisma.workOrder.update({
           where: { id: draft.id },
           data: {
-            quantity: num(item.quantity),
+            quantity: shortfall,
             salesOrderItemId: item.id,
             sourceId: order.id,
             notes: `Sales order ${order.orderNumber}`
@@ -1399,13 +1493,14 @@ async function createDraftsForSalesOrder({ tenantId, userId, salesOrderId }) {
       tenantId,
       userId,
       productId: item.productId,
-      quantity: num(item.quantity),
+      quantity: shortfall,
       sourceType: 'SALES_ORDER',
       sourceId: order.id,
       salesOrderId: order.id,
       salesOrderItemId: item.id,
       notes: `Sales order ${order.orderNumber}`,
-      status: 'CREATED'
+      status: 'CREATED',
+      unscheduled: true
     }));
   }
 

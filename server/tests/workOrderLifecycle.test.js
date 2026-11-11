@@ -331,6 +331,11 @@ describe('Work order lifecycle', () => {
   });
 
   test('sales orders and MRP create draft work orders', async () => {
+    await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.salesOrder.updateMany({
+      where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+      data: { status: 'CANCELLED' }
+    });
     const sales = await request(app)
       .post('/api/sales/orders')
       .set(auth())
@@ -387,6 +392,69 @@ describe('Work order lifecycle', () => {
     expect(mrpOrders).toHaveLength(1);
     expect(mrpOrders[0].status).toBe('CREATED');
     expect(parseFloat(mrpOrders[0].quantity)).toBe(2);
+  });
+
+  test('a sales order makes only the quantity stock cannot cover', async () => {
+    await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.salesOrder.updateMany({
+      where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+      data: { status: 'CANCELLED' }
+    });
+    await prisma.stockMovement.create({
+      data: {
+        tenantId: tenant.id,
+        productId: fg.id,
+        warehouseId: warehouse.id,
+        type: 'GR',
+        quantity: 4,
+        referenceType: 'ADJ',
+        referenceId: 'FG-OPEN'
+      }
+    });
+
+    const covered = await request(app)
+      .post('/api/sales/orders')
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 3, unitPrice: 50, total: 150 }]
+      });
+    expect(covered.status).toBe(201);
+    const none = await prisma.workOrder.count({
+      where: { tenantId: tenant.id, salesOrderId: covered.body.id, status: 'CREATED' }
+    });
+    expect(none).toBe(0);
+
+    const short = await request(app)
+      .post('/api/sales/orders')
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 3, unitPrice: 50, total: 150 }]
+      });
+    expect(short.status).toBe(201);
+    const balance = await prisma.workOrder.findFirst({
+      where: { tenantId: tenant.id, salesOrderId: short.body.id, status: 'CREATED' }
+    });
+    expect(balance).toBeTruthy();
+    expect(parseFloat(balance.quantity)).toBe(2);
+
+    const reduced = await request(app)
+      .put(`/api/sales/orders/${short.body.id}`)
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 1, unitPrice: 50, total: 50 }]
+      });
+    expect(reduced.status).toBe(200);
+    const cancelled = await prisma.workOrder.findFirst({ where: { id: balance.id } });
+    expect(cancelled.status).toBe('CANCELLED');
   });
 
   test('legacy production jobs are copied onto the work order', async () => {

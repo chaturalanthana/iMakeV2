@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
@@ -16,23 +17,25 @@ const emptyLine = () => ({ productId: '', productName: '', quantity: 1, unitPric
 export default function NewSupplierInvoice() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const [searchParams] = useSearchParams();
+  const poKey = searchParams.get('poId') || '';
+  const grnKey = searchParams.get('grnId') || '';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [supplierId, setSupplierId] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [poId, setPoId] = useState(searchParams.get('poId') || '');
-  const [grnId, setGrnId] = useState(searchParams.get('grnId') || '');
+  const [poId, setPoId] = useState(() => (isUuid(poKey) ? poKey : ''));
+  const [grnId, setGrnId] = useState(() => (isUuid(grnKey) ? grnKey : ''));
   const [exchangeRate, setExchangeRate] = useState('1');
   const [reference, setReference] = useState('');
   const [items, setItems] = useState([emptyLine()]);
   const [receipts, setReceipts] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saved, setSaved] = useState(null);
-  const readOnly = Boolean(id || saved);
+  const readOnly = Boolean(routeKey || saved);
 
   useEffect(() => {
     const load = async () => {
@@ -46,10 +49,11 @@ export default function NewSupplierInvoice() {
         ]);
         setSuppliers(supplierRes.data);
         setReceipts(grnRes.data || []);
-        if (id) {
-          const current = invoiceRes.data.find((row) => row.id === id);
+        if (routeKey) {
+          const current = findByRouteKey(invoiceRes.data, routeKey, 'invoiceNumber');
           if (current) {
             setSaved(current);
+            showRecord(navigate, '/procurement/supplier-invoices', current, 'invoiceNumber');
             setSupplierId(current.supplierId);
             setSupplierName(current.supplier?.name || '');
             setDate(new Date(current.date).toISOString().split('T')[0]);
@@ -62,9 +66,10 @@ export default function NewSupplierInvoice() {
               unitPrice: Number(item.unitPrice)
             })));
           }
-        } else if (grnId) {
-          const grn = grnRes.data.find((row) => row.id === grnId);
+        } else if (grnKey) {
+          const grn = findByRouteKey(grnRes.data, grnKey, 'grnNumber');
           if (grn) {
+            setGrnId(grn.id);
             setSupplierId(grn.supplierId);
             setSupplierName(grn.supplier?.name || '');
             setPoId(grn.poId || '');
@@ -80,6 +85,14 @@ export default function NewSupplierInvoice() {
               };
             }));
           }
+        } else if (poKey) {
+          const order = findByRouteKey(poRes.data, poKey, 'poNumber');
+          if (order) {
+            setPoId(order.id);
+            setSupplierId(order.supplierId);
+            setSupplierName(order.supplier?.name || '');
+            setExchangeRate(String(order.exchangeRate || 1));
+          }
         }
       } catch (error) {
         console.error(error);
@@ -88,7 +101,7 @@ export default function NewSupplierInvoice() {
       }
     };
     load();
-  }, [id, grnId]);
+  }, [routeKey, grnKey]);
 
   const save = async () => {
     const errors = {};
@@ -119,6 +132,7 @@ export default function NewSupplierInvoice() {
         }))
       }, config);
       setSaved(res.data);
+      showRecord(navigate, '/procurement/supplier-invoices', res.data, 'invoiceNumber');
       showToast(res.data.matchStatus === 'MATCHED_WITH_VARIANCE'
         ? 'Invoice saved. Price variance posted.'
         : 'Supplier invoice saved.', 'success');
@@ -178,11 +192,14 @@ export default function NewSupplierInvoice() {
             <FormField label="Supplier reference" width="240px">
               <TextControl value={reference} onChange={(event) => setReference(event.target.value)} disabled={readOnly} />
             </FormField>
-            {!id && !grnId && (
+            {!routeKey && !grnKey && (
               <FormField label="Goods receipt" width="350px" error={fieldErrors.grnId}>
                 <SelectControl
                   value=""
-                  onChange={(event) => { if (event.target.value) navigate(`/procurement/supplier-invoices/new?grnId=${event.target.value}`); }}
+                  onChange={(event) => {
+                    const receipt = receipts.find((row) => row.id === event.target.value);
+                    if (receipt) navigate(`/procurement/supplier-invoices/new?grnId=${encodeURIComponent(receipt.grnNumber)}`);
+                  }}
                   invalid={!!fieldErrors.grnId}
                 >
                   <option value="">Choose the goods receipt to invoice</option>

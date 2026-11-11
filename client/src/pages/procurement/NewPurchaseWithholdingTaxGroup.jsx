@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import AccountSearchDropdown from '../../components/ui/AccountSearchDropdown';
@@ -10,7 +11,8 @@ import { useToast } from '../../context/ToastContext';
 export default function NewPurchaseWithholdingTaxGroup() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -30,7 +32,7 @@ export default function NewPurchaseWithholdingTaxGroup() {
 
   useEffect(() => {
     fetchPageData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchPageData = async () => {
     setLoading(true);
@@ -41,8 +43,16 @@ export default function NewPurchaseWithholdingTaxGroup() {
       const accRes = await axios.get('/api/finance/accounts', config);
       setAccounts(accRes.data);
 
-      if (id) {
-        const res = await axios.get(`/api/procurement/withholding-tax-groups/${id}`, config);
+      if (routeKey) {
+        let recordId = isUuid(routeKey) ? routeKey : '';
+        if (!recordId) {
+          const list = await axios.get('/api/procurement/withholding-tax-groups', config);
+          recordId = findByRouteKey(list.data, routeKey, 'name')?.id || '';
+        }
+        if (!recordId) return;
+        setId(recordId);
+        const res = await axios.get(`/api/procurement/withholding-tax-groups/${recordId}`, config);
+        showRecord(navigate, '/procurement/withholding-tax-groups', res.data, 'name');
         setFormData({
           name: res.data.name || '',
           description: res.data.description || '',

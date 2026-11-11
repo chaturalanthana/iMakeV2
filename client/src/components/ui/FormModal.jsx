@@ -38,10 +38,11 @@ export default function FormModal({
   cancelLabel = 'Cancel',
   children,
   maxWidth = '650px',
-  busy = false
+  busy = false,
+  overflow = 'hidden'
 }) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} subtitle={subtitle} icon={icon} maxWidth={maxWidth}>
+    <Modal isOpen={isOpen} onClose={onClose} title={title} subtitle={subtitle} icon={icon} maxWidth={maxWidth} overflow={overflow}>
       <form
         onSubmit={(event) => {
           event.preventDefault();

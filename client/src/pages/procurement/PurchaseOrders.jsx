@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { queryRef, recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -79,7 +80,7 @@ export default function PurchaseOrders() {
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
           {row.status !== 'RECEIVED' && row.status !== 'DRAFT' && (
             <button 
-              onClick={(e) => { e.stopPropagation(); navigate(`/procurement/grn/new?poId=${row.id}`); }} 
+              onClick={(e) => { e.stopPropagation(); navigate(`/procurement/grn/new?poId=${queryRef(row.poNumber)}`); }} 
               style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#e0e7ff', color: '#4338ca', border: 'none', cursor: 'pointer', fontWeight: 600 }}
             >
               Receive GRN
@@ -135,7 +136,7 @@ export default function PurchaseOrders() {
             searchPlaceholder="Search by PO number or supplier..."
             searchKeys={['poNumber', 'supplierName']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/procurement/purchase-orders/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/procurement/purchase-orders', row, 'poNumber'))}
           />
 
           <ConfirmModal 

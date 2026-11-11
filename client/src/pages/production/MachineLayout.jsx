@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Pencil, RotateCw, Cog, Check, Copy } from 'lucide-react';
+import { Plus, Trash2, Pencil, RotateCw, Cog, Check, Copy, FileText, Gauge, Search } from 'lucide-react';
+import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 
@@ -10,6 +11,16 @@ const CARD_W = 176;
 const DEFAULT_H = 72;
 const MIN_W = 112;
 const MIN_H = 56;
+
+const blankDraft = () => ({
+  name: '',
+  modelNumber: '',
+  manufacturer: '',
+  serialNumber: '',
+  watts: '',
+  year: '',
+  rates: {}
+});
 
 const sizeOf = (machine) => ({
   width: Number(machine.width) || CARD_W,
@@ -109,7 +120,13 @@ export default function MachineLayout({ workstationId }) {
   const [marquee, setMarquee] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [modal, setModal] = useState(null);
-  const [draft, setDraft] = useState({ name: '' });
+  const [draft, setDraft] = useState(blankDraft);
+  const [section, setSection] = useState('details');
+  const [products, setProducts] = useState([]);
+  const [productsReady, setProductsReady] = useState(false);
+  const [productQuery, setProductQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
@@ -280,13 +297,53 @@ export default function MachineLayout({ workstationId }) {
     };
   }, []);
 
+  const ratesFrom = (machine) => {
+    const rates = {};
+    (machine?.throughputs || []).forEach((row) => {
+      rates[row.productId] = {
+        maxThroughput: row.maxThroughput ? String(row.maxThroughput) : '',
+        idleThroughput: row.idleThroughput ? String(row.idleThroughput) : ''
+      };
+    });
+    return rates;
+  };
+
+  const loadProducts = useCallback(async () => {
+    if (productsReady) return;
+    try {
+      const res = await axios.get('/api/products', authConfig());
+      setProducts((res.data || []).filter((product) => (
+        product.activeStatus !== 'INACTIVE'
+        && (product.productType?.kind === 'FINISHED_GOOD' || product.productType?.kind === 'SEMI_FINISHED')
+      )));
+      setProductsReady(true);
+    } catch (error) {
+      showToast('Failed to load products', 'error');
+    }
+  }, [authConfig, productsReady, showToast]);
+
+  const draftFrom = (machine) => ({
+    name: machine?.name || '',
+    modelNumber: machine?.modelNumber || '',
+    manufacturer: machine?.manufacturer || '',
+    serialNumber: machine?.serialNumber || '',
+    watts: machine?.watts == null || machine?.watts === '' ? '' : String(machine.watts),
+    year: machine?.year == null || machine?.year === '' ? '' : String(machine.year),
+    rates: ratesFrom(machine)
+  });
+
   const openCreate = (event) => {
     event.preventDefault();
     event.stopPropagation();
     const count = machines.length;
     setSelectedIds([]);
-    setDraft({ name: '' });
+    setDraft(blankDraft());
+    setSection('details');
+    setProductQuery('');
+    setCategoryFilter('');
+    setBrandFilter('');
     setErrors({});
+    loadProducts();
     setModal({
       mode: 'create',
       posX: 48 + (count % 5) * 196,
@@ -297,8 +354,13 @@ export default function MachineLayout({ workstationId }) {
   const openEdit = (event, machine) => {
     event.stopPropagation();
     setSelectedIds([machine.id]);
-    setDraft({ name: machine.name });
+    setDraft(draftFrom(machine));
+    setSection('details');
+    setProductQuery('');
+    setCategoryFilter('');
+    setBrandFilter('');
     setErrors({});
+    loadProducts();
     setModal({ mode: 'edit', id: machine.id, code: machine.code });
   };
 
@@ -368,12 +430,62 @@ export default function MachineLayout({ workstationId }) {
     setMarquee({ left: event.clientX - rect.left, top: event.clientY - rect.top, width: 0, height: 0 });
   };
 
+  const namedOptions = (idKey, relation) => {
+    const names = new Map();
+    products.forEach((product) => {
+      const record = product[relation];
+      const id = product[idKey] || record?.id;
+      if (id && record?.name) names.set(id, record.name);
+    });
+    return [...names.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+  const categoryOptions = namedOptions('categoryId', 'category');
+  const brandOptions = namedOptions('brandId', 'brand');
+  const productSearch = productQuery.trim().toLowerCase();
+  const visibleProducts = [...products]
+    .filter((product) => {
+      const categoryOk = !categoryFilter || product.categoryId === categoryFilter || product.category?.id === categoryFilter;
+      const brandOk = !brandFilter || product.brandId === brandFilter || product.brand?.id === brandFilter;
+      const searchOk = !productSearch || `${product.code || ''} ${product.name || ''}`.toLowerCase().includes(productSearch);
+      return categoryOk && brandOk && searchOk;
+    })
+    .sort((a, b) => `${a.productType?.kind}-${a.code}`.localeCompare(`${b.productType?.kind}-${b.code}`));
+
+  const throughputRows = () => products.map((product) => ({
+    productId: product.id,
+    maxThroughput: draft.rates[product.id]?.maxThroughput || 0,
+    idleThroughput: draft.rates[product.id]?.idleThroughput || 0
+  }));
+
+  const machinePayload = () => ({
+    name: draft.name.trim(),
+    modelNumber: draft.modelNumber.trim(),
+    manufacturer: draft.manufacturer.trim(),
+    serialNumber: draft.serialNumber.trim(),
+    watts: draft.watts === '' ? null : Number(draft.watts),
+    year: draft.year === '' ? null : Number(draft.year),
+    throughputs: throughputRows()
+  });
+
   const saveMachine = async () => {
     if (!modal) return;
     const nextErrors = {};
     if (!draft.name.trim()) nextErrors.name = true;
+    if (draft.watts !== '' && (!Number.isInteger(Number(draft.watts)) || Number(draft.watts) < 0)) nextErrors.watts = true;
+    if (draft.year !== '' && (!Number.isInteger(Number(draft.year)) || Number(draft.year) < 1900 || Number(draft.year) > 2100)) nextErrors.year = true;
+    products.forEach((product) => {
+      const rate = draft.rates[product.id] || {};
+      ['maxThroughput', 'idleThroughput'].forEach((field) => {
+        const value = rate[field];
+        if (value !== '' && value != null && parseFloat(value) < 0) nextErrors[`${product.id}.${field}`] = true;
+      });
+    });
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
+      const detailError = nextErrors.name || nextErrors.watts || nextErrors.year;
+      setSection(detailError ? 'details' : 'throughput');
       showToast('Please fill the highlighted fields.', 'error');
       return;
     }
@@ -381,20 +493,20 @@ export default function MachineLayout({ workstationId }) {
     try {
       if (modal.mode === 'create') {
         const res = await axios.post('/api/machines', {
-          name: draft.name.trim(),
+          ...machinePayload(),
           workstationId,
           posX: modal.posX,
           posY: modal.posY
         }, authConfig());
         setMachines((prev) => [...prev, res.data]);
-        setDraft({ name: '' });
+        setDraft(blankDraft());
         setModal(null);
         showToast('Machine added', 'success');
       } else {
-        const res = await axios.put(`/api/machines/${modal.id}`, {
-          name: draft.name.trim()
-        }, authConfig());
-        setMachines((prev) => prev.map((machine) => (machine.id === res.data.id ? res.data : machine)));
+        const res = await axios.put(`/api/machines/${modal.id}`, machinePayload(), authConfig());
+        setMachines((prev) => prev.map((machine) => (
+          machine.id === res.data.id ? { ...machine, ...res.data } : machine
+        )));
         setModal(null);
         showToast('Machine saved', 'success');
       }
@@ -416,12 +528,18 @@ export default function MachineLayout({ workstationId }) {
         const { width, height, rotation } = sizeOf(item);
         const res = await axios.post('/api/machines', {
           name: item.name,
+          modelNumber: item.modelNumber || '',
+          manufacturer: item.manufacturer || '',
+          serialNumber: item.serialNumber || '',
+          watts: item.watts,
+          year: item.year,
           workstationId,
           posX: item.posX + 28,
           posY: item.posY + 28,
           width,
           height,
-          rotation
+          rotation,
+          throughputs: item.throughputs || []
         }, authConfig());
         created.push(res.data);
       }
@@ -753,42 +871,182 @@ export default function MachineLayout({ workstationId }) {
         onClose={closeModal}
         title={modal?.mode === 'edit' ? modal.code : 'New Machine'}
         icon={Cog}
-        maxWidth="420px"
+        maxWidth="1320px"
+        overflow="visible"
       >
-        <div style={{ padding: '1.5rem' }}>
-          <input
-            autoFocus
-            value={draft.name}
-            placeholder="Machine name"
-            className={errors.name ? 'field-invalid' : undefined}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                saveMachine();
-              }
-            }}
-            onChange={(event) => {
-              setDraft((prev) => ({ ...prev, name: event.target.value }));
-              setErrors((prev) => ({ ...prev, name: false }));
-            }}
-            style={{
-              width: '100%',
-              height: '42px',
-              borderRadius: '8px',
-              padding: '0 0.75rem',
-              border: errors.name ? '1px solid #ef4444' : '1px solid var(--border-color)',
-              background: '#f8fafc',
-              outline: 'none',
-              fontSize: '0.9rem',
-              boxSizing: 'border-box',
-              fontFamily: 'inherit'
-            }}
-          />
+        <div style={{ display: 'flex', minHeight: '520px' }}>
+          <div style={{ width: '210px', flexShrink: 0, borderRight: '1px solid var(--border-color)', padding: '1rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', background: '#f8fafc' }}>
+            {[
+              { id: 'details', label: 'Details', icon: FileText },
+              { id: 'throughput', label: 'Throughput', icon: Gauge }
+            ].map((tab) => {
+              const active = section === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSection(tab.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.7rem 0.85rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    background: active ? 'var(--accent-light)' : 'transparent',
+                    color: active ? 'var(--accent)' : '#64748b',
+                    fontFamily: 'inherit'
+                  }}
+                >
+                  <Icon size={16} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', padding: section === 'details' ? '1.5rem 1.75rem' : 0 }}>
+            {section === 'details' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', maxWidth: '640px' }}>
+                {[
+                  { key: 'name', label: 'Machine Name', required: true, placeholder: 'Machine name' },
+                  { key: 'modelNumber', label: 'Model Number', placeholder: 'Model number' },
+                  { key: 'manufacturer', label: 'Manufacturer', placeholder: 'Manufacturer' },
+                  { key: 'serialNumber', label: 'Serial Number', placeholder: 'Serial number' },
+                  { key: 'watts', label: 'Watts', type: 'number', placeholder: 'Watts' },
+                  { key: 'year', label: 'Year', type: 'number', placeholder: 'Year' }
+                ].map((field) => (
+                  <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <label style={{ width: '150px', flexShrink: 0, margin: 0, fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.025em', textTransform: 'uppercase', color: '#334155' }}>
+                      {field.label}{field.required ? <span style={{ color: 'red' }}> *</span> : null}
+                    </label>
+                    <input
+                      autoFocus={field.key === 'name'}
+                      type={field.type || 'text'}
+                      min={field.type === 'number' ? '0' : undefined}
+                      step={field.type === 'number' ? '1' : undefined}
+                      value={draft[field.key]}
+                      placeholder={field.placeholder}
+                      className={errors[field.key] ? 'field-invalid' : undefined}
+                      onChange={(event) => {
+                        setDraft((prev) => ({ ...prev, [field.key]: event.target.value }));
+                        setErrors((prev) => ({ ...prev, [field.key]: false }));
+                      }}
+                      style={{
+                        flex: 1,
+                        height: '40px',
+                        padding: '0 0.85rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        outline: 'none',
+                        fontSize: '0.9rem',
+                        color: '#0f172a',
+                        background: '#fff',
+                        fontFamily: 'inherit',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            {section === 'throughput' && (
+              !productsReady ? (
+                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '1.25rem' }}>Loading products...</div>
+              ) : products.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '1.25rem' }}>No finished or semi-finished goods.</div>
+              ) : (
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.85rem 1rem', borderBottom: '1px solid var(--border-color)', background: '#f8fafc', position: 'relative', zIndex: 5 }}>
+                    <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                      <input
+                        value={productQuery}
+                        onChange={(event) => setProductQuery(event.target.value)}
+                        placeholder="Search product..."
+                        style={{ width: '100%', height: '38px', padding: '0 0.75rem 0 2.1rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.85rem', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <LiveSearchDropdown
+                      options={categoryOptions}
+                      value={categoryFilter}
+                      onChange={setCategoryFilter}
+                      placeholder="All Categories"
+                      style={{ width: '200px', input: { backgroundColor: '#fff', border: '1px solid var(--border-color)', height: '38px', fontSize: '0.85rem' } }}
+                    />
+                    <LiveSearchDropdown
+                      options={brandOptions}
+                      value={brandFilter}
+                      onChange={setBrandFilter}
+                      placeholder="All Brands"
+                      style={{ width: '200px', input: { backgroundColor: '#fff', border: '1px solid var(--border-color)', height: '38px', fontSize: '0.85rem' } }}
+                    />
+                  </div>
+                  {visibleProducts.length === 0 ? (
+                    <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '1.25rem' }}>No matching products.</div>
+                  ) : (
+                <div className="spreadsheet-table" style={{ flex: 1, overflow: 'auto', borderBottom: '1px solid var(--border-color)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                      <tr style={{ height: '2.5rem' }}>
+                        <th style={{ width: '56px', padding: '0.5rem 0.75rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>#</th>
+                        <th style={{ padding: '0.5rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>Product</th>
+                        <th style={{ width: '190px', padding: '0.5rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>Class</th>
+                        <th style={{ width: '200px', padding: '0.5rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>Max throughput / hr</th>
+                        <th style={{ width: '200px', padding: '0.5rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>Idle throughput / hr</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleProducts.map((product, index) => {
+                        const rate = draft.rates[product.id] || {};
+                        const setRate = (field, value) => setDraft((prev) => ({
+                          ...prev,
+                          rates: {
+                            ...prev.rates,
+                            [product.id]: { maxThroughput: '', idleThroughput: '', ...prev.rates[product.id], [field]: value }
+                          }
+                        }));
+                        return (
+                          <tr key={product.id} style={{ height: '2.25rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{index + 1}</td>
+                            <td style={{ padding: '0 1rem', fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap' }}>{product.code} — {product.name}</td>
+                            <td style={{ textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, whiteSpace: 'nowrap', color: product.productType?.kind === 'SEMI_FINISHED' ? '#10b981' : '#15803d' }}>
+                              {product.productType?.kind === 'SEMI_FINISHED' ? 'Semi-Finished Good' : 'Finished Good'}
+                            </td>
+                            {['maxThroughput', 'idleThroughput'].map((field) => (
+                              <td key={field} className="spreadsheet-cell" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={rate[field] || ''}
+                                  onChange={(event) => {
+                                    setRate(field, event.target.value);
+                                    setErrors((prev) => ({ ...prev, [`${product.id}.${field}`]: false }));
+                                  }}
+                                  className={`spreadsheet-input${errors[`${product.id}.${field}`] ? ' field-invalid' : ''}`}
+                                  style={{ textAlign: 'center', fontWeight: 700 }}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                  )}
+                </div>
+              )
+            )}
+          </div>
         </div>
-        <div style={{ padding: '1rem 1.75rem 1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', backgroundColor: '#f8fafc' }}>
-          <button type="button" onClick={closeModal} style={{ padding: '0.55rem 1.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#64748b', fontSize: '0.85rem' }}>Cancel</button>
-          <button type="button" onClick={saveMachine} disabled={saving} style={{ padding: '0.55rem 1.5rem', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem' }}>
-            {saving ? 'Saving...' : modal?.mode === 'edit' ? 'Save' : 'Add'}
+        <div style={{ padding: '0.9rem 1.75rem', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.65rem', borderTop: '1px solid var(--border-color)', backgroundColor: '#f8fafc' }}>
+          <button type="button" onClick={closeModal} style={{ height: '36px', padding: '0 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#64748b', fontSize: '0.85rem', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" onClick={saveMachine} disabled={saving} style={{ height: '36px', padding: '0 1.1rem', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: saving ? 0.7 : 1 }}>
+            <Check size={15} /> {saving ? 'Saving...' : modal?.mode === 'edit' ? 'Save' : 'Add'}
           </button>
         </div>
       </Modal>

@@ -1,6 +1,6 @@
 const prisma = require('../lib/prisma');
 
-const present = ({ efficiency, capacity, ...workstation }) => workstation;
+const present = ({ efficiency, capacity, hourlyRate, ...workstation }) => workstation;
 
 const getWorkstations = async (req, res) => {
   const tenantId = req.tenantId;
@@ -40,16 +40,10 @@ const getWorkstationById = async (req, res) => {
 
 const createWorkstation = async (req, res) => {
   const tenantId = req.tenantId;
-  const { code, name, description, hourlyRate, status } = req.body;
+  const { code, name, description, status } = req.body;
 
   if (!code || !name) {
     return res.status(400).json({ error: 'Code and Name are required' });
-  }
-
-  const rateVal = parseFloat(hourlyRate || 0);
-
-  if (rateVal < 0) {
-    return res.status(400).json({ error: 'Hourly rate cannot be negative' });
   }
 
   try {
@@ -67,7 +61,6 @@ const createWorkstation = async (req, res) => {
         code,
         name,
         description,
-        hourlyRate: rateVal,
         status: status || 'ACTIVE',
         createdBy: req.user?.email || 'System'
       }
@@ -83,16 +76,10 @@ const createWorkstation = async (req, res) => {
 const updateWorkstation = async (req, res) => {
   const tenantId = req.tenantId;
   const { id } = req.params;
-  const { code, name, description, hourlyRate, status } = req.body;
+  const { code, name, description, status } = req.body;
 
   if (!code || !name) {
     return res.status(400).json({ error: 'Code and Name are required' });
-  }
-
-  const rateVal = parseFloat(hourlyRate || 0);
-
-  if (rateVal < 0) {
-    return res.status(400).json({ error: 'Hourly rate cannot be negative' });
   }
 
   try {
@@ -121,7 +108,6 @@ const updateWorkstation = async (req, res) => {
         code,
         name,
         description,
-        hourlyRate: rateVal,
         status: status || 'ACTIVE'
       }
     });

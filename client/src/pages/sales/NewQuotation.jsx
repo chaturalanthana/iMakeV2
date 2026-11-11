@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -15,14 +16,14 @@ import { useToast } from '../../context/ToastContext';
 export default function NewQuotation() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const [activeTab, setActiveTab] = useState('primary');
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [quotationId, setQuotationId] = useState(id || null);
-  const [isInitialLoad, setIsInitialLoad] = useState(!!id);
+  const [quotationId, setQuotationId] = useState(() => (isUuid(routeKey) ? routeKey : null));
+  const [isInitialLoad, setIsInitialLoad] = useState(!!routeKey);
   const [quotationNumber, setQuotationNumber] = useState('Drafting...');
   const [lastSaved, setLastSaved] = useState(null);
   const [quotationStatus, setQuotationStatus] = useState('DRAFT');
@@ -119,6 +120,7 @@ export default function NewQuotation() {
       const res = await axios.post('/api/sales/quotations', payload, config);
       setQuotationId(res.data.id);
       setQuotationNumber(res.data.quotationNumber);
+      showRecord(navigate, '/sales/quotations', res.data, 'quotationNumber');
       setLastSaved(new Date().toLocaleTimeString());
       setSaving(false);
     } catch (error) {
@@ -129,7 +131,7 @@ export default function NewQuotation() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [routeKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -147,10 +149,12 @@ export default function NewQuotation() {
       setProducts(prodRes.data);
       setProductAttributes(attrRes.data);
 
-      if (id) {
+      if (routeKey) {
         const quoRes = await axios.get('/api/sales/quotations', config);
-        const currentQuo = quoRes.data.find(q => q.id === id);
+        const currentQuo = findByRouteKey(quoRes.data, routeKey, 'quotationNumber');
         if (currentQuo) {
+          setQuotationId(currentQuo.id);
+          showRecord(navigate, '/sales/quotations', currentQuo, 'quotationNumber');
           setQuotationNumber(currentQuo.quotationNumber);
           setCustomerId(currentQuo.customerId);
           setCustomerName(currentQuo.customer?.name || '');
@@ -280,7 +284,7 @@ export default function NewQuotation() {
 
   return (
     <AppLayout title="New Quotation" icon={FileText}>
-      {isInitialLoad && id ? (
+      {isInitialLoad && routeKey ? (
         <PageSkeleton type="form" />
       ) : (
         <>
@@ -346,7 +350,7 @@ export default function NewQuotation() {
                   {isCompleted ? (
                     <>
                       <button type="button" onClick={() => navigate('/sales/quotations')} style={{ background: '#fff', color: '#64748b', border: '1px solid #e2e8f0', padding: '0.5rem 1.25rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Close</button>
-                      <button type="button" onClick={() => navigate(`/sales/orders/new?quotationId=${quotationId}`)} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}>
+                      <button type="button" onClick={() => navigate(`/sales/orders/new?quotationId=${queryRef(quotationNumber)}`)} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}>
                         Create Customer Order
                       </button>
                     </>

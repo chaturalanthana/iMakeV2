@@ -401,9 +401,10 @@ function ageBucket(date, today = new Date()) {
   return 'current';
 }
 
-function emptyAging(id, name) {
+function emptyAging(id, name, code = '') {
   return {
     id,
+    code,
     name,
     supplierName: name,
     customerName: name,
@@ -848,7 +849,7 @@ async function customerAging(db, tenantId) {
     const open = money((num(invoice.total) - num(invoice.amountPaid)) * (num(invoice.exchangeRate) || 1));
     if (open <= 0.0001) continue;
     const name = invoice.customer ? `${invoice.customer.code} - ${invoice.customer.name}` : 'Customer';
-    if (!rows.has(invoice.customerId)) rows.set(invoice.customerId, emptyAging(invoice.customerId, name));
+    if (!rows.has(invoice.customerId)) rows.set(invoice.customerId, emptyAging(invoice.customerId, name, invoice.customer?.code || ''));
     const row = rows.get(invoice.customerId);
     const bucket = ageBucket(invoice.dueDate || invoice.date);
     row[bucket] = money(row[bucket] + open);
@@ -867,7 +868,7 @@ async function supplierAging(db, tenantId) {
     const open = money((num(invoice.total) - num(invoice.amountPaid)) * (num(invoice.exchangeRate) || 1));
     if (open <= 0.0001) continue;
     const name = invoice.supplier ? `${invoice.supplier.code} - ${invoice.supplier.name}` : 'Supplier';
-    if (!rows.has(invoice.supplierId)) rows.set(invoice.supplierId, emptyAging(invoice.supplierId, name));
+    if (!rows.has(invoice.supplierId)) rows.set(invoice.supplierId, emptyAging(invoice.supplierId, name, invoice.supplier?.code || ''));
     const row = rows.get(invoice.supplierId);
     const bucket = ageBucket(invoice.dueDate || invoice.date);
     row[bucket] = money(row[bucket] + open);
@@ -886,14 +887,22 @@ function runningStatement(lines) {
     });
 }
 
+const PARTY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function findParty(db, model, tenantId, key) {
+  if (!key) return null;
+  if (PARTY_UUID.test(key)) return db[model].findFirst({ where: { id: key, tenantId } });
+  return db[model].findFirst({ where: { tenantId, code: { equals: key, mode: 'insensitive' } } });
+}
+
 async function customerStatement(db, tenantId, customerId) {
-  const customer = await db.customer.findFirst({ where: { id: customerId, tenantId } });
+  const customer = await findParty(db, 'customer', tenantId, customerId);
   if (!customer) return null;
   const invoices = await db.salesInvoice.findMany({
-    where: { tenantId, customerId, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
+    where: { tenantId, customerId: customer.id, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
   });
   const receipts = await db.paymentReceipt.findMany({
-    where: { tenantId, customerId, status: { not: 'CANCELLED' } },
+    where: { tenantId, customerId: customer.id, status: { not: 'CANCELLED' } },
     include: { lines: true }
   });
   const lines = [];
@@ -932,13 +941,13 @@ async function customerStatement(db, tenantId, customerId) {
 }
 
 async function supplierStatement(db, tenantId, supplierId) {
-  const supplier = await db.supplier.findFirst({ where: { id: supplierId, tenantId } });
+  const supplier = await findParty(db, 'supplier', tenantId, supplierId);
   if (!supplier) return null;
   const invoices = await db.supplierInvoice.findMany({
-    where: { tenantId, supplierId, status: { not: 'CANCELLED' } }
+    where: { tenantId, supplierId: supplier.id, status: { not: 'CANCELLED' } }
   });
   const vouchers = await db.paymentVoucher.findMany({
-    where: { tenantId, supplierId, status: { not: 'CANCELLED' } },
+    where: { tenantId, supplierId: supplier.id, status: { not: 'CANCELLED' } },
     include: { allocations: true }
   });
   const lines = [];

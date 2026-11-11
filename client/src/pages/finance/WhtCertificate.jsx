@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageHeader from '../../components/ui/PageHeader';
 import ActionButton from '../../components/ui/ActionButton';
@@ -10,19 +11,41 @@ import { Printer, FileText } from 'lucide-react';
 const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function WhtCertificate() {
-  const { id } = useParams();
+  const params = useParams();
+  const routeKey = params['*'] ? routeKeyOf(params) : (params.id || '');
   const navigate = useNavigate();
   const [certificate, setCertificate] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`/api/finance/payment-vouchers/${id}/wht-certificate`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    }).then((res) => setCertificate(res.data))
-      .catch((err) => setError(err.response?.data?.error || 'Certificate not found'))
-      .finally(() => setLoading(false));
-  }, [id]);
+    let stop = false;
+    const load = async () => {
+      const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+      try {
+        let voucherId = isUuid(routeKey) ? routeKey : '';
+        if (!voucherId) {
+          const list = await axios.get('/api/finance/payment-vouchers', { headers });
+          voucherId = findByRouteKey(list.data, routeKey, 'voucherNumber')?.id || '';
+        }
+        if (!voucherId) {
+          if (!stop) setError('Certificate not found');
+          return;
+        }
+        const res = await axios.get(`/api/finance/payment-vouchers/${voucherId}/wht-certificate`, { headers });
+        if (stop) return;
+        setCertificate(res.data);
+        if (res.data?.voucherNumber) showRecord(navigate, '/finance/vouchers/wht', { voucherNumber: res.data.voucherNumber }, 'voucherNumber');
+      } catch (err) {
+        if (!stop) setError(err.response?.data?.error || 'Certificate not found');
+      } finally {
+        if (!stop) setLoading(false);
+      }
+    };
+    if (routeKey) load();
+    else setLoading(false);
+    return () => { stop = true; };
+  }, [routeKey, navigate]);
 
   return (
     <AppLayout title={certificate?.certificateNumber || 'WHT Certificate'} icon={FileText}>

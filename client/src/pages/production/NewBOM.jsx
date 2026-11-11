@@ -588,7 +588,6 @@ export default function NewBOM() {
       const res = await axios.post('/api/workstations', {
         code: wsDraft.code.trim(),
         name: wsDraft.name.trim(),
-        hourlyRate: 0,
         status: 'ACTIVE'
       }, {
         headers: { Authorization: `Bearer ${token}` }

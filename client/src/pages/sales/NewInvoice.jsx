@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -15,18 +16,20 @@ import { useToast } from '../../context/ToastContext';
 export default function NewInvoice() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const [searchParams] = useSearchParams();
-  const baseOrderId = searchParams.get('orderId');
-  const baseDeliveryId = searchParams.get('deliveryId');
+  const orderKey = searchParams.get('orderId') || '';
+  const deliveryKey = searchParams.get('deliveryId') || '';
 
   const [activeTab, setActiveTab] = useState('primary');
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [invoiceId, setInvoiceId] = useState(id || null);
-  const [isInitialLoad, setIsInitialLoad] = useState(!!id || !!baseOrderId || !!baseDeliveryId);
+  const [invoiceId, setInvoiceId] = useState(() => (isUuid(routeKey) ? routeKey : null));
+  const [baseOrderId, setBaseOrderId] = useState(() => (isUuid(orderKey) ? orderKey : ''));
+  const [baseDeliveryId, setBaseDeliveryId] = useState(() => (isUuid(deliveryKey) ? deliveryKey : ''));
+  const [isInitialLoad, setIsInitialLoad] = useState(!!routeKey || !!orderKey || !!deliveryKey);
   const [invoiceNumber, setInvoiceNumber] = useState('Drafting...');
   const [lastSaved, setLastSaved] = useState(null);
   const [invoiceStatus, setInvoiceStatus] = useState('PENDING'); // PENDING acts as DRAFT
@@ -125,6 +128,7 @@ export default function NewInvoice() {
       const res = await axios.post('/api/sales/invoices', payload, config);
       setInvoiceId(res.data.id);
       setInvoiceNumber(res.data.invoiceNumber);
+      showRecord(navigate, '/sales/invoices', res.data, 'invoiceNumber');
       setLastSaved(new Date().toLocaleTimeString());
       setSaving(false);
     } catch (error) {
@@ -135,7 +139,7 @@ export default function NewInvoice() {
 
   useEffect(() => {
     fetchData();
-  }, [baseOrderId, baseDeliveryId, id]);
+  }, [orderKey, deliveryKey, routeKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -151,11 +155,13 @@ export default function NewInvoice() {
       setCustomers(custRes.data);
       setProducts(prodRes.data);
 
-      if (id) {
+      if (routeKey) {
         // Load an existing invoice
         const invRes = await axios.get('/api/sales/invoices', config);
-        const currentInv = invRes.data.find(o => o.id === id);
+        const currentInv = findByRouteKey(invRes.data, routeKey, 'invoiceNumber');
         if (currentInv) {
+          setInvoiceId(currentInv.id);
+          showRecord(navigate, '/sales/invoices', currentInv, 'invoiceNumber');
           setInvoiceNumber(currentInv.invoiceNumber);
           setCustomerId(currentInv.customerId);
           setCustomerName(currentInv.customer?.name || '');
@@ -173,7 +179,7 @@ export default function NewInvoice() {
             })));
           }
         }
-      } else if (baseOrderId || baseDeliveryId) {
+      } else if (orderKey || deliveryKey) {
         // Instantiate invoice dynamically from order or delivery
         // Prefer fetching specific details via orders API route (often returns order items)
         const ordRes = await axios.get('/api/sales/orders', config);
@@ -181,16 +187,18 @@ export default function NewInvoice() {
         let refOrder = null;
         let refDel = null;
         
-        if (baseDeliveryId) {
+        if (deliveryKey) {
           const delRes = await axios.get('/api/sales/deliveries', config);
-          refDel = delRes.data.find(d => d.id === baseDeliveryId);
+          refDel = findByRouteKey(delRes.data, deliveryKey, 'deliveryNumber');
+          if (refDel) setBaseDeliveryId(refDel.id);
         }
         
-        if (baseOrderId) {
-          refOrder = ordRes.data.find(o => o.id === baseOrderId);
+        if (orderKey) {
+          refOrder = findByRouteKey(ordRes.data, orderKey, 'orderNumber');
         } else if (refDel && refDel.orderId) {
           refOrder = ordRes.data.find(o => o.id === refDel.orderId);
         }
+        if (refOrder) setBaseOrderId(refOrder.id);
 
         if (refOrder || refDel) {
           if (refOrder) {
@@ -204,7 +212,7 @@ export default function NewInvoice() {
           const invoicedQtyMap = {};
           
           // Determine where to pull existing invoices from (order or delivery)
-          const sourceInvoices = baseDeliveryId && refDel ? refDel.invoices : (refOrder ? refOrder.salesInvoices : null);
+          const sourceInvoices = deliveryKey && refDel ? refDel.invoices : (refOrder ? refOrder.salesInvoices : null);
           if (sourceInvoices) {
              sourceInvoices.forEach(inv => {
                if (['UNPAID', 'PAID', 'PENDING'].includes(inv.status)) {
@@ -215,7 +223,7 @@ export default function NewInvoice() {
              });
           }
 
-          const sourceItems = baseDeliveryId && refDel ? refDel.items : (refOrder ? refOrder.items : []);
+          const sourceItems = deliveryKey && refDel ? refDel.items : (refOrder ? refOrder.items : []);
 
           if (sourceItems && sourceItems.length > 0) {
             const remainingItems = sourceItems.map(item => {
@@ -223,7 +231,7 @@ export default function NewInvoice() {
               const remaining = Math.max(0, parseFloat(item.quantity) - invoiced);
               
               let unitPrice = item.unitPrice;
-              if (baseDeliveryId && refDel && refOrder) {
+              if (deliveryKey && refDel && refOrder) {
                   const ordItem = refOrder.items.find(oi => oi.productId === item.productId);
                   if (ordItem) unitPrice = ordItem.unitPrice;
               }
@@ -360,7 +368,7 @@ export default function NewInvoice() {
 
   return (
     <AppLayout title="Sales Invoice" icon={Receipt}>
-      {isInitialLoad && (id || baseOrderId || baseDeliveryId) ? (
+      {isInitialLoad && (routeKey || orderKey || deliveryKey) ? (
         <PageSkeleton type="form" />
       ) : (
         <>

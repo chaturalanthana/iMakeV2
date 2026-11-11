@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -103,7 +104,7 @@ export default function CustomerCategories() {
             loading={loading}
             searchPlaceholder="Search category code or name..."
             searchKeys={['name', 'code']}
-            onRowClick={(row) => navigate(`/sales/categories/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/sales/categories', row, 'code'))}
             extraActions={
               <button
                 onClick={() => navigate('/sales/categories/new')}

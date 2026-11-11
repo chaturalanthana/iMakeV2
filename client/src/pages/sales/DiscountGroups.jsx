@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -104,7 +105,7 @@ export default function DiscountGroups() {
             loading={loading}
             searchPlaceholder="Search discount group name..."
             searchKeys={['name']}
-            onRowClick={(row) => navigate(`/sales/discount-groups/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/sales/discount-groups', row, 'name'))}
             extraActions={
               <button
                 onClick={() => navigate('/sales/discount-groups/new')}

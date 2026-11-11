@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, recordPath, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
 import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
@@ -11,7 +12,8 @@ import { ArrowUpRight, ArrowLeft, Plus, Trash2, Briefcase, Package, Printer, Sav
 import { useToast } from '../../context/ToastContext';
 
 export default function NewStockAdjustment() {
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -37,7 +39,7 @@ export default function NewStockAdjustment() {
 
   useEffect(() => {
     fetchInitialData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchInitialData = async () => {
     try {
@@ -51,10 +53,12 @@ export default function NewStockAdjustment() {
       setMovements(movRes.data);
       setWarehouses(whRes.data);
 
-      if (id) {
+      if (routeKey) {
         const res = await axios.get('/api/warehouse/adjustments', { headers: { Authorization: `Bearer ${token}` } });
-        const existing = res.data.find(a => a.id === id);
+        const existing = findByRouteKey(res.data, routeKey, 'adjNumber');
         if (existing) {
+          setId(existing.id);
+          showRecord(navigate, '/warehouse/adjustments', existing, 'adjNumber');
           setAdjNumber(existing.adjNumber);
           setStatus(existing.status);
           setDate(new Date(existing.date));
@@ -188,7 +192,7 @@ export default function NewStockAdjustment() {
       }
       
       showToast('Saved successfully!', 'success');
-      if (!id) navigate(`/warehouse/adjustments/${res.data.id}`, { replace: true });
+      if (!id) navigate(recordPath('/warehouse/adjustments', res.data, 'adjNumber'), { replace: true });
       else fetchInitialData();
       
     } catch (error) {
@@ -240,7 +244,7 @@ export default function NewStockAdjustment() {
   };
 
   return (
-    <AppLayout title={id ? `Stock Adjustment - ${adjNumber}` : "New Stock Adjustment"} icon={ArrowUpRight}>
+    <AppLayout title={routeKey ? `Stock Adjustment - ${adjNumber}` : "New Stock Adjustment"} icon={ArrowUpRight}>
       {isInitialLoad ? (
         <PageSkeleton type="form" />
       ) : (
@@ -255,7 +259,7 @@ export default function NewStockAdjustment() {
               </button>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  {id ? adjNumber : 'New Stock Adjustment (ADJ)'}
+                  {routeKey ? adjNumber : 'New Stock Adjustment (ADJ)'}
                   <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '12px', background: isReadOnly ? '#ecfdf5' : '#fef3c7', color: isReadOnly ? '#059669' : '#d97706', fontWeight: 700, border: `1px solid ${isReadOnly ? '#a7f3d0' : '#fde68a'}` }}>
                     {status}
                   </span>

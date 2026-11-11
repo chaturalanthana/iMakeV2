@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -14,17 +15,18 @@ import { useToast } from '../../context/ToastContext';
 export default function NewPurchaseOrder() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [searchParams] = useSearchParams();
+  const prKey = searchParams.get('prId') || '';
 
   const [activeTab, setActiveTab] = useState('primary');
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [poId, setPoId] = useState(id || null);
+  const [poId, setPoId] = useState(() => (isUuid(routeKey) ? routeKey : null));
   const [prId, setPrId] = useState(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(!!id);
-  const [searchParams] = useSearchParams();
+  const [isInitialLoad, setIsInitialLoad] = useState(!!routeKey || !!prKey);
   const [poNumber, setPoNumber] = useState('Drafting...');
   const [lastSaved, setLastSaved] = useState(null);
   const [status, setStatus] = useState('PENDING'); // PENDING is basically draft for procurement until received.
@@ -128,6 +130,7 @@ export default function NewPurchaseOrder() {
       const res = await axios.post('/api/procurement/purchase-orders', payload, config);
       setPoId(res.data.id);
       setPoNumber(res.data.poNumber);
+      showRecord(navigate, '/procurement/purchase-orders', res.data, 'poNumber');
       setLastSaved(new Date().toLocaleTimeString());
       setSaving(false);
     } catch (error) {
@@ -138,7 +141,7 @@ export default function NewPurchaseOrder() {
 
   useEffect(() => {
     fetchData();
-  }, [id]);
+  }, [routeKey, prKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -156,11 +159,16 @@ export default function NewPurchaseOrder() {
       setProducts(prodRes.data);
       setCurrencies(curRes.data);
 
-      const prIdParam = searchParams.get('prId');
-      if (prIdParam && !id) {
-        setPrId(prIdParam);
+      if (prKey && !routeKey) {
         try {
-          const prRes = await axios.get(`/api/procurement/purchase-requisitions/${prIdParam}`, config);
+          let sourceId = isUuid(prKey) ? prKey : null;
+          if (!sourceId) {
+            const list = await axios.get('/api/procurement/purchase-requisitions', config);
+            sourceId = findByRouteKey(list.data, prKey, 'prNumber')?.id || null;
+          }
+          if (!sourceId) return;
+          setPrId(sourceId);
+          const prRes = await axios.get(`/api/procurement/purchase-requisitions/${sourceId}`, config);
           const prData = prRes.data;
           if (prData) {
             setSupplierId(prData.supplierId || '');
@@ -198,11 +206,13 @@ export default function NewPurchaseOrder() {
         }
       }
 
-      if (id) {
+      if (routeKey) {
         // Load an existing PO
         const ordRes = await axios.get('/api/procurement/purchase-orders', config);
-        const currentOrd = ordRes.data.find(o => o.id === id);
+        const currentOrd = findByRouteKey(ordRes.data, routeKey, 'poNumber');
         if (currentOrd) {
+          setPoId(currentOrd.id);
+          showRecord(navigate, '/procurement/purchase-orders', currentOrd, 'poNumber');
           setPoNumber(currentOrd.poNumber);
           setSupplierId(currentOrd.supplierId);
           setSupplierName(currentOrd.supplier?.name || '');
@@ -335,7 +345,7 @@ export default function NewPurchaseOrder() {
 
   return (
     <AppLayout title="Purchase Order" icon={ShoppingBag}>
-      {isInitialLoad && id ? (
+      {isInitialLoad && (routeKey || prKey) ? (
         <PageSkeleton type="form" />
       ) : (
         <>
@@ -397,7 +407,7 @@ export default function NewPurchaseOrder() {
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                        {status !== 'RECEIVED' && (
                          <button 
-                           onClick={() => navigate(`/procurement/grn/new?poId=${poId}`)}
+                           onClick={() => navigate(`/procurement/grn/new?poId=${queryRef(poNumber)}`)}
                            style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: '1px solid transparent', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}
                          >
                            Create GRN

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { queryRef, recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -90,7 +91,7 @@ export default function GRNs() {
       sortable: false,
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <button onClick={(e) => { e.stopPropagation(); navigate(`/procurement/supplier-invoices/new?grnId=${row.id}`); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#eef2ff', color: '#4338ca', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+          <button onClick={(e) => { e.stopPropagation(); navigate(`/procurement/supplier-invoices/new?grnId=${queryRef(row.grnNumber)}`); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#eef2ff', color: '#4338ca', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
               Supplier Invoice
             </button>
           {!row.poId && (
@@ -129,7 +130,7 @@ export default function GRNs() {
             searchPlaceholder="Search by GRN number or supplier..."
             searchKeys={['grnNumber', 'supplier.name']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/procurement/grn/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/procurement/grn', row, 'grnNumber'))}
           />
 
           <ConfirmModal 
