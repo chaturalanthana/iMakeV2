@@ -375,6 +375,7 @@ export default function NewWorkstation() {
                       style={inputStyle}
                       required
                     />
+                    {fieldErrors.code && <span className="field-error-text">{fieldErrors.code}</span>}
                   </div>
                 </div>
                 <div style={formRowStyle}>
@@ -390,6 +391,7 @@ export default function NewWorkstation() {
                       style={inputStyle}
                       required
                     />
+                    {fieldErrors.name && <span className="field-error-text">{fieldErrors.name}</span>}
                   </div>
                 </div>
                 <div style={{ ...formRowStyle, alignItems: 'flex-start' }}>

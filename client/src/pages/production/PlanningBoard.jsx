@@ -9,6 +9,8 @@ import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import DataTable from '../../components/ui/DataTable';
 import Modal from '../../components/ui/Modal';
+import Section from '../../components/ui/Section';
+import StatusBadge from '../../components/ui/StatusBadge';
 
 const JOB_COLORS = [
   '#c5d4f2', '#b7e0c8', '#f3c7c7', '#f3d7ad', '#d4c6f2',
@@ -698,34 +700,37 @@ export default function PlanningBoard() {
       </div>
 
       {capacity && (capacity.workstations || []).length > 0 && (
-        <div style={{ marginBottom: '1rem', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.7rem' }}>
-            <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>Workstation load</strong>
-            {capacity.overloads?.length > 0 ? (
-              <span style={{ color: '#b91c1c', fontWeight: 800, fontSize: '0.75rem' }}>
-                Overload on {capacity.overloads.length} {capacity.overloads.length === 1 ? 'day' : 'days'}
-              </span>
-            ) : (
-              <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.75rem' }}>Within available hours</span>
-            )}
+        <Section title="Workstation load">
+          <div style={{ padding: '0.75rem 1rem 0', fontSize: '0.75rem', fontWeight: 700, color: capacity.overloads?.length ? '#dc2626' : '#059669' }}>
+            {capacity.overloads?.length > 0
+              ? `Overload on ${capacity.overloads.length} ${capacity.overloads.length === 1 ? 'day' : 'days'}`
+              : 'Within available hours'}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-            {capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).map((row) => {
-              const scale = Math.max(row.availableHours, row.loadHours, 1);
-              return (
-                <div key={row.id || row.code}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700, color: row.overload ? '#b91c1c' : '#334155', marginBottom: '0.25rem' }}>
-                    <span>{row.code} · {row.name}</span>
-                    <span>{row.loadHours}h load / {row.availableHours}h available</span>
-                  </div>
-                  <div style={{ height: '8px', borderRadius: '99px', background: '#e2e8f0', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, (row.loadHours / scale) * 100)}%`, height: '100%', background: row.overload ? '#dc2626' : 'var(--accent)' }} />
-                  </div>
-                </div>
-              );
-            })}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr>
+                  <th>Workstation</th>
+                  <th style={{ textAlign: 'right' }}>Load</th>
+                  <th style={{ textAlign: 'right' }}>Available</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).length === 0 ? (
+                  <tr><td colSpan={4} style={{ color: 'var(--text-muted)' }}>No workstation load in this horizon.</td></tr>
+                ) : capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).map((row) => (
+                  <tr key={row.id || row.code}>
+                    <td style={{ fontWeight: 600 }}>{row.code} · {row.name}</td>
+                    <td style={{ textAlign: 'right' }}>{row.loadHours}h</td>
+                    <td style={{ textAlign: 'right' }}>{row.availableHours}h</td>
+                    <td><StatusBadge status={row.overload ? 'OVERLOAD' : 'WITHIN'} label={row.overload ? 'Overload' : 'Within hours'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </Section>
       )}
 
       {viewMode === 'table' ? (
@@ -1148,6 +1153,7 @@ export default function PlanningBoard() {
               placeholder="Select Finished / Semi-Finished Product..."
               style={{ input: FIELD_STYLE }}
             />
+            {fieldErrors.productId && <span className="field-error-text">{fieldErrors.productId}</span>}
           </div>
 
           <div>
@@ -1170,6 +1176,7 @@ export default function PlanningBoard() {
               className={fieldErrors.quantity ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
+            {fieldErrors.quantity && <span className="field-error-text">{fieldErrors.quantity}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '1rem' }}>

@@ -2,22 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
-import { ClipboardList, Plus, Search, Eye, Trash2 } from 'lucide-react';
+import PageSkeleton from '../../components/ui/PageSkeleton';
+import DataTable from '../../components/ui/DataTable';
+import ConfirmModal from '../../components/ui/ConfirmModal';
+import FilterBar from '../../components/ui/FilterBar';
+import FormField, { SelectControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
+import { ClipboardList, Plus, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-
-const STATUS_TAGS = {
-  CREATED: { bg: '#f1f5f9', text: '#475569', label: 'Created' },
-  RELEASED: { bg: '#e0f2fe', text: '#0369a1', label: 'Released' },
-  IN_PROGRESS: { bg: '#dbeafe', text: '#1e40af', label: 'In Progress' },
-  TECO: { bg: '#fef3c7', text: '#b45309', label: 'TECO' },
-  CLOSED: { bg: '#dcfce7', text: '#15803d', label: 'Closed' },
-  CANCELLED: { bg: '#fee2e2', text: '#b91c1c', label: 'Cancelled' }
-};
-
-const FIELD = {
-  height: '38px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff',
-  padding: '0 0.6rem', fontSize: '0.8rem', fontWeight: 600, color: '#1e293b'
-};
 
 export default function WorkOrders() {
   const navigate = useNavigate();
@@ -25,7 +18,8 @@ export default function WorkOrders() {
   const [orders, setOrders] = useState([]);
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
   const authConfig = useCallback(() => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -44,6 +38,7 @@ export default function WorkOrders() {
       showToast('Failed to load work orders', 'error');
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
   }, [authConfig, showToast]);
 
@@ -58,8 +53,7 @@ export default function WorkOrders() {
     }
   };
 
-  const handleDelete = async (id, orderNumber) => {
-    if (!window.confirm(`Delete work order "${orderNumber}"?`)) return;
+  const handleDelete = async (id) => {
     try {
       await axios.delete(`/api/work-orders/${id}`, authConfig());
       showToast('Work order removed', 'success');
@@ -69,115 +63,110 @@ export default function WorkOrders() {
     }
   };
 
-  const filtered = orders.filter((order) => {
-    const haystack = `${order.orderNumber} ${order.product?.name || ''} ${order.product?.code || ''}`.toLowerCase();
-    return haystack.includes(search.toLowerCase());
-  });
+  const rows = orders.map((order) => ({
+    ...order,
+    productLabel: [order.product?.code, order.product?.name].filter(Boolean).join(' - '),
+    bomLabel: order.bom ? `${order.bom.code} (v${order.bom.version})` : 'None'
+  }));
+
+  const columns = [
+    {
+      header: 'Work Order',
+      accessor: 'orderNumber',
+      fontWeight: 600,
+      render: (row) => <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{row.orderNumber}</span>
+    },
+    { header: 'Finished Product', accessor: 'productLabel' },
+    { header: 'Quantity', accessor: 'quantity', render: (row) => parseFloat(row.quantity) },
+    { header: 'Done', accessor: 'quantityCompleted', render: (row) => parseFloat(row.quantityCompleted || 0) },
+    { header: 'BOM', accessor: 'bomLabel' },
+    { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+    { header: 'Source', accessor: 'sourceType', color: 'var(--text-muted)' },
+    {
+      header: 'Actions',
+      align: 'right',
+      sortable: false,
+      render: (row) => (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.35rem' }}>
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); navigate(`/production/work-orders/${row.id}`); }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem', display: 'flex' }}
+            title="Open"
+          >
+            <Eye size={16} />
+          </button>
+          {['CREATED', 'CANCELLED'].includes(row.status) && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setConfirmConfig({
+                  isOpen: true,
+                  title: 'Delete Work Order',
+                  message: `Are you sure you want to delete work order "${row.orderNumber}"? This action cannot be undone.`,
+                  onConfirm: () => handleDelete(row.id)
+                });
+              }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.25rem', display: 'flex' }}
+              title="Delete"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+        </div>
+      )
+    }
+  ];
 
   return (
     <AppLayout title="Work Orders" icon={ClipboardList}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b' }}>MATERIAL CHECK</label>
-          <select
-            value={settings?.materialCheck || 'WARN'}
-            onChange={(event) => saveSetting({ materialCheck: event.target.value })}
-            style={FIELD}
-          >
-            <option value="WARN">Warn and release</option>
-            <option value="BLOCK">Block when short</option>
-          </select>
-          <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b' }}>ISSUE</label>
-          <select
-            value={settings?.issueMode || 'BACKFLUSH'}
-            onChange={(event) => saveSetting({ issueMode: event.target.value })}
-            style={FIELD}
-          >
-            <option value="BACKFLUSH">Backflush on confirm</option>
-            <option value="MANUAL">Manual issue</option>
-          </select>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', width: '300px', maxWidth: '100%' }}>
-          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-          <input
-            type="text"
-            placeholder="Search orders, products..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            style={{ width: '100%', height: '38px', paddingLeft: '36px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.85rem', boxSizing: 'border-box' }}
+      {isInitialLoad ? <PageSkeleton type="table" /> : (
+        <>
+          <FilterBar>
+            <FormField label="Material check" width="240px">
+              <SelectControl
+                value={settings?.materialCheck || 'WARN'}
+                onChange={(event) => saveSetting({ materialCheck: event.target.value })}
+              >
+                <option value="WARN">Warn and release</option>
+                <option value="BLOCK">Block when short</option>
+              </SelectControl>
+            </FormField>
+            <FormField label="Issue" width="240px">
+              <SelectControl
+                value={settings?.issueMode || 'BACKFLUSH'}
+                onChange={(event) => saveSetting({ issueMode: event.target.value })}
+              >
+                <option value="BACKFLUSH">Backflush on confirm</option>
+                <option value="MANUAL">Manual issue</option>
+              </SelectControl>
+            </FormField>
+          </FilterBar>
+          <DataTable
+            columns={columns}
+            data={rows}
+            loading={loading}
+            searchPlaceholder="Search orders, products..."
+            searchKeys={['orderNumber', 'productLabel', 'sourceType', 'status']}
+            onRowClick={(row) => navigate(`/production/work-orders/${row.id}`)}
+            noDataMessage="No work orders found."
+            extraActions={(
+              <ActionButton icon={Plus} onClick={() => navigate('/production/work-orders/new')}>
+                Create Work Order
+              </ActionButton>
+            )}
           />
-        </div>
-        <button
-          onClick={() => navigate('/production/work-orders/new')}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '38px', padding: '0 1.25rem', borderRadius: '8px', border: 'none', backgroundColor: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem' }}
-        >
-          <Plus size={16} /> Create Work Order
-        </button>
-      </div>
-
-      <div style={{ backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: '720px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-color)', height: '40px', textAlign: 'left', fontWeight: 800, color: '#64748b' }}>
-              <th style={{ padding: '0 1rem' }}>Work Order</th>
-              <th>Finished Product</th>
-              <th>Quantity</th>
-              <th>Done</th>
-              <th>BOM</th>
-              <th>Status</th>
-              <th>Source</th>
-              <th style={{ padding: '0 1rem', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr style={{ height: '80px', textAlign: 'center' }}><td colSpan={8}>Loading work orders...</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr style={{ height: '80px', textAlign: 'center' }}><td colSpan={8}>No work orders found</td></tr>
-            ) : filtered.map((order) => {
-              const tag = STATUS_TAGS[order.status] || STATUS_TAGS.CREATED;
-              return (
-                <tr key={order.id} style={{ borderBottom: '1px solid #f1f5f9', height: '48px', color: 'var(--text-main)' }}>
-                  <td style={{ padding: '0 1rem', fontWeight: 700, color: 'var(--accent)' }}>{order.orderNumber}</td>
-                  <td>{order.product?.code} - {order.product?.name}</td>
-                  <td><strong>{parseFloat(order.quantity)}</strong></td>
-                  <td>{parseFloat(order.quantityCompleted || 0)}</td>
-                  <td>{order.bom ? `${order.bom.code} (v${order.bom.version})` : 'None'}</td>
-                  <td>
-                    <span style={{ backgroundColor: tag.bg, color: tag.text, fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '12px', textTransform: 'uppercase' }}>
-                      {tag.label}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{order.sourceType}</td>
-                  <td style={{ padding: '0 1rem', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                      <button
-                        onClick={() => navigate(`/production/work-orders/${order.id}`)}
-                        style={{ display: 'flex', padding: '6px', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#64748b' }}
-                        title="Open"
-                      >
-                        <Eye size={14} />
-                      </button>
-                      {['CREATED', 'CANCELLED'].includes(order.status) && (
-                        <button
-                          onClick={() => handleDelete(order.id, order.orderNumber)}
-                          style={{ display: 'flex', padding: '6px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', cursor: 'pointer', color: '#dc2626' }}
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+          <ConfirmModal
+            isOpen={confirmConfig.isOpen}
+            onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
+            onConfirm={confirmConfig.onConfirm}
+            title={confirmConfig.title}
+            message={confirmConfig.message}
+            confirmText="Delete"
+          />
+        </>
+      )}
     </AppLayout>
   );
 }

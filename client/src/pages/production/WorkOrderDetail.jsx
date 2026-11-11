@@ -2,23 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
-import { ClipboardList, ArrowLeft, CheckCircle } from 'lucide-react';
+import { ClipboardList } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
-
-const FIELD_STYLE = {
-  width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px',
-  border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none',
-  fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box', color: '#1e293b'
-};
-const LABEL_STYLE = {
-  fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-  letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem'
-};
-const BUTTON = {
-  height: '38px', padding: '0 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
-  fontWeight: 700, fontSize: '0.8rem'
-};
+import DatePicker from '../../components/ui/DatePicker';
+import PageHeader from '../../components/ui/PageHeader';
+import FormField, { TextControl, SelectControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
+import Section from '../../components/ui/Section';
 
 const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -145,197 +137,190 @@ export default function WorkOrderDetail() {
 
   return (
     <AppLayout title={isNew ? 'Create Work Order' : (order?.orderNumber || 'Work Order')} icon={ClipboardList}>
-      <button
-        onClick={() => navigate('/production/work-orders')}
-        style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#64748b', fontWeight: 700, cursor: 'pointer', marginBottom: '1rem' }}
-      >
-        <ArrowLeft size={16} /> Work Orders
-      </button>
+      <PageHeader
+        onBack={() => navigate('/production/work-orders')}
+        title={isNew ? 'Create Work Order' : (order?.orderNumber || 'Work Order')}
+        subtitle={isNew ? 'Route a finished item through its BOM' : `${order?.product?.code || ''} — ${order?.product?.name || ''}`}
+        extra={!isNew && order ? <StatusBadge status={order.status} /> : null}
+        actions={isNew ? (
+          <>
+            <ActionButton variant="discard" onClick={() => navigate('/production/work-orders')}>Discard</ActionButton>
+            <ActionButton variant="submit" disabled={saving} onClick={save}>{saving ? 'Processing...' : 'Create'}</ActionButton>
+          </>
+        ) : order && (
+          <>
+            {order.status === 'CREATED' && <ActionButton variant="submit" onClick={() => act('/release', 'Work order released')}>Release</ActionButton>}
+            {['RELEASED', 'IN_PROGRESS'].includes(order.status) && <ActionButton onClick={() => act('/teco', 'Technically complete')} style={{ background: '#b45309' }}>TECO</ActionButton>}
+            {order.status === 'TECO' && <ActionButton onClick={() => act('/close', 'Work order closed')} style={{ background: '#15803d' }}>Close</ActionButton>}
+            {['CREATED', 'RELEASED'].includes(order.status) && <ActionButton variant="danger" onClick={() => act('/cancel', 'Work order cancelled')}>Cancel</ActionButton>}
+            <ActionButton variant="secondary" onClick={() => navigate(`/production/shop-floor/${order.id}`)}>Shop floor</ActionButton>
+          </>
+        )}
+      />
 
       {isNew ? (
-        <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-          <div>
-            <label style={LABEL_STYLE}>Product</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
+          <FormField label="Product" width="320px" required error={fieldErrors.productId}>
             <LiveSearchDropdown options={productOptions} value={form.productId} invalid={!!fieldErrors.productId} onChange={(value) => setForm((prev) => ({ ...prev, productId: value, bomId: '' }))} placeholder="Select product" />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>BOM</label>
+          </FormField>
+          <FormField label="BOM" width="240px">
             <LiveSearchDropdown options={bomOptions} value={form.bomId} onChange={(value) => setForm((prev) => ({ ...prev, bomId: value }))} placeholder="Default active BOM" />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Quantity</label>
-            <input type="number" min="0" step="any" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} className={fieldErrors.quantity ? 'field-invalid' : undefined} style={FIELD_STYLE} />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Priority</label>
-            <select value={form.priority} onChange={(event) => setForm((prev) => ({ ...prev, priority: event.target.value }))} style={FIELD_STYLE}>
+          </FormField>
+          <FormField label="Quantity" width="160px" required error={fieldErrors.quantity}>
+            <TextControl type="number" min="0" step="any" value={form.quantity} invalid={!!fieldErrors.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} />
+          </FormField>
+          <FormField label="Priority" width="180px">
+            <SelectControl value={form.priority} onChange={(event) => setForm((prev) => ({ ...prev, priority: event.target.value }))}>
               {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((priority) => <option key={priority}>{priority}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Issue</label>
-            <select value={form.issueMode} onChange={(event) => setForm((prev) => ({ ...prev, issueMode: event.target.value }))} style={FIELD_STYLE}>
+            </SelectControl>
+          </FormField>
+          <FormField label="Issue" width="220px">
+            <SelectControl value={form.issueMode} onChange={(event) => setForm((prev) => ({ ...prev, issueMode: event.target.value }))}>
               <option value="">Settings default</option>
               <option value="BACKFLUSH">Backflush</option>
               <option value="MANUAL">Manual</option>
-            </select>
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Warehouse</label>
-            <select value={form.warehouseId} onChange={(event) => setForm((prev) => ({ ...prev, warehouseId: event.target.value }))} style={FIELD_STYLE}>
+            </SelectControl>
+          </FormField>
+          <FormField label="Warehouse" width="240px">
+            <SelectControl value={form.warehouseId} onChange={(event) => setForm((prev) => ({ ...prev, warehouseId: event.target.value }))}>
               <option value="">First warehouse</option>
               {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Start</label>
-            <input type="date" value={form.startDate} onChange={(event) => setForm((prev) => ({ ...prev, startDate: event.target.value }))} style={FIELD_STYLE} />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>End</label>
-            <input type="date" value={form.endDate} onChange={(event) => setForm((prev) => ({ ...prev, endDate: event.target.value }))} style={FIELD_STYLE} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={LABEL_STYLE}>Notes</label>
-            <input value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} style={FIELD_STYLE} />
-          </div>
-          <div>
-            <button onClick={save} disabled={saving} style={{ ...BUTTON, background: 'var(--accent)', color: '#fff' }}>
-              <CheckCircle size={14} style={{ marginRight: 6 }} /> {saving ? 'Saving...' : 'Create'}
-            </button>
-          </div>
+            </SelectControl>
+          </FormField>
+          <FormField label="Start" width="200px">
+            <DatePicker value={form.startDate} onChange={(value) => setForm((prev) => ({ ...prev, startDate: value }))} placeholder="Start Date" style={{ height: '42px', boxSizing: 'border-box' }} />
+          </FormField>
+          <FormField label="End" width="200px">
+            <DatePicker value={form.endDate} onChange={(value) => setForm((prev) => ({ ...prev, endDate: value }))} placeholder="End Date" style={{ height: '42px', boxSizing: 'border-box' }} />
+          </FormField>
+          <FormField label="Notes" width="100%" style={{ flexBasis: '100%' }}>
+            <TextControl value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} />
+          </FormField>
         </div>
       ) : order && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontWeight: 800 }}>{order.product?.code} — {order.product?.name}</div>
-              <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 4 }}>
-                Qty {parseFloat(order.quantity)} · Done {parseFloat(order.quantityCompleted || 0)} · Scrap {parseFloat(order.quantityScrapped || 0)} · {order.issueMode} · {order.status}
-              </div>
+        <div>
+          <Section padded>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Qty {parseFloat(order.quantity)} · Done {parseFloat(order.quantityCompleted || 0)} · Scrap {parseFloat(order.quantityScrapped || 0)} · <StatusBadge status={order.issueMode} />
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {order.status === 'CREATED' && <button onClick={() => act('/release', 'Work order released')} style={{ ...BUTTON, background: 'var(--accent)', color: '#fff' }}>Release</button>}
-              {['RELEASED', 'IN_PROGRESS'].includes(order.status) && <button onClick={() => act('/teco', 'Technically complete')} style={{ ...BUTTON, background: '#b45309', color: '#fff' }}>TECO</button>}
-              {order.status === 'TECO' && <button onClick={() => act('/close', 'Work order closed')} style={{ ...BUTTON, background: '#15803d', color: '#fff' }}>Close</button>}
-              {['CREATED', 'RELEASED'].includes(order.status) && <button onClick={() => act('/cancel', 'Work order cancelled')} style={{ ...BUTTON, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca' }}>Cancel</button>}
-              <button onClick={() => navigate(`/production/shop-floor/${order.id}`)} style={{ ...BUTTON, background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0' }}>Shop floor</button>
-            </div>
-          </div>
+          </Section>
 
           {order.warnings?.length > 0 && (
-            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '0.75rem 1rem', color: '#9a3412', fontSize: '0.85rem' }}>
+            <div className="field-error-text" style={{ marginBottom: '1rem', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '0.75rem 1rem', color: '#9a3412' }}>
               {order.warnings.map((warning) => `${warning.code}: short ${warning.short}`).join(' · ')}
             </div>
           )}
 
-          <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'auto' }}>
-            <div style={{ padding: '0.8rem 1rem', fontWeight: 800, fontSize: '0.85rem' }}>Components</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', minWidth: '680px' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#64748b', height: '36px' }}>
-                  <th style={{ padding: '0 1rem' }}>Component</th>
-                  <th>Per</th>
-                  <th>Required</th>
-                  <th>Reserved</th>
-                  <th>Issued</th>
-                  <th>Cost</th>
-                  <th style={{ paddingRight: '1rem' }}>Issue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(order.components || []).map((component) => (
-                  <tr key={component.id} style={{ borderTop: '1px solid #f1f5f9', height: '48px' }}>
-                    <td style={{ padding: '0 1rem' }}>{component.product?.code} — {component.product?.name}</td>
-                    <td>{parseFloat(component.quantityPer)}</td>
-                    <td>{parseFloat(component.requiredQty)}</td>
-                    <td>{parseFloat(component.reservedQty || 0)}</td>
-                    <td>{parseFloat(component.issuedQty || 0)}</td>
-                    <td>{component.costSource} {money(component.unitCost)}</td>
-                    <td style={{ paddingRight: '1rem' }}>
-                      {['RELEASED', 'IN_PROGRESS'].includes(order.status) && (
-                        <div style={{ display: 'flex', gap: '0.35rem' }}>
-                          <input placeholder="Qty" value={issueQty[component.id] || ''} onChange={(event) => setIssueQty((prev) => ({ ...prev, [component.id]: event.target.value }))} style={{ ...FIELD_STYLE, width: '70px', height: '34px' }} />
-                          <input placeholder="Lot" value={issueLot[component.id] || ''} onChange={(event) => setIssueLot((prev) => ({ ...prev, [component.id]: event.target.value }))} style={{ ...FIELD_STYLE, width: '110px', height: '34px' }} />
-                          <button onClick={() => issue(component)} style={{ ...BUTTON, height: '34px', background: '#fff', border: '1px solid #e2e8f0' }}>Issue</button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'auto' }}>
-            <div style={{ padding: '0.8rem 1rem', fontWeight: 800, fontSize: '0.85rem' }}>Operations</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', minWidth: '640px' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#64748b', height: '36px' }}>
-                  <th style={{ padding: '0 1rem' }}>Seq</th>
-                  <th>Operation</th>
-                  <th>Workstation</th>
-                  <th>Setup</th>
-                  <th>Run / unit</th>
-                  <th>Status</th>
-                  <th>Yield</th>
-                  <th>Scrap</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(order.operations || []).map((operation) => (
-                  <tr key={operation.id} style={{ borderTop: '1px solid #f1f5f9', height: '44px' }}>
-                    <td style={{ padding: '0 1rem' }}>{operation.sequence}</td>
-                    <td>{operation.name}{operation.isSubcontract ? ' (subcontract)' : ''}</td>
-                    <td>{operation.workstation?.code || '—'}</td>
-                    <td>{parseFloat(operation.setupMinutes)} min</td>
-                    <td>{parseFloat(operation.runMinutesPerUnit)} min</td>
-                    <td>{operation.status}</td>
-                    <td>{parseFloat(operation.yieldQty || 0)}</td>
-                    <td>{parseFloat(operation.scrapQty || 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {cost && (
-            <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
-              <div style={{ fontWeight: 800, fontSize: '0.85rem', marginBottom: '0.7rem' }}>Planned vs actual</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+          <Section title="Components">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '720px' }}>
                 <thead>
-                  <tr style={{ textAlign: 'right', color: '#64748b' }}>
-                    <th style={{ textAlign: 'left' }}>Bucket</th>
-                    <th>Planned</th>
-                    <th>Actual</th>
-                    <th>Variance</th>
+                  <tr>
+                    <th>Component</th>
+                    <th style={{ textAlign: 'right' }}>Per</th>
+                    <th style={{ textAlign: 'right' }}>Required</th>
+                    <th style={{ textAlign: 'right' }}>Reserved</th>
+                    <th style={{ textAlign: 'right' }}>Issued</th>
+                    <th>Cost</th>
+                    <th>Issue</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {['material', 'labour', 'overhead', 'scrap'].map((key) => {
-                    const started = (cost.confirmedQuantity || 0) > 0;
-                    const row = cost.variance.buckets[key];
-                    const planned = started ? row.planned : (cost.fullPlan?.[key] || 0);
-                    const actual = started ? row.actual : 0;
-                    const variance = started ? row.variance : null;
-                    return (
-                      <tr key={key} style={{ height: '36px', borderTop: '1px solid #f1f5f9' }}>
-                        <td style={{ textTransform: 'capitalize', fontWeight: 700 }}>{key}</td>
-                        <td style={{ textAlign: 'right' }}>{money(planned)}</td>
-                        <td style={{ textAlign: 'right' }}>{money(actual)}</td>
-                        <td style={{ textAlign: 'right', color: variance > 0 ? '#b91c1c' : '#15803d', fontWeight: 700 }}>{variance == null ? '—' : money(variance)}</td>
-                      </tr>
-                    );
-                  })}
+                  {(order.components || []).map((component) => (
+                    <tr key={component.id}>
+                      <td style={{ fontWeight: 600 }}>{component.product?.code} — {component.product?.name}</td>
+                      <td style={{ textAlign: 'right' }}>{parseFloat(component.quantityPer)}</td>
+                      <td style={{ textAlign: 'right' }}>{parseFloat(component.requiredQty)}</td>
+                      <td style={{ textAlign: 'right' }}>{parseFloat(component.reservedQty || 0)}</td>
+                      <td style={{ textAlign: 'right' }}>{parseFloat(component.issuedQty || 0)}</td>
+                      <td>{component.costSource} {money(component.unitCost)}</td>
+                      <td>
+                        {['RELEASED', 'IN_PROGRESS'].includes(order.status) && (
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                            <input className="spreadsheet-input" placeholder="Qty" value={issueQty[component.id] || ''} onChange={(event) => setIssueQty((prev) => ({ ...prev, [component.id]: event.target.value }))} style={{ width: '70px', textAlign: 'right' }} />
+                            <input className="spreadsheet-input" placeholder="Lot" value={issueLot[component.id] || ''} onChange={(event) => setIssueLot((prev) => ({ ...prev, [component.id]: event.target.value }))} style={{ width: '110px' }} />
+                            <button type="button" onClick={() => issue(component)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer', fontSize: '0.8rem' }}>Issue</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
-              <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#64748b' }}>
+            </div>
+          </Section>
+
+          <Section title="Operations">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '640px' }}>
+                <thead>
+                  <tr>
+                    <th>Seq</th>
+                    <th>Operation</th>
+                    <th>Workstation</th>
+                    <th>Setup</th>
+                    <th>Run / unit</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Yield</th>
+                    <th style={{ textAlign: 'right' }}>Scrap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(order.operations || []).map((operation) => (
+                    <tr key={operation.id}>
+                      <td>{operation.sequence}</td>
+                      <td style={{ fontWeight: 600 }}>{operation.name}{operation.isSubcontract ? ' (subcontract)' : ''}</td>
+                      <td>{operation.workstation?.code || '—'}</td>
+                      <td>{parseFloat(operation.setupMinutes)} min</td>
+                      <td>{parseFloat(operation.runMinutesPerUnit)} min</td>
+                      <td><StatusBadge status={operation.status} /></td>
+                      <td style={{ textAlign: 'right' }}>{parseFloat(operation.yieldQty || 0)}</td>
+                      <td style={{ textAlign: 'right' }}>{parseFloat(operation.scrapQty || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          {cost && (
+            <Section title="Planned vs actual">
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr>
+                      <th>Bucket</th>
+                      <th style={{ textAlign: 'right' }}>Planned</th>
+                      <th style={{ textAlign: 'right' }}>Actual</th>
+                      <th style={{ textAlign: 'right' }}>Variance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {['material', 'labour', 'overhead', 'scrap'].map((key) => {
+                      const started = (cost.confirmedQuantity || 0) > 0;
+                      const row = cost.variance.buckets[key];
+                      const planned = started ? row.planned : (cost.fullPlan?.[key] || 0);
+                      const actual = started ? row.actual : 0;
+                      const variance = started ? row.variance : null;
+                      return (
+                        <tr key={key}>
+                          <td style={{ textTransform: 'capitalize', fontWeight: 700 }}>{key}</td>
+                          <td style={{ textAlign: 'right' }}>{money(planned)}</td>
+                          <td style={{ textAlign: 'right' }}>{money(actual)}</td>
+                          <td style={{ textAlign: 'right', color: variance > 0 ? '#b91c1c' : '#15803d', fontWeight: 700 }}>{variance == null ? '—' : money(variance)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 {(cost.confirmedQuantity || 0) > 0
                   ? `Plan is scaled to the confirmed quantity (${cost.confirmedQuantity}). `
                   : 'This is the plan for the full order. Variance appears after the last operation is confirmed. '}
                 Labour includes machine time and subcontract. Unit cost of the full order {money(cost.fullPlan?.unitCost || cost.planned.unitCost)}.
               </div>
-            </div>
+            </Section>
           )}
         </div>
       )}

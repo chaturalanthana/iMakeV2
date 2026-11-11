@@ -4,6 +4,10 @@ import AppLayout from '../../components/layout/AppLayout';
 import DataTable from '../../components/ui/DataTable';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
+import FilterBar from '../../components/ui/FilterBar';
+import FormField, { TextControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { Boxes, Play, Check } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -101,30 +105,54 @@ export default function Replenishment() {
 
   return (
     <AppLayout title="Replenishment" icon={Boxes}>
-      <form onSubmit={savePolicy} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'end', marginBottom: '1rem' }}>
-        <div style={{ width: 240 }}>
-          <ProductSearchDropdown products={products} value={productName} onChange={(product) => { setProductId(product.id); setProductName(product.name); }} placeholder="Item" />
-        </div>
-        <div style={{ width: 220 }}>
-          <WarehouseSearchDropdown warehouses={warehouses} value={warehouseName} onChange={(name, row) => { setWarehouseName(name); setWarehouseId(row?.id || ''); }} placeholder="Warehouse" />
-        </div>
-        {[['Reorder', reorderPoint, setReorderPoint], ['Min', minQty, setMinQty], ['Max', maxQty, setMaxQty]].map(([label, value, setter]) => (
-          <label key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>
-            {label}
-            <input value={value} onChange={(event) => setter(event.target.value)} inputMode="decimal" style={{ width: 90, height: 38, border: '1px solid var(--border-color)', borderRadius: 8, padding: '0 8px' }} />
-          </label>
-        ))}
-        <button type="submit" style={{ height: 38, padding: '0 0.9rem', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Save policy</button>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', fontWeight: 650, marginLeft: 'auto' }}>
-          <input type="checkbox" checked={daily} onChange={(event) => toggleDaily(event.target.checked)} />
-          Run daily
-        </label>
-        <div style={{ flexBasis: '100%', color: '#64748b', fontSize: '0.8rem' }}>Bought items only. Made items are planned in MRP Shortage Planner.</div>
+      <form onSubmit={savePolicy}>
+        <FilterBar
+          actions={(
+            <>
+              <ActionButton type="submit">Save policy</ActionButton>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', height: '42px' }}>
+                <input type="checkbox" checked={daily} onChange={(event) => toggleDaily(event.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }} />
+                Run daily
+              </label>
+            </>
+          )}
+        >
+          <FormField label="Item" width="260px">
+            <ProductSearchDropdown
+              products={products}
+              value={productName}
+              onChange={(product) => { setProductId(product.id); setProductName(product.name); }}
+              placeholder="Search product..."
+              style={{ wrapper: { width: '100%' }, input: { height: '42px', padding: '0 1rem', border: '1px solid #e2e8f0', borderRadius: '8px' } }}
+            />
+          </FormField>
+          <FormField label="Warehouse" width="240px">
+            <WarehouseSearchDropdown
+              warehouses={warehouses}
+              value={warehouseName}
+              onChange={(name, row) => { setWarehouseName(name); setWarehouseId(row?.id || ''); }}
+              placeholder="All Warehouses"
+              style={{ wrapper: { height: '42px', boxSizing: 'border-box' } }}
+            />
+          </FormField>
+          <FormField label="Reorder" width="110px">
+            <TextControl value={reorderPoint} onChange={(event) => setReorderPoint(event.target.value)} inputMode="decimal" />
+          </FormField>
+          <FormField label="Min" width="110px">
+            <TextControl value={minQty} onChange={(event) => setMinQty(event.target.value)} inputMode="decimal" />
+          </FormField>
+          <FormField label="Max" width="110px">
+            <TextControl value={maxQty} onChange={(event) => setMaxQty(event.target.value)} inputMode="decimal" />
+          </FormField>
+        </FilterBar>
       </form>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
+        Bought items only. Made items are planned in MRP Shortage Planner.
+      </p>
 
       <DataTable
         columns={[
-          { header: 'Item', accessor: 'code' },
+          { header: 'Item', accessor: 'code', fontWeight: 600 },
           { header: 'Name', accessor: 'name' },
           { header: 'Warehouse', accessor: 'warehouse' },
           { header: 'Reorder', accessor: 'reorderPoint', align: 'right' },
@@ -133,23 +161,25 @@ export default function Replenishment() {
         ]}
         data={policies}
         searchKeys={['code', 'name', 'warehouse']}
-        searchPlaceholder="Search policies"
+        searchPlaceholder="Search policies..."
         noDataMessage="No reorder policies yet."
       />
 
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
-        <button type="button" onClick={runNow} disabled={busy} style={{ height: 36, padding: '0 0.9rem', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Play size={14} /> Run
-        </button>
-        <button type="button" onClick={approve} disabled={busy || run?.status !== 'DRAFT' || !lines.length} style={{ height: 36, padding: '0 0.9rem', border: 'none', borderRadius: 8, background: '#15803d', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Check size={14} /> Approve drafts
-        </button>
-        {run && <span style={{ alignSelf: 'center', color: '#64748b', fontSize: '0.85rem' }}>{run.runNumber} · {run.status} · {run.message}</span>}
+      <div style={{ display: 'flex', gap: '0.75rem', margin: '1.5rem 0 1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <ActionButton icon={Play} onClick={runNow} disabled={busy}>Run</ActionButton>
+        <ActionButton icon={Check} onClick={approve} disabled={busy || run?.status !== 'DRAFT' || !lines.length} style={{ background: '#15803d' }}>
+          Approve drafts
+        </ActionButton>
+        {run && (
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            {run.runNumber} · <StatusBadge status={run.status} /> · {run.message}
+          </span>
+        )}
       </div>
 
       <DataTable
         columns={[
-          { header: 'Item', accessor: 'code' },
+          { header: 'Item', accessor: 'code', fontWeight: 600 },
           { header: 'Name', accessor: 'name' },
           { header: 'Qty', accessor: 'quantity', align: 'right' },
           { header: 'Why', accessor: 'reason' },
@@ -158,7 +188,7 @@ export default function Replenishment() {
         ]}
         data={lines}
         searchKeys={['code', 'name', 'reason']}
-        searchPlaceholder="Search suggestions"
+        searchPlaceholder="Search suggestions..."
         noDataMessage="Run replenishment to draft purchase requisitions."
       />
     </AppLayout>
