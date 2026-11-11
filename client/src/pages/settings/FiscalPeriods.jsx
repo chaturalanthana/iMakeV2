@@ -17,6 +17,7 @@ export default function FiscalPeriods() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [periods, setPeriods] = useState([]);
   const [allowNegative, setAllowNegative] = useState(false);
+  const [hrEnabled, setHrEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = async (nextYear = year) => {
@@ -25,6 +26,7 @@ export default function FiscalPeriods() {
       const res = await axios.get('/api/controls/periods', { ...auth(), params: { year: nextYear } });
       setPeriods(res.data.periods || []);
       setAllowNegative(Boolean(res.data.allowNegativeStock));
+      setHrEnabled(Boolean(res.data.hrEnabled));
     } catch (error) {
       showToast(error.response?.data?.error || 'Could not load periods', 'error');
     } finally {
@@ -41,6 +43,18 @@ export default function FiscalPeriods() {
       load();
     } catch (error) {
       showToast(error.response?.data?.error || 'Could not update the period', 'error');
+    }
+  };
+
+  const savePayroll = async (value) => {
+    setHrEnabled(value);
+    try {
+      await axios.put('/api/controls/modules', { hrEnabled: value }, auth());
+      showToast(value ? 'Payroll menu is on. Refresh if the menu does not update.' : 'Payroll menu is hidden.', 'success');
+      window.location.reload();
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Could not save the setting', 'error');
+      setHrEnabled(!value);
     }
   };
 
@@ -66,6 +80,10 @@ export default function FiscalPeriods() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', fontWeight: 600, height: '42px' }}>
               <input type="checkbox" checked={allowNegative} onChange={(e) => saveStock(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }} />
               Allow negative stock
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', fontWeight: 600, height: '42px' }}>
+              <input type="checkbox" checked={hrEnabled} onChange={(e) => savePayroll(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }} />
+              Show payroll menu
             </label>
           </FilterBar>
           <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: '#64748b' }}>

@@ -247,7 +247,7 @@ describe('procure-to-pay and order-to-cash', () => {
     expect(books.body.balanced).toBe(true);
     expect(books.body.debit).toBeCloseTo(books.body.credit);
     const inventory = books.body.accounts.find((row) => row.code === '1300');
-    const grni = books.body.accounts.find((row) => row.code === '1400');
+    const grni = books.body.accounts.find((row) => row.code === '1400') || { debit: 0, credit: 0 };
     expect(inventory.debit - inventory.credit).toBeCloseTo(2000);
     expect(grni.debit - grni.credit).toBeCloseTo(0);
   });

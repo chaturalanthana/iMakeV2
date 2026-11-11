@@ -5,6 +5,7 @@ import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import { ClipboardList, Plus, Search, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { confirmDialog } from '../../components/ui/appDialog';
 
 const STATUS_TAGS = {
   DRAFT: { bg: '#f1f5f9', text: '#475569' },
@@ -42,7 +43,7 @@ export default function ProductionOrders() {
   }, [fetchOrders]);
 
   const handleDelete = async (id, orderNumber) => {
-    if (!window.confirm(`Delete production order "${orderNumber}"?`)) return;
+    if (!(await confirmDialog({ title: 'Delete order', message: `Delete production order "${orderNumber}"?` }))) return;
     try {
       await axios.delete(`/api/production-orders/${id}`, authConfig());
       showToast('Production order removed successfully', 'success');

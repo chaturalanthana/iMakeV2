@@ -206,4 +206,63 @@ async function cancelCashSale(db, input) {
   return run(db);
 }
 
-module.exports = { isCashKind, postCashSale, cancelCashSale };
+async function releaseHeldCashSale(db, { tenantId, invoiceId, createdBy }) {
+  const existing = await db.salesInvoice.findFirst({
+    where: { id: invoiceId, tenantId },
+    include: { items: true }
+  });
+  if (!existing || !isCashKind(existing.saleKind)) return existing;
+  if (existing.status === 'PAID' || existing.stockPosted) return existing;
+  const run = async (tx) => {
+    const invoice = await finalizeSalesInvoice(tx, { tenantId, invoiceId: existing.id, createdBy });
+    const savedItems = await tx.salesInvoiceItem.findMany({ where: { invoiceId: invoice.id } });
+    const posted = await postIssueDocument(tx, {
+      tenantId,
+      warehouseId: existing.warehouseId,
+      items: savedItems,
+      referenceType: 'CASH_SALE',
+      referenceId: invoice.id,
+      date: existing.date,
+      createdBy,
+      description: `Cash sale ${invoice.invoiceNumber}`,
+      quantitySign: -1
+    });
+    assertStockCovered(posted);
+    const receiptNumber = await generateDocumentNumber(tenantId, 'paymentReceipt', 'REC', 'receiptNumber', tx);
+    const receipt = await tx.paymentReceipt.create({
+      data: {
+        tenantId,
+        customerId: existing.customerId,
+        invoiceId: invoice.id,
+        receiptNumber,
+        amount: dec(invoice.total),
+        date: existing.date,
+        method: 'CASH',
+        reference: existing.saleKind,
+        exchangeRate: rateOf(existing.exchangeRate),
+        createdBy: createdBy || null
+      }
+    });
+    await allocateCustomerReceipt(tx, {
+      tenantId,
+      receipt,
+      allocations: [{ invoiceId: invoice.id, amount: num(invoice.total) }],
+      createdBy
+    });
+    await tx.salesInvoice.update({ where: { id: invoice.id }, data: { stockPosted: true } });
+    await writeAudit(tx, {
+      tenantId,
+      userId: createdBy,
+      action: 'POST',
+      entity: 'CASH_SALE',
+      entityId: invoice.id,
+      before: { status: 'PENDING_APPROVAL' },
+      after: { status: 'PAID', invoiceNumber: invoice.invoiceNumber }
+    });
+    return tx.salesInvoice.findFirst({ where: { id: invoice.id }, include: { items: true } });
+  };
+  if (typeof db.$transaction === 'function') return db.$transaction(run);
+  return run(db);
+}
+
+module.exports = { isCashKind, postCashSale, cancelCashSale, releaseHeldCashSale };

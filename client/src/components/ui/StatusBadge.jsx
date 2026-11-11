@@ -62,10 +62,8 @@ const COLORS = {
   DEPARTED: '#0369a1',
   RETURNED: '#d97706',
   FAILED: '#dc2626',
-  REJECTED: '#dc2626',
   PROCESSED: '#059669',
-  PARTIALLY_DELIVERED: '#d97706',
-  PENDING_APPROVAL: '#d97706'
+  PARTIALLY_DELIVERED: '#d97706'
 };
 
 export default function StatusBadge({ status, label }) {

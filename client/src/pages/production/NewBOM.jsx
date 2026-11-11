@@ -2206,9 +2206,8 @@ export default function NewBOM() {
           <div style={{
             backgroundColor: '#ffffff',
             borderRadius: '16px',
-            width: '480px',
-            maxHeight: '90vh',
-            maxHeight: '90vh',
+              width: '480px',
+              maxHeight: '90vh',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
             border: '1px solid #f1f5f9',
             display: 'flex',

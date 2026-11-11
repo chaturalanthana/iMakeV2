@@ -6,6 +6,7 @@ import {
   Sliders, Plus, CheckCircle, Trash2, AlertCircle, X, ChevronRight, ChevronLeft, Split, Merge, Check, Table2, GanttChart, GripVertical
 } from 'lucide-react';
 import { recordPath } from '../../utils/recordPath';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { useToast } from '../../context/ToastContext';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
@@ -238,7 +239,7 @@ export default function PlanningBoard() {
   const handleDelete = async (id, jobNumber, e) => {
     if (e) e.stopPropagation();
     if (editingJob && !planIsOpen(editingJob.status, 'job')) return;
-    if (!window.confirm(`Delete production job "${jobNumber}"?`)) return;
+    if (!(await confirmDialog({ title: 'Delete job', message: `Delete production job "${jobNumber}"?` }))) return;
     try {
       await axios.delete(`/api/production-jobs/${id}`, authConfig());
       showToast('Production job card removed', 'success');

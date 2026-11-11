@@ -238,47 +238,265 @@ export function DispatchBoard() {
 }
 
 export function RoutePicks() {
-  const { rows, loading } = useLoader('/api/sales/dispatch/picks');
+  const { showToast } = useToast();
+  const { rows, loading, reload } = useLoader('/api/sales/dispatch/picks');
+  const [open, setOpen] = useState(false);
+  const [lookups, setLookups] = useState({ warehouses: [], routes: [], vehicles: [], orders: [] });
+  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), orderIds: [] });
+  const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    const client = api();
+    Promise.all([
+      client.get('/api/warehouses'),
+      client.get('/api/sales/dispatch/routes'),
+      client.get('/api/sales/dispatch/vehicles'),
+      client.get('/api/sales/dispatch/board')
+    ]).then(([warehouses, routes, vehicles, board]) => {
+      setLookups({
+        warehouses: warehouses.data || [],
+        routes: routes.data || [],
+        vehicles: vehicles.data || [],
+        orders: (board.data?.orders || []).filter((row) => ['RELEASED', 'PARTIALLY_DELIVERED'].includes(row.status))
+      });
+    }).catch(() => {});
+  }, [open]);
+
+  const act = async (id, path, body, done) => {
+    try {
+      await api().post(path, body || {});
+      showToast(done, 'success');
+      reload();
+    } catch (error) {
+      showToast(messageOf(error, 'Could not update the pick list.'), 'error');
+    }
+  };
+
+  const save = async () => {
+    const next = {};
+    if (!form.warehouseId) next.warehouseId = 'Warehouse is required.';
+    if (!form.orderIds?.length) next.orderIds = 'Choose a released order.';
+    setErrors(next);
+    if (Object.keys(next).length) return showToast('Please fill the highlighted fields.', 'error');
+    try {
+      await api().post('/api/sales/dispatch/picks', form);
+      setOpen(false);
+      showToast('Pick list created.', 'success');
+      reload();
+    } catch (error) {
+      setErrors(errorsOf(error));
+      showToast(messageOf(error, 'Could not create the pick list.'), 'error');
+    }
+  };
+
   return (
     <AppLayout title="Route picks" icon={Route}>
       {loading ? <PageSkeleton type="table" /> : (
         <DataTable
           columns={[
-            { header: 'Pick', accessor: 'number' },
+            { header: 'Pick', accessor: 'number', fontWeight: 600 },
             { header: 'Route', render: (row) => row.route?.name || '—' },
             { header: 'Vehicle', render: (row) => row.vehicle?.registration || '—' },
             { header: 'Lines', render: (row) => row.summary?.length || row.lines?.length || 0 },
-            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+            { header: 'Actions', align: 'right', sortable: false, render: (row) => (
+              <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }} onClick={(event) => event.stopPropagation()}>
+                {row.status === 'OPEN' && <ActionButton onClick={() => act(row.id, `/api/sales/dispatch/picks/${row.id}/advance`, { action: 'PICK' }, 'Picked')}>Pick</ActionButton>}
+                {row.status === 'PICKED' && <ActionButton onClick={() => act(row.id, `/api/sales/dispatch/picks/${row.id}/advance`, { action: 'PACK' }, 'Packed')}>Pack</ActionButton>}
+                {row.status === 'PACKED' && <ActionButton onClick={() => act(row.id, `/api/sales/dispatch/picks/${row.id}/deliveries`, { date: new Date().toISOString().slice(0, 10) }, 'Delivery note posted')}>Delivery</ActionButton>}
+              </div>
+            ) }
           ]}
           data={rows}
           searchKeys={['number']}
           searchPlaceholder="Search pick lists..."
           noDataMessage="No route pick lists yet."
+          extraActions={<ActionButton icon={Plus} onClick={() => setOpen(true)}>New pick list</ActionButton>}
         />
       )}
+      <FormModal isOpen={open} onClose={() => setOpen(false)} title="Pick list" subtitle="Released orders on one route" icon={Route} onSubmit={save} submitLabel="Create">
+        <FormField label="Warehouse" variant="modal" required error={errors.warehouseId}>
+          <SelectControl value={form.warehouseId || ''} onChange={(event) => setForm({ ...form, warehouseId: event.target.value })}>
+            <option value="">Select</option>
+            {lookups.warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+          </SelectControl>
+        </FormField>
+        <FormField label="Route" variant="modal">
+          <SelectControl value={form.routeId || ''} onChange={(event) => setForm({ ...form, routeId: event.target.value })}>
+            <option value="">None</option>
+            {lookups.routes.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+          </SelectControl>
+        </FormField>
+        <FormField label="Vehicle" variant="modal">
+          <SelectControl value={form.vehicleId || ''} onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}>
+            <option value="">None</option>
+            {lookups.vehicles.map((row) => <option key={row.id} value={row.id}>{row.registration}</option>)}
+          </SelectControl>
+        </FormField>
+        <FormField label="Released orders" variant="modal" required error={errors.orderIds}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            {lookups.orders.map((row) => (
+              <label key={row.id} style={{ fontSize: '0.9rem' }}>
+                <input
+                  type="checkbox"
+                  checked={form.orderIds.includes(row.id)}
+                  onChange={(event) => setForm({
+                    ...form,
+                    orderIds: event.target.checked ? [...form.orderIds, row.id] : form.orderIds.filter((id) => id !== row.id)
+                  })}
+                /> {row.orderNumber} · {row.customerName}
+              </label>
+            ))}
+            {!lookups.orders.length && <span style={{ color: '#64748b' }}>Release an order on Dispatch first.</span>}
+          </div>
+        </FormField>
+      </FormModal>
     </AppLayout>
   );
 }
 
 export function Trips() {
-  const { rows, loading } = useLoader('/api/sales/dispatch/trips');
+  const { showToast } = useToast();
+  const { rows, loading, reload } = useLoader('/api/sales/dispatch/trips');
+  const [open, setOpen] = useState(false);
+  const [proof, setProof] = useState(null);
+  const [lookups, setLookups] = useState({ vehicles: [], routes: [], deliveries: [] });
+  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), deliveryIds: [], driverName: '' });
+  const [pod, setPod] = useState({ receivedBy: '', rejectedQty: '0', reason: '' });
+
+  useEffect(() => {
+    const client = api();
+    Promise.all([
+      client.get('/api/sales/dispatch/vehicles'),
+      client.get('/api/sales/dispatch/routes'),
+      client.get('/api/sales/deliveries')
+    ]).then(([vehicles, routes, deliveries]) => {
+      setLookups({
+        vehicles: vehicles.data || [],
+        routes: routes.data || [],
+        deliveries: (deliveries.data || []).filter((row) => row.status === 'DELIVERED')
+      });
+    }).catch(() => {});
+  }, [open]);
+
+  const act = async (path, body, done) => {
+    try {
+      await api().post(path, body || {});
+      showToast(done, 'success');
+      reload();
+    } catch (error) {
+      showToast(messageOf(error, 'Could not update the trip.'), 'error');
+    }
+  };
+
+  const save = async () => {
+    if (!form.deliveryIds.length) return showToast('Choose a delivery.', 'error');
+    try {
+      await api().post('/api/sales/dispatch/trips', form);
+      setOpen(false);
+      showToast('Trip sheet created.', 'success');
+      reload();
+    } catch (error) {
+      showToast(messageOf(error, 'Could not create the trip.'), 'error');
+    }
+  };
+
+  const saveProof = async () => {
+    if (!pod.receivedBy.trim()) return showToast('Who received the goods?', 'error');
+    const delivery = proof.deliveries?.[0]?.delivery;
+    if (!delivery) return showToast('This trip has no delivery.', 'error');
+    try {
+      await api().post('/api/sales/dispatch/proofs', {
+        deliveryId: delivery.id,
+        tripId: proof.id,
+        receivedBy: pod.receivedBy,
+        lines: Number(pod.rejectedQty) > 0 ? [{ productId: delivery.items?.[0]?.productId, rejectedQty: Number(pod.rejectedQty), reason: pod.reason }] : []
+      });
+      if (Number(pod.rejectedQty) > 0) {
+        showToast('Proof saved. Credit the rejection from Sales returns if finance asks.', 'success');
+      } else {
+        showToast('Proof of delivery saved.', 'success');
+      }
+      setProof(null);
+      reload();
+    } catch (error) {
+      showToast(messageOf(error, 'Could not save the proof.'), 'error');
+    }
+  };
+
   return (
     <AppLayout title="Trips and gate passes" icon={Truck}>
       {loading ? <PageSkeleton type="table" /> : (
         <DataTable
           columns={[
-            { header: 'Trip', accessor: 'number' },
+            { header: 'Trip', accessor: 'number', fontWeight: 600 },
             { header: 'Driver', accessor: 'driverName' },
             { header: 'Vehicle', render: (row) => row.vehicle?.registration || '—' },
             { header: 'Gate pass', render: (row) => row.gatePass ? <StatusBadge status={row.gatePass.status} /> : '—' },
-            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+            { header: 'Actions', align: 'right', sortable: false, render: (row) => (
+              <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }} onClick={(event) => event.stopPropagation()}>
+                {row.status === 'LOADED' && <ActionButton onClick={() => act(`/api/sales/dispatch/trips/${row.id}/invoices`, { date: new Date().toISOString().slice(0, 10) }, 'Tax invoice issued')}>Invoice</ActionButton>}
+                {row.status === 'LOADED' && (!row.gatePass || row.gatePass.status === 'DRAFT') && <ActionButton onClick={() => act(`/api/sales/dispatch/trips/${row.id}/gate-pass`, { securityName: 'Gate', loadNote: 'Loaded for delivery' }, 'Gate pass sent for approval')}>Gate pass</ActionButton>}
+                {row.gatePass?.status === 'ISSUED' && row.status !== 'DEPARTED' && row.status !== 'RETURNED' && <ActionButton onClick={() => act(`/api/sales/dispatch/trips/${row.id}/depart`, {}, 'Vehicle departed')}>Depart</ActionButton>}
+                {row.status === 'DEPARTED' && <ActionButton onClick={() => { setPod({ receivedBy: '', rejectedQty: '0', reason: '' }); setProof(row); }}>POD</ActionButton>}
+              </div>
+            ) }
           ]}
           data={rows}
           searchKeys={['number', 'driverName']}
           searchPlaceholder="Search trips..."
           noDataMessage="No trip sheets yet."
+          extraActions={<ActionButton icon={Plus} onClick={() => setOpen(true)}>New trip</ActionButton>}
         />
       )}
+      <FormModal isOpen={open} onClose={() => setOpen(false)} title="Trip sheet" subtitle="Load deliveries onto a vehicle" icon={Truck} onSubmit={save} submitLabel="Create">
+        <FormField label="Date" variant="modal" required>
+          <TextControl type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
+        </FormField>
+        <FormField label="Driver" variant="modal">
+          <TextControl value={form.driverName} onChange={(event) => setForm({ ...form, driverName: event.target.value })} />
+        </FormField>
+        <FormField label="Vehicle" variant="modal">
+          <SelectControl value={form.vehicleId || ''} onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}>
+            <option value="">Select</option>
+            {lookups.vehicles.map((row) => <option key={row.id} value={row.id}>{row.registration}</option>)}
+          </SelectControl>
+        </FormField>
+        <FormField label="Route" variant="modal">
+          <SelectControl value={form.routeId || ''} onChange={(event) => setForm({ ...form, routeId: event.target.value })}>
+            <option value="">None</option>
+            {lookups.routes.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+          </SelectControl>
+        </FormField>
+        <FormField label="Deliveries" variant="modal" required>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '180px', overflow: 'auto' }}>
+            {lookups.deliveries.map((row) => (
+              <label key={row.id} style={{ fontSize: '0.9rem' }}>
+                <input
+                  type="checkbox"
+                  checked={form.deliveryIds.includes(row.id)}
+                  onChange={(event) => setForm({
+                    ...form,
+                    deliveryIds: event.target.checked ? [...form.deliveryIds, row.id] : form.deliveryIds.filter((id) => id !== row.id)
+                  })}
+                /> {row.deliveryNumber}
+              </label>
+            ))}
+          </div>
+        </FormField>
+      </FormModal>
+      <FormModal isOpen={!!proof} onClose={() => setProof(null)} title="Proof of delivery" subtitle="Who signed, and what came back" icon={Receipt} onSubmit={saveProof} submitLabel="Save proof">
+        <FormField label="Received by" variant="modal" required>
+          <TextControl value={pod.receivedBy} onChange={(event) => setPod({ ...pod, receivedBy: event.target.value })} />
+        </FormField>
+        <FormField label="Rejected quantity" variant="modal">
+          <TextControl value={pod.rejectedQty} onChange={(event) => setPod({ ...pod, rejectedQty: event.target.value })} />
+        </FormField>
+        <FormField label="Reason if rejected" variant="modal">
+          <TextControl value={pod.reason} onChange={(event) => setPod({ ...pod, reason: event.target.value })} />
+        </FormField>
+      </FormModal>
     </AppLayout>
   );
 }

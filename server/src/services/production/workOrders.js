@@ -1219,7 +1219,7 @@ async function confirmOperation(tenantId, id, body, userId) {
     await recomputeActuals(tx, wo);
     if (isLast) {
       await phase4.recordGenealogy(tx, wo, { fgLot: body.lotNumber || null, confirmationId: confirmation.id });
-      await phase4.flagAbnormalLoss(tx, wo.id);
+      await phase4.flagAbnormalLoss(tx, wo.id, userId);
     }
     await maybeAutoTeco(tx, tenantId, wo.id);
     const workOrder = await tx.workOrder.findFirst({ where: { id }, include: detailInclude });

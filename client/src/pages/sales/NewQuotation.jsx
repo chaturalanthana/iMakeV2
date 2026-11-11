@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
@@ -268,7 +269,7 @@ export default function NewQuotation() {
   };
 
   const handleDeleteQuotation = async () => {
-    if (!window.confirm("Are you sure you want to permanently delete this quotation? This action cannot be undone.")) return;
+    if (!(await confirmDialog({ title: 'Delete quotation', message: 'Permanently delete this quotation? This cannot be undone.' }))) return;
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

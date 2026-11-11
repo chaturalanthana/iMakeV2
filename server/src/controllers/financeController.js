@@ -74,7 +74,9 @@ const getJournalEntries = async (req, res) => {
 
 const createJournalEntry = async (req, res) => {
   try {
-    const { entryNumber, date, description, lines } = req.body;
+    const { date, description, lines } = req.body;
+    const entryNumber = String(req.body.entryNumber || '').trim()
+      || await generateDocumentNumber(req.tenantId, 'journalEntry', 'JE', 'entryNumber');
     // lines should be array of { accountId, debit, credit, description }
     
     // Check balanced
@@ -93,7 +95,7 @@ const createJournalEntry = async (req, res) => {
     const rule = await loadRule(prisma, req.tenantId, 'JOURNAL');
     const needed = levelsForAmount(rule, amount);
     const hold = Boolean(rule?.enabled && needed.length);
-    if (!hold) await assertPeriodOpen(prisma, { tenantId: req.tenantId, date, userId: req.user.userId });
+    await assertPeriodOpen(prisma, { tenantId: req.tenantId, date, userId: req.user.userId });
 
     const entry = await prisma.journalEntry.create({
       data: {
@@ -285,7 +287,7 @@ const createPaymentVoucher = async (req, res) => {
     const rule = await loadRule(prisma, req.tenantId, 'SUPPLIER_PAYMENT');
     const needed = levelsForAmount(rule, amount);
     const hold = Boolean(rule?.enabled && needed.length);
-    if (!hold) await assertPeriodOpen(prisma, { tenantId: req.tenantId, date, userId: req.user.userId });
+    await assertPeriodOpen(prisma, { tenantId: req.tenantId, date, userId: req.user.userId });
     const voucher = await prisma.$transaction(async (tx) => {
       const created = await tx.paymentVoucher.create({
         data: {

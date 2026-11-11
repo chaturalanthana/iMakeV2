@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import { Banknote, Plus, X, CheckCircle, ChevronDown, ChevronRight, Calendar } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { confirmDialog } from '../../components/ui/appDialog';
 
 const FIELD_STYLE = { width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none', fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box' };
 const LABEL_STYLE = { fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' };
@@ -56,7 +57,7 @@ export default function LoanManagement() {
   };
 
   const handleClose = async (id) => {
-    if (!window.confirm('Mark this loan as CLOSED?')) return;
+    if (!(await confirmDialog({ title: 'Close loan', message: 'Mark this loan as closed?', confirmText: 'Close loan' }))) return;
     try {
       await axios.put(`/api/hr/loans/${id}/status`, { status: 'CLOSED' }, authConfig());
       showToast('Loan closed', 'success');

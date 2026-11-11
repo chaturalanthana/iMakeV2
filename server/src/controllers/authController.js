@@ -175,7 +175,8 @@ const me = async (req, res) => {
       tenant: {
         id: user.tenant.id,
         name: user.tenant.name,
-        slug: user.tenant.slug
+        slug: user.tenant.slug,
+        hrEnabled: Boolean(user.tenant.hrEnabled)
       }
     });
   } catch (error) {

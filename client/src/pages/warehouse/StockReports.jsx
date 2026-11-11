@@ -10,9 +10,10 @@ import { Package, Search, Download } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 const REPORTS = [
-  { id: 'position', label: 'Stock position', path: '/api/inventory/positions' },
-  { id: 'movement', label: 'Movement and valuation', path: '/api/inventory/reports/movement' },
-  { id: 'aging', label: 'Aging', path: '/api/inventory/reports/aging' },
+  { id: 'position', label: 'Stock position', path: '/api/inventory/positions', file: 'stock-position.xlsx' },
+  { id: 'movement', label: 'Movement and valuation', path: '/api/inventory/reports/movement', file: 'stock-movement.xlsx' },
+  { id: 'aging', label: 'Aging', path: '/api/inventory/reports/aging', file: 'stock-aging.xlsx' },
+  { id: 'variance', label: 'Count variance', path: '/api/inventory/reports/variance', file: 'stock-variance.xlsx' },
   { id: 'trace', label: 'Batch trace', path: '/api/inventory/trace' }
 ];
 
@@ -53,6 +54,13 @@ export default function StockReports() {
           params
         });
         if (report === 'trace') setTrace(res.data);
+        else if (report === 'variance') {
+          setRows((res.data?.lines || []).map((line) => ({
+            ...line,
+            code: line.product?.code || '',
+            name: line.product?.name || ''
+          })));
+        }
         else setRows(res.data || []);
       } catch (error) {
         showToast(error.response?.data?.error || 'Failed to load the report', 'error');
@@ -64,6 +72,32 @@ export default function StockReports() {
     load();
   }, [report, warehouseId, lot]);
 
+  const exportSheet = async () => {
+    const chosen = REPORTS.find((item) => item.id === report);
+    if (!chosen?.file) {
+      showToast('Batch trace prints from this page. Choose a stock report to export.', 'error');
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token');
+      const params = { format: 'xlsx' };
+      if (warehouseId) params.warehouseId = warehouseId;
+      const res = await axios.get(chosen.path, {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+        responseType: 'blob'
+      });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = chosen.file;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      showToast('Could not export this report', 'error');
+    }
+  };
+
   const filtered = rows.filter((row) => {
     const blob = `${row.code || ''} ${row.name || ''} ${row.lotNumber || ''}`.toLowerCase();
     return blob.includes(searchQuery.toLowerCase());
@@ -73,7 +107,12 @@ export default function StockReports() {
     <AppLayout title="Stock Reports" icon={Package}>
       {loading ? <PageSkeleton /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <FilterBar actions={<ActionButton variant="secondary" icon={Download} onClick={() => window.print()}>Export</ActionButton>}>
+          <FilterBar actions={(
+            <>
+              <ActionButton variant="secondary" icon={Download} onClick={exportSheet}>Export XLSX</ActionButton>
+              <ActionButton variant="secondary" icon={Search} onClick={() => window.print()}>Print</ActionButton>
+            </>
+          )}>
             <FormField label="Report" icon={Search} width="220px">
               <SelectControl value={report} onChange={(e) => setReport(e.target.value)}>
                 {REPORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -115,7 +154,9 @@ function Grid({ rows, report }) {
     ? [['Code', 'code'], ['Item', 'name'], ['UOM', 'uom'], ['Opening', 'opening'], ['Received', 'received'], ['Issued', 'issued'], ['Closing', 'closing'], ['Value', 'totalValue']]
     : report === 'aging'
       ? [['Code', 'code'], ['Item', 'name'], ['Qty', 'qty'], ['Value', 'value'], ['0-30', 'd0'], ['31-90', 'd31'], ['91-180', 'd91'], ['180+', 'd180']]
-      : [['Code', 'code'], ['Item', 'name'], ['On hand', 'onHand'], ['Available', 'available'], ['Reserved', 'reserved'], ['Soft', 'soft'], ['Blocked', 'blocked'], ['In transit', 'inTransit'], ['Value', 'value']];
+      : report === 'variance'
+        ? [['Code', 'code'], ['Item', 'name'], ['Book', 'bookQty'], ['Count', 'countQty'], ['Variance', 'varianceQty'], ['Value', 'varianceValue'], ['Reason', 'reason']]
+        : [['Code', 'code'], ['Item', 'name'], ['On hand', 'onHand'], ['Available', 'available'], ['Reserved', 'reserved'], ['Soft', 'soft'], ['Blocked', 'blocked'], ['In transit', 'inTransit'], ['Value', 'value']];
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
       <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>

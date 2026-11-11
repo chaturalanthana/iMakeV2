@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import { CalendarCheck, ChevronLeft, ChevronRight, Plus, X, CheckCircle, Trash2, Pencil } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { confirmDialog } from '../../components/ui/appDialog';
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -126,7 +127,7 @@ export default function HolidayCalendar() {
 
   const handleDelete = async (id, name, e) => {
     e.stopPropagation();
-    if (!window.confirm(`Remove holiday "${name}"?`)) return;
+    if (!(await confirmDialog({ title: 'Remove holiday', message: `Remove holiday "${name}"?` }))) return;
     try {
       await axios.delete(`/api/hr/holidays/${id}`, authConfig());
       showToast('Holiday removed', 'success');

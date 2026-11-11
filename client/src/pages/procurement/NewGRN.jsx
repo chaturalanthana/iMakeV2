@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { confirmDialog } from '../../components/ui/appDialog';
 import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
@@ -244,7 +245,7 @@ export default function NewGRN() {
   };
 
   const handleDeleteGRN = async () => {
-    if (!window.confirm("Are you sure you want to permanently delete this Goods Receipt Note? Stock adjustments will need to be made manually if completed. This action cannot be undone.")) return;
+    if (!(await confirmDialog({ title: 'Delete goods receipt', message: 'Permanently delete this goods receipt? A completed receipt needs a stock adjustment if it was posted. This cannot be undone.' }))) return;
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

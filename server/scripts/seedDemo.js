@@ -20,9 +20,11 @@ const { ensureProductTypes } = require('../src/services/productTypes');
 const { createContract, createRfq, addQuotation, selectQuotation } = require('../src/services/phase2/procurement');
 const { openPeriod } = require('../src/services/phase2/close');
 const { openPettyCash, issueIou } = require('../src/services/phase2/treasury');
+const { seedControls, seedSamples } = require('./seedSamples');
 
 const SLUG = 'ceylon-woodworks';
 const EMAIL = 'nimal@ceylonwood.lk';
+const APPROVER_EMAIL = 'kamani@ceylonwood.lk';
 const PASSWORD = 'Ceylon-demo-2026';
 
 function refuseUnsafeDatabase() {
@@ -204,9 +206,20 @@ async function wipe(tenantId) {
   await prisma.purchaseTaxGroup.deleteMany({ where });
   await prisma.taxSlab.deleteMany({ where });
   await prisma.taxGroup.deleteMany({ where });
+  await prisma.bankReconciliationMatch.deleteMany({ where });
+  await prisma.bankStatementLine.deleteMany({ where });
+  await prisma.bankReconciliation.deleteMany({ where });
   await prisma.account.deleteMany({ where });
   await prisma.itemSupplier.deleteMany({ where });
   await prisma.product.deleteMany({ where });
+  await prisma.priceListPrice.deleteMany({ where });
+  await prisma.priceList.deleteMany({ where });
+  await prisma.discountGroupProduct.deleteMany({ where });
+  await prisma.discountGroup.deleteMany({ where });
+  await prisma.customerCategory.deleteMany({ where });
+  await prisma.paymentTerm.deleteMany({ where });
+  await prisma.productBrand.deleteMany({ where });
+  await prisma.productCategory.deleteMany({ where });
   await prisma.bin.deleteMany({ where });
   await prisma.workstation.deleteMany({ where });
   await prisma.machine.deleteMany({ where });
@@ -708,10 +721,15 @@ async function main() {
   const fund = await openPettyCash(prisma, { tenantId, name: 'Malabe tin', amount: 15000, date: new Date(), custodian: 'Nimal Perera' });
   await issueIou(prisma, { tenantId, date: new Date(), employeeName: 'Kumari Silva', department: 'Assembly', amount: 2500, fundId: fund.id });
 
+  const nimal = await prisma.user.findFirst({ where: { tenantId, email: EMAIL } });
+  await seedSamples(prisma, { tenantId, userId: nimal.id, warehouse, timber, chair, screw, varnish, table, centers });
+  await seedControls(prisma, tenantId, nimal.id, passwordHash);
+
   console.log('Demo tenant ready.');
   console.log('  Company   Ceylon Woodworks (Pvt) Ltd');
-  console.log(`  Sign in   ${EMAIL}`);
-  console.log(`  Password  ${PASSWORD}`);
+  console.log(`  Maker     ${EMAIL}`);
+  console.log(`  Approver  ${APPROVER_EMAIL}`);
+  console.log('  Password  PASSWORD in server/scripts/seedDemo.js (same value for both demo users)');
   console.log('  Stores    MAIN — teak, screws, varnish, fabric, glue');
   console.log('  Buy       reorder teak and screws. Chairs and tables are planned in MRP.');
   console.log('  Make      CHAIR and TABLE, routed across SAW, ASM, and FIN');

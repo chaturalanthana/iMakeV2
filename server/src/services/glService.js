@@ -275,16 +275,24 @@ async function trialBalance(db, tenantId) {
       });
     }
     const row = byAccount.get(line.accountId);
-    row.debit = money(row.debit + num(line.debit));
-    row.credit = money(row.credit + num(line.credit));
-    debit = money(debit + num(line.debit));
-    credit = money(credit + num(line.credit));
+    const nextDebit = money(row.debit + num(line.debit));
+    const nextCredit = money(row.credit + num(line.credit));
+    const net = money(nextDebit - nextCredit);
+    row.debit = net > 0 ? net : 0;
+    row.credit = net < 0 ? money(-net) : 0;
+  }
+  const accounts = [...byAccount.values()]
+    .filter((row) => row.debit > 0.0001 || row.credit > 0.0001)
+    .sort((a, b) => a.code.localeCompare(b.code));
+  for (const row of accounts) {
+    debit = money(debit + row.debit);
+    credit = money(credit + row.credit);
   }
   return {
     debit,
     credit,
     balanced: Math.abs(debit - credit) < 0.001,
-    accounts: [...byAccount.values()].sort((a, b) => a.code.localeCompare(b.code))
+    accounts
   };
 }
 

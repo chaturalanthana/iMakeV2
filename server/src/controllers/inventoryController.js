@@ -1,5 +1,21 @@
 const prisma = require('../lib/prisma');
 const { sendError } = require('../services/errors');
+const { toXlsx } = require('../services/spreadsheet');
+
+function wantsSheet(req) {
+  return req.query.export === 'xlsx' || req.query.format === 'xlsx';
+}
+
+function sendSheet(res, filename, headers, rows) {
+  const buffer = toXlsx(headers, rows.map((row) => {
+    const out = {};
+    headers.forEach((header) => { out[header] = row[header] == null ? '' : String(row[header]); });
+    return out;
+  }));
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+}
 const {
   ensureDefaultLocations,
   ensureUomTemplates,
@@ -160,13 +176,25 @@ module.exports = {
     res.status(201).json(await renumberPallet(prisma, { tenantId: tenant(req), id: req.params.id, code: req.body.code }));
   }),
   positions: wrap(async (req, res) => {
-    res.json(await positionReport(prisma, tenant(req), req.query));
+    const rows = await positionReport(prisma, tenant(req), req.query);
+    if (wantsSheet(req)) {
+      return sendSheet(res, 'stock-position.xlsx', ['code', 'name', 'onHand', 'available', 'reserved', 'soft', 'blocked', 'inTransit', 'value'], rows);
+    }
+    res.json(rows);
   }),
   movementReport: wrap(async (req, res) => {
-    res.json(await movementReport(prisma, tenant(req), req.query));
+    const rows = await movementReport(prisma, tenant(req), req.query);
+    if (wantsSheet(req)) {
+      return sendSheet(res, 'stock-movement.xlsx', ['code', 'name', 'uom', 'opening', 'received', 'issued', 'closing', 'unitCost', 'totalValue'], rows);
+    }
+    res.json(rows);
   }),
   agingReport: wrap(async (req, res) => {
-    res.json(await agingReport(prisma, tenant(req), req.query));
+    const rows = await agingReport(prisma, tenant(req), req.query);
+    if (wantsSheet(req)) {
+      return sendSheet(res, 'stock-aging.xlsx', ['code', 'name', 'qty', 'unitCost', 'value', 'd0', 'd31', 'd91', 'd180'], rows);
+    }
+    res.json(rows);
   }),
   varianceReport: wrap(async (req, res) => {
     const where = { tenantId: tenant(req) };
@@ -176,6 +204,19 @@ module.exports = {
       include: { lines: { include: { product: true } }, warehouse: true },
       orderBy: { createdAt: 'desc' }
     });
+    if (wantsSheet(req)) {
+      const lines = count?.lines || [];
+      return sendSheet(res, 'stock-variance.xlsx', ['code', 'name', 'bookQty', 'countQty', 'varianceQty', 'unitCost', 'varianceValue', 'reason'], lines.map((line) => ({
+        code: line.product?.code || '',
+        name: line.product?.name || '',
+        bookQty: String(line.bookQty),
+        countQty: String(line.countQty),
+        varianceQty: String(line.varianceQty),
+        unitCost: String(line.unitCost),
+        varianceValue: String(line.varianceValue),
+        reason: line.reason || ''
+      })));
+    }
     res.json(count);
   }),
   receipt: wrap(async (req, res) => {
