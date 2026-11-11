@@ -10,6 +10,7 @@ const {
   decide,
   present
 } = require('../services/approvalService');
+const { summary } = require('../services/dashboard');
 
 const getApprovalCount = async (req, res) => {
   try {
@@ -132,10 +133,12 @@ const getPeriods = async (req, res) => {
     const year = parseInt(req.query.year, 10) || new Date().getUTCFullYear();
     const periods = await ensureYear(prisma, req.tenantId, year);
     const settings = await prisma.operationsSetting.findUnique({ where: { tenantId: req.tenantId } });
+    const tenant = await prisma.tenant.findUnique({ where: { id: req.tenantId }, select: { hrEnabled: true } });
     res.json({
       year,
       periods,
-      allowNegativeStock: Boolean(settings?.allowNegativeStock)
+      allowNegativeStock: Boolean(settings?.allowNegativeStock),
+      hrEnabled: Boolean(tenant?.hrEnabled)
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load fiscal periods' });
@@ -230,7 +233,42 @@ const getAudit = async (req, res) => {
   }
 };
 
+const getDashboard = async (req, res) => {
+  try {
+    const period = ['today', '7d', '30d', 'ytd'].includes(req.query.period) ? req.query.period : '7d';
+    res.json(await summary(prisma, req.tenantId, period));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load the dashboard' });
+  }
+};
+
+const getModules = async (req, res) => {
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: req.tenantId }, select: { hrEnabled: true } });
+    res.json({ hrEnabled: Boolean(tenant?.hrEnabled) });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load module settings' });
+  }
+};
+
+const updateModules = async (req, res) => {
+  try {
+    const hrEnabled = Boolean(req.body.hrEnabled);
+    const saved = await prisma.tenant.update({
+      where: { id: req.tenantId },
+      data: { hrEnabled },
+      select: { hrEnabled: true }
+    });
+    res.json(saved);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to save module settings' });
+  }
+};
+
 module.exports = {
+  getDashboard,
+  getModules,
+  updateModules,
   getApprovalCount,
   getApprovals,
   decideApproval,

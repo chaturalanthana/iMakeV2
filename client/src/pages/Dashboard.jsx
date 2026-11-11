@@ -15,43 +15,36 @@ export default function Dashboard() {
   const [workstationsList, setWorkstationsList] = useState([]);
   
   const [stats, setStats] = useState({
-    productsCount: 0,
-    workstationsCount: 0,
-    bomsCount: 0,
-    customersCount: 0,
-    ordersCount: 12, // Baseline defaults
-    revenue: 1420500,
-    pendingJobs: 5,
-    lowStockItems: 3
+    products: 0,
+    workstations: 0,
+    boms: 0,
+    customers: 0,
+    warehouses: 0,
+    orders: 0,
+    revenue: 0,
+    activeJobs: 0,
+    lowStock: 0,
+    fulfillment: 0,
+    averageOrder: 0,
+    monthly: [],
+    activity: []
   });
 
   useEffect(() => {
     fetchRealMetrics();
-  }, []);
+  }, [period]);
 
   const fetchRealMetrics = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-
-      // Multi-endpoint fetch for real counts
-      const [prodRes, wsRes, bomRes, custRes] = await Promise.allSettled([
-        axios.get('/api/products', { headers }),
-        axios.get('/api/workstations', { headers }),
-        axios.get('/api/boms', { headers }),
-        axios.get('/api/customers', { headers })
+      const [dashRes, wsRes] = await Promise.all([
+        axios.get('/api/dashboard', { headers, params: { period } }),
+        axios.get('/api/workstations', { headers })
       ]);
-
-      setStats(prev => ({
-        ...prev,
-        productsCount: prodRes.status === 'fulfilled' ? prodRes.value.data.length : 18,
-        workstationsCount: wsRes.status === 'fulfilled' ? wsRes.value.data.length : 4,
-        bomsCount: bomRes.status === 'fulfilled' ? bomRes.value.data.length : 6,
-        customersCount: custRes.status === 'fulfilled' ? custRes.value.data.length : 14
-      }));
-
-      setWorkstationsList(wsRes.status === 'fulfilled' ? wsRes.value.data : []);
+      setStats(dashRes.data);
+      setWorkstationsList(wsRes.data || []);
     } catch (error) {
       console.error('Failed to load live database counts:', error);
     } finally {
@@ -59,16 +52,9 @@ export default function Dashboard() {
     }
   };
 
-  const getPeriodMultiplier = () => {
-    if (period === 'today') return 0.12;
-    if (period === '30d') return 3.4;
-    if (period === 'ytd') return 24.8;
-    return 1.0;
-  };
-
-  const currentRevenue = stats.revenue * getPeriodMultiplier();
-  const currentOrders = Math.round(stats.ordersCount * getPeriodMultiplier());
-  const currentLowStock = period === 'today' ? 1 : stats.lowStockItems;
+  const currentRevenue = Number(stats.revenue || 0);
+  const currentOrders = Number(stats.orders || 0);
+  const currentLowStock = Number(stats.lowStock || 0);
 
   const cardStyle = {
     backgroundColor: '#ffffff',
@@ -222,13 +208,13 @@ export default function Dashboard() {
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
                   <TrendingUp size={14} style={{ color: '#10b981' }} />
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981' }}>+12.4%</span>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>vs last period</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981' }}>Posted invoices</span>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>in this period</span>
                 </div>
               </div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b' }}>
-                <span>Target: LKR {(currentRevenue * 1.1).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                <span>AR: {stats.customersCount} Cust</span>
+                <span>Customers: {stats.customers || 0}</span>
+                <span>Avg order: LKR {Number(stats.averageOrder || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
               </div>
             </div>
 
@@ -248,13 +234,13 @@ export default function Dashboard() {
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
                   <TrendingUp size={14} style={{ color: '#10b981' }} />
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981' }}>+8.2%</span>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>fulfillment rate</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981' }}>{stats.fulfillment || 0}%</span>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>delivered</span>
                 </div>
               </div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b' }}>
-                <span>Conversion: 76.5%</span>
-                <span>Avg Value: LKR 45K</span>
+                <span>Delivered: {stats.delivered || 0}</span>
+                <span>Open jobs: {stats.activeJobs || 0}</span>
               </div>
             </div>
 
@@ -270,17 +256,17 @@ export default function Dashboard() {
               </div>
               <div style={{ margin: '0.5rem 0' }}>
                 <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                  {stats.workstationsCount} Stations / {stats.bomsCount} BOMs
+                  {stats.workstations || 0} Stations / {stats.boms || 0} BOMs
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
                   <Activity size={14} style={{ color: '#ec4899' }} />
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ec4899' }}>{stats.pendingJobs} Jobs Active</span>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>on scheduling board</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ec4899' }}>{stats.activeJobs || 0} Jobs Active</span>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>not closed</span>
                 </div>
               </div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b' }}>
-                <span>OEE Rate: 92.4%</span>
-                <span>Efficiency: 95%</span>
+                <span>Warehouses: {stats.warehouses || 0}</span>
+                <span>Customers: {stats.customers || 0}</span>
               </div>
             </div>
 
@@ -296,19 +282,19 @@ export default function Dashboard() {
               </div>
               <div style={{ margin: '0.5rem 0' }}>
                 <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                  {stats.productsCount} SKUs Registered
+                  {stats.products || 0} SKUs Registered
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
                   <ShieldAlert size={14} style={{ color: currentLowStock > 0 ? '#ef4444' : '#10b981' }} />
                   <span style={{ fontSize: '0.75rem', fontWeight: 700, color: currentLowStock > 0 ? '#ef4444' : '#10b981' }}>
                     {currentLowStock > 0 ? `${currentLowStock} Shortages Found` : 'Stock Levels Healthy'}
                   </span>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>in MRP logs</span>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>below reorder</span>
                 </div>
               </div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b' }}>
-                <span>Warehouses: 3 Active</span>
-                <span>Turnover: 8.5x</span>
+                <span>Warehouses: {stats.warehouses || 0}</span>
+                <span>BOMs: {stats.boms || 0}</span>
               </div>
             </div>
           </div>
@@ -337,40 +323,18 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div style={{ position: 'relative', height: '260px', width: '100%' }}>
-                  <svg viewBox="0 0 700 240" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-                    <defs>
-                      <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.22" />
-                        <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    <line x1="30" y1="20" x2="680" y2="20" stroke="#f1f5f9" strokeWidth="1" />
-                    <line x1="30" y1="75" x2="680" y2="75" stroke="#f1f5f9" strokeWidth="1" />
-                    <line x1="30" y1="130" x2="680" y2="130" stroke="#f1f5f9" strokeWidth="1" />
-                    <line x1="30" y1="185" x2="680" y2="185" stroke="#f1f5f9" strokeWidth="1" />
-                    <line x1="30" y1="240" x2="680" y2="240" stroke="#e2e8f0" strokeWidth="1.5" />
-
-                    <text x="5" y="24" fill="#94a3b8" fontSize="10" fontWeight="600">200K</text>
-                    <text x="5" y="79" fill="#94a3b8" fontSize="10" fontWeight="600">150K</text>
-                    <text x="5" y="134" fill="#94a3b8" fontSize="10" fontWeight="600">100K</text>
-                    <text x="5" y="189" fill="#94a3b8" fontSize="10" fontWeight="600">50K</text>
-                    <text x="5" y="238" fill="#94a3b8" fontSize="10" fontWeight="600">0</text>
-
-                    <text x="60" y="255" fill="#64748b" fontSize="10" fontWeight="700">JAN</text>
-                    <text x="180" y="255" fill="#64748b" fontSize="10" fontWeight="700">FEB</text>
-                    <text x="300" y="255" fill="#64748b" fontSize="10" fontWeight="700">MAR</text>
-                    <text x="420" y="255" fill="#64748b" fontSize="10" fontWeight="700">APR</text>
-                    <text x="540" y="255" fill="#64748b" fontSize="10" fontWeight="700">MAY</text>
-                    <text x="660" y="255" fill="#64748b" fontSize="10" fontWeight="700">JUN</text>
-
-                    <path d="M 60 180 Q 180 110, 300 135 T 420 60, 540 85, 660 30 L 660 240 L 60 240 Z" fill="url(#chartGrad)" />
-                    <path d="M 60 200 Q 180 150, 300 170 T 420 120, 540 130, 660 90" fill="none" stroke="#cbd5e1" strokeWidth="2.5" strokeDasharray="4 4" />
-                    <path d="M 60 180 Q 180 110, 300 135 T 420 60, 540 85, 660 30" fill="none" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" />
-                    
-                    <circle cx="420" cy="60" r="5" fill="var(--accent)" stroke="#fff" strokeWidth="2" />
-                    <circle cx="660" cy="30" r="5" fill="var(--accent)" stroke="#fff" strokeWidth="2" />
-                  </svg>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem', height: '220px' }}>
+                  {(stats.monthly || []).map((month) => {
+                    const max = Math.max(...(stats.monthly || []).map((row) => Number(row.revenue) || 0), 1);
+                    const height = Math.max(8, Math.round((Number(month.revenue) / max) * 180));
+                    return (
+                      <div key={month.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{Number(month.revenue).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        <div style={{ width: '100%', maxWidth: '48px', height: `${height}px`, background: 'var(--accent)', borderRadius: '6px 6px 0 0', opacity: 0.85 }} />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>{month.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -387,36 +351,28 @@ export default function Dashboard() {
                 </h3>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                  {[
-                    { time: '10 mins ago', module: 'PRODUCTION', text: 'BOM code BOM-WS-817 revised to V1.2. Sequential routing nodes updated.', status: 'success', icon: Wrench },
-                    { time: '1 hour ago', module: 'SALES', text: 'Sales Invoice INV-2026-004 generated for customer. Total outstanding LKR 145,000.', status: 'info', icon: FileText },
-                    { time: '2 hours ago', module: 'PROCUREMENT', text: 'Purchase Requisition PR-003 converted to Purchase Order PO-2026-021.', status: 'warning', icon: Briefcase },
-                    { time: '4 hours ago', module: 'STOCKS', text: 'Warehouse Goods Transfer from Central to Production line complete for 120 Units.', status: 'success', icon: Package }
-                  ].map((act, i) => (
-                    <div key={i} style={{ 
-                      display: 'flex', 
-                      alignItems: 'flex-start', 
-                      gap: '1rem', 
-                      padding: '0.75rem', 
-                      backgroundColor: '#f8fafc', 
-                      borderRadius: '8px', 
+                  {(stats.activity || []).length === 0 && (
+                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>No audit rows yet.</p>
+                  )}
+                  {(stats.activity || []).map((act) => (
+                    <div key={`${act.entity}-${act.entityId}-${act.at}`} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '1rem',
+                      padding: '0.75rem',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '8px',
                       border: '1px solid #f1f5f9'
                     }}>
-                      <div style={{
-                        padding: '0.4rem', 
-                        borderRadius: '6px', 
-                        backgroundColor: act.status === 'success' ? '#e6fcf5' : act.status === 'info' ? '#eff6ff' : '#fffbeb',
-                        color: act.status === 'success' ? '#0ca678' : act.status === 'info' ? '#228be6' : '#f59e0b',
-                        display: 'flex', alignItems: 'center'
-                      }}>
-                        <act.icon size={15} />
+                      <div style={{ padding: '0.4rem', borderRadius: '6px', backgroundColor: '#eff6ff', color: '#228be6', display: 'flex', alignItems: 'center' }}>
+                        <FileText size={15} />
                       </div>
                       <div style={{ flexGrow: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <strong style={{ fontSize: '0.7rem', color: '#475569', letterSpacing: '0.05em' }}>{act.module}</strong>
-                          <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>{act.time}</span>
+                          <strong style={{ fontSize: '0.7rem', color: '#475569', letterSpacing: '0.05em' }}>{act.entity}</strong>
+                          <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>{new Date(act.at).toLocaleString()}</span>
                         </div>
-                        <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: '#334155', lineHeight: 1.3 }}>{act.text}</p>
+                        <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: '#334155', lineHeight: 1.3 }}>{act.action} {act.entity}</p>
                       </div>
                     </div>
                   ))}

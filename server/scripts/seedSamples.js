@@ -18,6 +18,8 @@ const {
   postApprovedCycleCount
 } = require('../src/services/inventory/ops');
 const { runMps, createContract } = require('../src/services/production/phase4');
+const dispatch = require('../src/services/phase3/dispatch');
+const { postCashSale } = require('../src/services/phase3/cashSale');
 const { createWorkOrder, createDraftsForSalesOrder } = require('../src/services/production/workOrders');
 
 const TODAY = '2026-11-11';
@@ -78,6 +80,87 @@ async function seedControls(prisma, tenantId, makerId, passwordHash) {
     amount: 9000,
     userId: makerId
   });
+
+  const workOrder = await prisma.workOrder.findFirst({ where: { tenantId, product: { code: 'CHAIR' }, status: 'CREATED' } });
+  if (workOrder) {
+    const loss = await prisma.abnormalLoss.create({
+      data: {
+        tenantId,
+        workOrderId: workOrder.id,
+        productLine: 'Furniture',
+        actualScrapPercent: 25,
+        standardScrapPercent: 2,
+        threshold: 2,
+        excessQty: 0.46,
+        amount: 4140,
+        reason: 'Power cut spoiled a finishing batch',
+        status: 'PENDING'
+      }
+    });
+    await submitForApproval(prisma, {
+      tenantId,
+      documentType: 'ABNORMAL_LOSS',
+      documentId: loss.id,
+      documentNumber: workOrder.orderNumber,
+      amount: 4140,
+      userId: makerId
+    });
+  }
+}
+
+async function seedDispatch(db, { tenantId, userId, hotel, chair, finished, van, today }) {
+  await db.$transaction((tx) => postReceiptDocument(tx, {
+    tenantId, warehouseId: finished.id, referenceType: 'OPENING', referenceId: `${finished.id}-extra`,
+    date: today, description: 'Chairs for the Galle run', creditKey: 'OPENING_EQUITY',
+    items: [{ productId: chair.id, quantity: 2, unitPrice: 9000, lotNumber: 'CHAIR-RUN' }]
+  }));
+  await db.$transaction((tx) => postReceiptDocument(tx, {
+    tenantId, warehouseId: van.id, referenceType: 'OPENING', referenceId: `${van.id}-load`,
+    date: today, description: 'Van load', creditKey: 'OPENING_EQUITY',
+    items: [{ productId: chair.id, quantity: 2, unitPrice: 9000, lotNumber: 'CHAIR-VAN' }]
+  }));
+  const route = await db.deliveryRoute.create({
+    data: { tenantId, code: 'GALLE', name: 'Galle fort run', warehouseId: finished.id }
+  });
+  const vehicle = await db.vehicle.create({
+    data: { tenantId, code: 'WP-8841', registration: 'WP CAA-8841', driverName: 'Ranjith Silva', kind: 'TRUCK', routeId: route.id, warehouseId: finished.id }
+  });
+  const orderNumber = await generateDocumentNumber(tenantId, 'salesOrder', 'SO', 'orderNumber');
+  const order = await db.salesOrder.create({
+    data: {
+      tenantId, customerId: hotel.id, orderNumber, date: today, status: 'PENDING', total: 18500, createdBy: userId,
+      channel: 'GENERAL_TRADE', warehouseId: finished.id,
+      items: { create: [{ productId: chair.id, quantity: 1, unitPrice: 18500, total: 18500 }] }
+    }
+  });
+  await dispatch.releaseOrder(db, { tenantId, userId, orderId: order.id, warehouseId: finished.id, routeId: route.id, channel: 'GENERAL_TRADE' });
+  const pick = await dispatch.createRoutePick(db, {
+    tenantId, userId, date: TODAY, warehouseId: finished.id, routeId: route.id, vehicleId: vehicle.id, orderIds: [order.id]
+  });
+  await dispatch.advancePick(db, { tenantId, pickId: pick.id, action: 'PICK' });
+  await dispatch.advancePick(db, { tenantId, pickId: pick.id, action: 'PACK' });
+  const notes = await dispatch.createDeliveryNotes(db, { tenantId, userId, pickId: pick.id, date: TODAY });
+  const trip = await dispatch.createTrip(db, {
+    tenantId, userId, date: TODAY, deliveryIds: notes.map((row) => row.id), vehicleId: vehicle.id, routeId: route.id, driverName: 'Ranjith Silva', pickId: pick.id
+  });
+  await dispatch.invoiceDeliveries(db, { tenantId, userId, tripId: trip.id, date: TODAY });
+  await dispatch.issueGatePass(db, { tenantId, userId, tripId: trip.id, securityName: 'Gate office', loadNote: 'One dining chair' });
+  await dispatch.departTrip(db, { tenantId, userId, tripId: trip.id });
+  await dispatch.recordProof(db, {
+    tenantId, userId, deliveryId: notes[0].id, tripId: trip.id, receivedBy: 'Front desk, Galle Heritage', lines: []
+  });
+  const openNumber = await generateDocumentNumber(tenantId, 'salesOrder', 'SO', 'orderNumber');
+  await db.salesOrder.create({
+    data: {
+      tenantId, customerId: hotel.id, orderNumber: openNumber, date: today, status: 'PENDING', total: 18500, createdBy: userId,
+      channel: 'GENERAL_TRADE',
+      items: { create: [{ productId: chair.id, quantity: 1, unitPrice: 18500, total: 18500 }] }
+    }
+  });
+  await postCashSale(db, {
+    tenantId, createdBy: userId, customerId: hotel.id, warehouseId: van.id, date: TODAY, saleKind: 'VAN_CASH',
+    items: [{ productId: chair.id, quantity: 1, unitPrice: 18500, total: 18500 }]
+  });
 }
 
 async function seedSamples(prisma, ctx) {
@@ -109,7 +192,7 @@ async function seedSamples(prisma, ctx) {
     data: { tenantId, code: 'FG-01', name: 'Finished goods', branchId: branch.id, locationRole: 'STORE' }
   });
   const van = await prisma.warehouse.create({
-    data: { tenantId, code: 'VAN-01', name: 'Van sales stock', branchId: branch.id, locationRole: 'VIRTUAL', isVirtual: true }
+    data: { tenantId, code: 'VAN-02', name: 'Second van stock', branchId: branch.id, locationRole: 'VIRTUAL', isVirtual: true }
   });
   const cashCustomer = await prisma.customer.create({
     data: { tenantId, code: 'CUS-CASH', name: 'Factory cash counter', creditLimit: 0, creditPeriod: 0, allowCreditSales: false }
@@ -320,6 +403,8 @@ async function seedSamples(prisma, ctx) {
     await capitalizeAsset(tx, { tenantId, assetId: asset.id, classId: assetClass.id, date: TODAY, createdBy: userId, name: 'Packing line' });
     await runDepreciation(tx, { tenantId, year: 2026, month: 11, createdBy: userId });
   });
+
+  await seedDispatch(prisma, { tenantId, userId, hotel, chair, finished, van, today });
 
   await prisma.bankReconciliation.create({
     data: {

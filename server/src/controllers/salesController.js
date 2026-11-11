@@ -15,6 +15,8 @@ const {
   customerStatement
 } = require('../services/documentPosting');
 const { createDraftsForSalesOrder } = require('../services/production/workOrders');
+const { isCashKind, postCashSale } = require('../services/phase3/cashSale');
+const { deliverPending } = require('../services/phase3/notify');
 const { DocumentError } = require('../services/errors');
 const { writeAudit } = require('../services/auditService');
 const { respondList } = require('../services/listQuery');
@@ -476,21 +478,25 @@ const updateOrderStatusOnDelivery = async (orderId, db = prisma) => {
 
   let allFullyShipped = true;
   let anyShipped = false;
+  let anyOpen = false;
   for (const ordItem of order.items) {
+    const openQty = parseFloat(ordItem.quantity) - parseFloat(ordItem.cancelledQty || 0);
+    if (openQty <= 0.0001) continue;
+    anyOpen = true;
     const shippedQty = shippedQtyMap[ordItem.productId] || 0;
-    if (shippedQty < ordItem.quantity) {
-      allFullyShipped = false;
-    }
-    if (shippedQty > 0) {
-      anyShipped = true;
-    }
+    if (shippedQty + 0.0001 < openQty) allFullyShipped = false;
+    if (shippedQty > 0) anyShipped = true;
   }
 
   let newStatus = order.status;
-  if (allFullyShipped) {
+  if (!anyOpen && !anyShipped) {
+    newStatus = 'CANCELLED';
+  } else if (anyOpen && allFullyShipped && anyShipped) {
     newStatus = 'DELIVERED';
   } else if (anyShipped) {
     newStatus = 'PARTIALLY_DELIVERED';
+  } else if (order.status === 'RELEASED' || order.status === 'CANCELLED' || order.status === 'PENDING_APPROVAL') {
+    newStatus = order.status;
   } else {
     newStatus = 'PENDING';
   }
@@ -808,6 +814,15 @@ const getInvoices = async (req, res) => {
 
 const createInvoice = async (req, res) => {
   try {
+    if (isCashKind(req.body.saleKind)) {
+      const invoice = await postCashSale(prisma, {
+        ...req.body,
+        tenantId: req.tenantId,
+        createdBy: req.user.userId
+      });
+      await deliverPending(prisma, req.tenantId);
+      return res.status(201).json(invoice);
+    }
     const { customerId, orderId, deliveryId, date, status, items, currencyId, exchangeRate } = req.body;
     
     const finalInvoiceNumber = await generateDocumentNumber(
