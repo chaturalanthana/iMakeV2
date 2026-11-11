@@ -60,4 +60,32 @@ async function ensureYear(db, tenantId, year) {
   return rows;
 }
 
-module.exports = { assertPeriodOpen, ensureYear, userCanClose, periodKey };
+async function setFiscalStatus(db, { tenantId, year, month, status, userId }) {
+  await ensureYear(db, tenantId, year);
+  return db.fiscalPeriod.update({
+    where: { tenantId_year_month: { tenantId, year, month } },
+    data: { status, updatedBy: userId || null }
+  });
+}
+
+async function syncChecklistFromFiscal(db, { tenantId, year, month, status }) {
+  const close = await db.periodClose.findFirst({ where: { tenantId, year, month } });
+  if (!close) return null;
+  const mapped = status === 'CLOSED' ? 'HARD' : status === 'SOFT_CLOSED' ? 'SOFT' : 'OPEN';
+  if (close.status === mapped) return close;
+  if (close.status === 'HARD' && mapped !== 'HARD') {
+    throw new DocumentError('Closing entries are already posted. This month stays closed.', {
+      status: 'Closing entries are already posted. This month stays closed.'
+    });
+  }
+  return db.periodClose.update({ where: { id: close.id }, data: { status: mapped } });
+}
+
+module.exports = {
+  assertPeriodOpen,
+  ensureYear,
+  userCanClose,
+  periodKey,
+  setFiscalStatus,
+  syncChecklistFromFiscal
+};

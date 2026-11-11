@@ -525,6 +525,7 @@ export default function NewPurchaseOrder() {
             </div>
           )}
 
+          {activeTab !== 'history' && <>
           {/* Product Section Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '2.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -626,6 +627,7 @@ export default function NewPurchaseOrder() {
               </tfoot>
             </table>
           </div>
+          </>}
 
           {/* Print PDF Modal */}
           <PurchaseOrderPrintModal
