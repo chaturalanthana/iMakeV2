@@ -1,19 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { isUuid, recordPath, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
-import { ClipboardList, ArrowLeft, CheckCircle } from 'lucide-react';
+import { ClipboardList, ArrowLeft } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
 
 const FIELD_STYLE = {
   width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px',
   border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none',
   fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box', color: '#1e293b'
-};
-const LABEL_STYLE = {
-  fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-  letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem'
 };
 const BUTTON = {
   height: '38px', padding: '0 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
@@ -24,22 +20,13 @@ const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumF
 
 export default function WorkOrderDetail() {
   const navigate = useNavigate();
-  const { id } = useParams();
-  const isNew = !id;
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
   const { showToast } = useToast();
-  const [products, setProducts] = useState([]);
-  const [boms, setBoms] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
   const [order, setOrder] = useState(null);
   const [cost, setCost] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
   const [issueQty, setIssueQty] = useState({});
   const [issueLot, setIssueLot] = useState({});
-  const [form, setForm] = useState({
-    productId: '', bomId: '', quantity: 1, priority: 'MEDIUM', issueMode: '',
-    startDate: '', endDate: '', warehouseId: '', notes: ''
-  });
 
   const authConfig = useCallback(() => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -53,62 +40,27 @@ export default function WorkOrderDetail() {
     ]);
     setOrder(orderRes.data);
     setCost(costRes.data);
+    return orderRes.data;
   }, [authConfig]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const config = authConfig();
-        const [productsRes, bomsRes, whRes] = await Promise.all([
-          axios.get('/api/products', config),
-          axios.get('/api/boms', config),
-          axios.get('/api/warehouses', config).catch(() => ({ data: [] }))
-        ]);
-        setProducts(productsRes.data.filter((product) => product.activeStatus !== 'INACTIVE'));
-        setBoms(bomsRes.data);
-        setWarehouses(Array.isArray(whRes.data) ? whRes.data : []);
-        if (!isNew) await loadOrder(id);
+        if (!routeKey) return;
+        let orderId = isUuid(routeKey) ? routeKey : '';
+        if (!orderId) {
+          const scanned = await axios.get('/api/work-orders/scan', { ...authConfig(), params: { code: routeKey } });
+          orderId = scanned.data.id;
+        }
+        setId(orderId);
+        const loaded = await loadOrder(orderId);
+        showRecord(navigate, '/production/work-orders', loaded, 'orderNumber');
       } catch (error) {
         showToast(error.response?.data?.error || 'Failed to load work order', 'error');
       }
     };
     load();
-  }, [id, isNew, authConfig, loadOrder, showToast]);
-
-  const productOptions = products.map((product) => ({ label: `${product.code} - ${product.name}`, value: product.id }));
-  const bomOptions = boms
-    .filter((bom) => bom.productId === form.productId)
-    .map((bom) => ({ label: `${bom.code} (v${bom.version})`, value: bom.id }));
-
-  const save = async () => {
-    const errors = {};
-    if (!form.productId) errors.productId = 'Product is required';
-    if (!(parseFloat(form.quantity) > 0)) errors.quantity = 'Quantity must be greater than zero';
-    if (Object.keys(errors).length) {
-      setFieldErrors(errors);
-      const messages = Object.values(errors);
-      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
-      return;
-    }
-    setFieldErrors({});
-    setSaving(true);
-    try {
-      const res = await axios.post('/api/work-orders', {
-        ...form,
-        bomId: form.bomId || undefined,
-        warehouseId: form.warehouseId || undefined,
-        issueMode: form.issueMode || undefined,
-        quantity: parseFloat(form.quantity)
-      }, authConfig());
-      showToast('Work order created', 'success');
-      navigate(`/production/work-orders/${res.data.id}`);
-    } catch (error) {
-      setFieldErrors(error.response?.data?.fields || {});
-      showToast(error.response?.data?.error || 'Failed to create work order', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
+  }, [routeKey, authConfig, loadOrder, showToast, navigate]);
 
   const act = async (path, success) => {
     try {
@@ -144,7 +96,7 @@ export default function WorkOrderDetail() {
   };
 
   return (
-    <AppLayout title={isNew ? 'Create Work Order' : (order?.orderNumber || 'Work Order')} icon={ClipboardList}>
+    <AppLayout title={order?.orderNumber || 'Work Order'} icon={ClipboardList}>
       <button
         onClick={() => navigate('/production/work-orders')}
         style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#64748b', fontWeight: 700, cursor: 'pointer', marginBottom: '1rem' }}
@@ -152,60 +104,7 @@ export default function WorkOrderDetail() {
         <ArrowLeft size={16} /> Work Orders
       </button>
 
-      {isNew ? (
-        <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-          <div>
-            <label style={LABEL_STYLE}>Product</label>
-            <LiveSearchDropdown options={productOptions} value={form.productId} invalid={!!fieldErrors.productId} onChange={(value) => setForm((prev) => ({ ...prev, productId: value, bomId: '' }))} placeholder="Select product" />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>BOM</label>
-            <LiveSearchDropdown options={bomOptions} value={form.bomId} onChange={(value) => setForm((prev) => ({ ...prev, bomId: value }))} placeholder="Default active BOM" />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Quantity</label>
-            <input type="number" min="0" step="any" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} className={fieldErrors.quantity ? 'field-invalid' : undefined} style={FIELD_STYLE} />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Priority</label>
-            <select value={form.priority} onChange={(event) => setForm((prev) => ({ ...prev, priority: event.target.value }))} style={FIELD_STYLE}>
-              {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((priority) => <option key={priority}>{priority}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Issue</label>
-            <select value={form.issueMode} onChange={(event) => setForm((prev) => ({ ...prev, issueMode: event.target.value }))} style={FIELD_STYLE}>
-              <option value="">Settings default</option>
-              <option value="BACKFLUSH">Backflush</option>
-              <option value="MANUAL">Manual</option>
-            </select>
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Warehouse</label>
-            <select value={form.warehouseId} onChange={(event) => setForm((prev) => ({ ...prev, warehouseId: event.target.value }))} style={FIELD_STYLE}>
-              <option value="">First warehouse</option>
-              {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>Start</label>
-            <input type="date" value={form.startDate} onChange={(event) => setForm((prev) => ({ ...prev, startDate: event.target.value }))} style={FIELD_STYLE} />
-          </div>
-          <div>
-            <label style={LABEL_STYLE}>End</label>
-            <input type="date" value={form.endDate} onChange={(event) => setForm((prev) => ({ ...prev, endDate: event.target.value }))} style={FIELD_STYLE} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={LABEL_STYLE}>Notes</label>
-            <input value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} style={FIELD_STYLE} />
-          </div>
-          <div>
-            <button onClick={save} disabled={saving} style={{ ...BUTTON, background: 'var(--accent)', color: '#fff' }}>
-              <CheckCircle size={14} style={{ marginRight: 6 }} /> {saving ? 'Saving...' : 'Create'}
-            </button>
-          </div>
-        </div>
-      ) : order && (
+      {order && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
@@ -219,7 +118,7 @@ export default function WorkOrderDetail() {
               {['RELEASED', 'IN_PROGRESS'].includes(order.status) && <button onClick={() => act('/teco', 'Technically complete')} style={{ ...BUTTON, background: '#b45309', color: '#fff' }}>TECO</button>}
               {order.status === 'TECO' && <button onClick={() => act('/close', 'Work order closed')} style={{ ...BUTTON, background: '#15803d', color: '#fff' }}>Close</button>}
               {['CREATED', 'RELEASED'].includes(order.status) && <button onClick={() => act('/cancel', 'Work order cancelled')} style={{ ...BUTTON, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca' }}>Cancel</button>}
-              <button onClick={() => navigate(`/production/shop-floor/${order.id}`)} style={{ ...BUTTON, background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0' }}>Shop floor</button>
+              <button onClick={() => navigate(recordPath('/production/shop-floor', order, 'orderNumber'))} style={{ ...BUTTON, background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0' }}>Shop floor</button>
             </div>
           </div>
 

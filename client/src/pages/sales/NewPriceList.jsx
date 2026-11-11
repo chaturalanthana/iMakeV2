@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import { ArrowLeft, Check, BadgeDollarSign, FileText, Search, DollarSign } from 'lucide-react';
@@ -9,7 +10,8 @@ import { useToast } from '../../context/ToastContext';
 export default function NewPriceList() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -31,7 +33,7 @@ export default function NewPriceList() {
 
   useEffect(() => {
     fetchPriceListData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchPriceListData = async () => {
     setLoading(true);
@@ -39,9 +41,16 @@ export default function NewPriceList() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      if (id) {
-        // Edit mode - fetch specific price list and its mapped product prices
-        const res = await axios.get(`/api/price-lists/${id}`, config);
+      if (routeKey) {
+        let recordId = isUuid(routeKey) ? routeKey : '';
+        if (!recordId) {
+          const list = await axios.get('/api/price-lists', config);
+          recordId = findByRouteKey(list.data, routeKey, 'name')?.id || '';
+        }
+        if (!recordId) return;
+        setId(recordId);
+        const res = await axios.get(`/api/price-lists/${recordId}`, config);
+        showRecord(navigate, '/sales/price-lists', res.data, 'name');
         setFormData({
           name: res.data.name || '',
           currency: res.data.currency || 'USD',

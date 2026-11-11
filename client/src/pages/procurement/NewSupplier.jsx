@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
@@ -11,7 +12,8 @@ import { useToast } from '../../context/ToastContext';
 export default function NewSupplier() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -60,7 +62,7 @@ export default function NewSupplier() {
 
   useEffect(() => {
     fetchPageData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchPageData = async () => {
     setLoading(true);
@@ -108,11 +110,13 @@ export default function NewSupplier() {
         console.warn('Failed to load purchase withholding tax groups', e);
       }
 
-      if (id) {
+      if (routeKey) {
         const supRes = await axios.get('/api/suppliers', config);
-        const supplier = supRes.data.find(s => s.id === id);
+        const supplier = findByRouteKey(supRes.data, routeKey, 'code');
 
         if (supplier) {
+          setId(supplier.id);
+          showRecord(navigate, '/procurement/suppliers', supplier, 'code');
           setFormData({
             code: supplier.code || '',
             name: supplier.name || '',
@@ -254,7 +258,7 @@ export default function NewSupplier() {
 
   if (isInitialLoad) {
     return (
-      <AppLayout title={id ? "Edit Supplier" : "Create New Supplier"} icon={Truck}>
+      <AppLayout title={routeKey ? "Edit Supplier" : "Create New Supplier"} icon={Truck}>
         <PageSkeleton type="form" />
       </AppLayout>
     );
@@ -320,7 +324,7 @@ export default function NewSupplier() {
   };
 
   return (
-    <AppLayout title={id ? "Edit Supplier" : "Create New Supplier"}>
+    <AppLayout title={routeKey ? "Edit Supplier" : "Create New Supplier"}>
       {/* Header Panel */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -345,7 +349,7 @@ export default function NewSupplier() {
           </button>
           <div>
             <h2 style={{ margin: 0, fontWeight: 700, color: 'var(--text-main)', fontSize: '1.25rem' }}>
-              {id ? 'Update Supplier' : 'Create New Supplier'}
+              {routeKey ? 'Update Supplier' : 'Create New Supplier'}
             </h2>
             <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
               Define procurement capabilities, credit accounts, branches, and active groups.

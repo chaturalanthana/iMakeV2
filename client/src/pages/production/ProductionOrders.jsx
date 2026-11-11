@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import { ClipboardList, Plus, Search, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -116,7 +117,7 @@ export default function ProductionOrders() {
                   <td style={{ padding: '0 1rem', textAlign: 'right' }}>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                       <button 
-                        onClick={() => navigate(`/production/orders/${o.id}`)}
+                        onClick={() => navigate(recordPath('/production/orders', o, 'orderNumber'))}
                         style={{ display: 'flex', padding: '6px', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#64748b' }}
                         title="View / Edit Details"
                       >

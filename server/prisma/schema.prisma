@@ -68,6 +68,7 @@ model Tenant {
   productionJobs               ProductionJob[]
   productionOrders             ProductionOrder[]
   workstations                 Workstation[]
+  machineThroughputs           MachineThroughput[]
   machines                     Machine[]
   bankReconciliations          BankReconciliation[]
   bankStatementLines           BankStatementLine[]
@@ -413,6 +414,7 @@ model Product {
   workOrderComponents   WorkOrderComponent[]
   itemWarehousePolicies ItemWarehousePolicy[]
   replenishmentLines    ReplenishmentLine[]
+  machineThroughputs    MachineThroughput[]
 
   @@index([tenantId])
   @@map("products")
@@ -1727,7 +1729,7 @@ model Workstation {
   updatedAt    DateTime @updatedAt @map("updated_at")
   createdBy    String?  @map("created_by")
 
-  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   machines            Machine[]
   routingOperations   RoutingOperation[]
   workOrderOperations WorkOrderOperation[]
@@ -1737,12 +1739,36 @@ model Workstation {
   @@map("workstations")
 }
 
+model MachineThroughput {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  machineId      String   @map("machine_id")
+  productId      String   @map("product_id")
+  maxThroughput  Decimal  @default(0) @map("max_throughput") @db.Decimal(19, 4)
+  idleThroughput Decimal  @default(0) @map("idle_throughput") @db.Decimal(19, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([machineId, productId])
+  @@index([tenantId])
+  @@map("machine_throughputs")
+}
+
 model Machine {
   id            String      @id @default(uuid())
   tenantId      String      @map("tenant_id")
   workstationId String?     @map("workstation_id")
   code          String
   name          String
+  modelNumber   String?     @map("model_number")
+  manufacturer  String?
+  serialNumber  String?     @map("serial_number")
+  watts         Int?
+  year          Int?
   posX          Float       @default(80) @map("pos_x")
   posY          Float       @default(80) @map("pos_y")
   width         Float       @default(176)
@@ -1751,8 +1777,9 @@ model Machine {
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
-  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workstation   Workstation? @relation(fields: [workstationId], references: [id], onDelete: SetNull)
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workstation   Workstation?        @relation(fields: [workstationId], references: [id], onDelete: SetNull)
+  throughputs   MachineThroughput[]
 
   @@unique([tenantId, code])
   @@index([tenantId])

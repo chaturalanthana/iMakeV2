@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Boxes, Upload, Scale, Briefcase
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, Briefcase
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -33,7 +33,6 @@ export default function Sidebar() {
         { name: 'Costing', icon: DollarSign, path: '/production/costing' },
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
-        { name: 'Replenishment', icon: Boxes, path: '/production/replenishment' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
         { name: 'Product Types', icon: Layers, path: '/registries/product-types' },
         { name: 'Brands', icon: Tag, path: '/registries/brands' },

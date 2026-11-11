@@ -15,6 +15,12 @@ function startOfToday() {
   return date;
 }
 
+function readableHref(base, number, id) {
+  const value = number || id;
+  if (!value) return base;
+  return `${base}/${String(value)}`;
+}
+
 function plusDays(value, days) {
   const date = new Date(value);
   date.setUTCDate(date.getUTCDate() + days);
@@ -62,7 +68,7 @@ async function listAlerts(db, tenantId, role) {
           severity: 'high',
           title: `${component.product?.code || 'Material'} is short on ${order.orderNumber}`,
           detail: `Need ${remaining}, on hand ${have}.`,
-          href: `/production/work-orders/${order.id}`,
+          href: readableHref('/production/work-orders', order.orderNumber, order.id),
           documentNumber: order.orderNumber
         });
       });
@@ -73,7 +79,7 @@ async function listAlerts(db, tenantId, role) {
           severity: 'high',
           title: `${order.orderNumber} is overdue`,
           detail: `${order.product?.code || 'Work order'} was due ${new Date(order.endDate).toISOString().slice(0, 10)}.`,
-          href: `/production/work-orders/${order.id}`,
+          href: readableHref('/production/work-orders', order.orderNumber, order.id),
           documentNumber: order.orderNumber
         });
       }
@@ -90,7 +96,7 @@ async function listAlerts(db, tenantId, role) {
         severity: 'medium',
         title: `${order.orderNumber} is past its finish date`,
         detail: order.product ? `${order.product.code} is still ${order.status}.` : order.status,
-        href: `/production/work-orders/${order.id}`,
+        href: readableHref('/production/work-orders', order.orderNumber, order.id),
         documentNumber: order.orderNumber
       });
     });
@@ -126,7 +132,7 @@ async function listAlerts(db, tenantId, role) {
         severity: 'high',
         title: `${order.poNumber} is overdue`,
         detail: `${order.supplier?.name || 'Supplier'} lead time is ${lead} days.`,
-        href: `/procurement/purchase-orders/${order.id}`,
+        href: readableHref('/procurement/purchase-orders', order.poNumber, order.id),
         documentNumber: order.poNumber
       });
     });
@@ -147,7 +153,7 @@ async function listAlerts(db, tenantId, role) {
         severity: 'high',
         title: `${order.orderNumber} is overdue`,
         detail: `${order.customer?.name || 'Customer'} has waited more than ${days} days.`,
-        href: `/sales/orders/${order.id}`,
+        href: readableHref('/sales/orders', order.orderNumber, order.id),
         documentNumber: order.orderNumber
       });
     });
@@ -175,7 +181,7 @@ async function listAlerts(db, tenantId, role) {
         severity: 'high',
         title: `${customer.name} is over the credit limit`,
         detail: `Open ${balance.toFixed(2)} against a limit of ${num(customer.creditLimit).toFixed(2)}.`,
-        href: `/sales/customers/${customer.id}`,
+        href: readableHref('/sales/customers', customer.code, customer.id),
         documentNumber: customer.code
       });
     });
@@ -195,7 +201,7 @@ async function listAlerts(db, tenantId, role) {
         severity: 'medium',
         title: `${run.runNumber} is waiting for approval`,
         detail: `${purchaseLines.length} draft purchase ${purchaseLines.length === 1 ? 'line' : 'lines'}.`,
-        href: '/production/replenishment',
+        href: '/production/mrp',
         documentNumber: run.runNumber
       });
     });
@@ -256,7 +262,7 @@ async function listAlerts(db, tenantId, role) {
         detail: made
           ? `On hand ${have}, minimum ${floor}. Made items are planned in MRP.`
           : `On hand ${have}, minimum ${floor}.`,
-        href: made ? '/production/mrp' : '/production/replenishment',
+        href: '/production/mrp',
         documentNumber: policy.product.code
       });
     });
@@ -273,7 +279,7 @@ async function listAlerts(db, tenantId, role) {
         severity: 'medium',
         title: `${product.code} is at or below its reorder level`,
         detail: `On hand ${have}, reorder level ${product.reorderLevel}.`,
-        href: `/products/${product.id}`,
+        href: readableHref('/products', product.code, product.id),
         documentNumber: product.code
       });
     });

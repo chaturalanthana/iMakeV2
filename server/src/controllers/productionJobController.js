@@ -153,6 +153,19 @@ const updateProductionJob = async (req, res) => {
     if (priority && !['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(priority)) {
       return res.status(400).json({ error: 'Invalid job priority' });
     }
+    const samePlanDay = (incoming, current) => {
+      if (incoming === undefined) return true;
+      if (!incoming && !current) return true;
+      if (!incoming || !current) return false;
+      const next = new Date(incoming);
+      const prev = new Date(current);
+      if (Number.isNaN(next.getTime()) || Number.isNaN(prev.getTime())) return false;
+      return Math.abs(next.getTime() - prev.getTime()) < 12 * 60 * 60 * 1000;
+    };
+    if (['WIP', 'QC', 'COMPLETED', 'CANCELLED'].includes(job.status)
+      && (!samePlanDay(startDate, job.startDate) || !samePlanDay(endDate, job.endDate))) {
+      return res.status(400).json({ error: 'Completed and in-progress jobs keep their plan dates' });
+    }
 
     const updated = await prisma.productionJob.update({
       where: { id },

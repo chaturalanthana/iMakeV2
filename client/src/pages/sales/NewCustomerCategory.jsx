@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
@@ -28,7 +29,8 @@ const hasFinancePermission = () => {
 export default function NewCustomerCategory() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -71,7 +73,7 @@ export default function NewCustomerCategory() {
 
   useEffect(() => {
     fetchAccountsAndCategory();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchAccountsAndCategory = async () => {
     setLoading(true);
@@ -90,11 +92,13 @@ export default function NewCustomerCategory() {
       setDiscountGroups(dgRes.data.filter(dg => dg.status === 'ACTIVE'));
       setTaxGroups(tgRes.data.filter(tg => tg.status === 'ACTIVE'));
 
-      if (id) {
+      if (routeKey) {
         const catRes = await axios.get('/api/customer-categories', config);
-        const category = catRes.data.find(c => c.id === id);
+        const category = findByRouteKey(catRes.data, routeKey, 'code');
 
         if (category) {
+          setId(category.id);
+          showRecord(navigate, '/sales/categories', category, 'code');
           setFormData({
             code: category.code || '',
             name: category.name || '',
@@ -182,7 +186,7 @@ export default function NewCustomerCategory() {
 
   if (isInitialLoad) {
     return (
-      <AppLayout title={id ? "Edit Customer Category" : "Create Customer Category"} icon={Layers}>
+      <AppLayout title={routeKey ? "Edit Customer Category" : "Create Customer Category"} icon={Layers}>
         <PageSkeleton type="form" />
       </AppLayout>
     );
@@ -234,7 +238,7 @@ export default function NewCustomerCategory() {
   };
 
   return (
-    <AppLayout title={id ? "Edit Customer Category" : "Create Customer Category"} icon={Layers}>
+    <AppLayout title={routeKey ? "Edit Customer Category" : "Create Customer Category"} icon={Layers}>
       {/* Header Panel */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -259,7 +263,7 @@ export default function NewCustomerCategory() {
           </button>
           <div>
             <h2 style={{ margin: 0, fontWeight: 700, color: 'var(--text-main)', fontSize: '1.25rem' }}>
-              {id ? 'Update Category' : 'Create New Category'}
+              {routeKey ? 'Update Category' : 'Create New Category'}
             </h2>
             <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
               Define default finance, sales, and credit configurations for customer classifications.

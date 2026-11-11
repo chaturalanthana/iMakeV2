@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import { ArrowLeft, Check, Layers, FileText, Search, Percent } from 'lucide-react';
@@ -9,7 +10,8 @@ import { useToast } from '../../context/ToastContext';
 export default function NewDiscountGroup() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -28,7 +30,7 @@ export default function NewDiscountGroup() {
 
   useEffect(() => {
     fetchDiscountGroupData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchDiscountGroupData = async () => {
     setLoading(true);
@@ -36,9 +38,16 @@ export default function NewDiscountGroup() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      if (id) {
-        // Edit mode - fetch specific discount group and its mapped product discounts
-        const res = await axios.get(`/api/discount-groups/${id}`, config);
+      if (routeKey) {
+        let recordId = isUuid(routeKey) ? routeKey : '';
+        if (!recordId) {
+          const list = await axios.get('/api/discount-groups', config);
+          recordId = findByRouteKey(list.data, routeKey, 'name')?.id || '';
+        }
+        if (!recordId) return;
+        setId(recordId);
+        const res = await axios.get(`/api/discount-groups/${recordId}`, config);
+        showRecord(navigate, '/sales/discount-groups', res.data, 'name');
         setFormData({
           name: res.data.name || '',
           status: res.data.status || 'ACTIVE'

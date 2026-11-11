@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useMatch, useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
-import { ClipboardList, Plus, Search, Eye, Trash2 } from 'lucide-react';
+import Modal from '../../components/ui/Modal';
+import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
+import { ClipboardList, Plus, Search, Eye, Trash2, CheckCircle } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 const STATUS_TAGS = {
@@ -18,6 +21,19 @@ const FIELD = {
   height: '38px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff',
   padding: '0 0.6rem', fontSize: '0.8rem', fontWeight: 600, color: '#1e293b'
 };
+const MODAL_FIELD = {
+  width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px',
+  border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none',
+  fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box', color: '#1e293b'
+};
+const LABEL_STYLE = {
+  fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
+  letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem'
+};
+const EMPTY_FORM = {
+  productId: '', bomId: '', quantity: 1, priority: 'MEDIUM', issueMode: '',
+  startDate: '', endDate: '', warehouseId: '', notes: ''
+};
 
 export default function WorkOrders() {
   const navigate = useNavigate();
@@ -26,6 +42,13 @@ export default function WorkOrders() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [products, setProducts] = useState([]);
+  const [boms, setBoms] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const creating = useMatch('/production/work-orders/new');
 
   const authConfig = useCallback(() => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -48,6 +71,65 @@ export default function WorkOrders() {
   }, [authConfig, showToast]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  useEffect(() => {
+    if (!creating) return;
+    setForm(EMPTY_FORM);
+    setFieldErrors({});
+    const load = async () => {
+      try {
+        const config = authConfig();
+        const [productsRes, bomsRes, whRes] = await Promise.all([
+          axios.get('/api/products', config),
+          axios.get('/api/boms', config),
+          axios.get('/api/warehouses', config).catch(() => ({ data: [] }))
+        ]);
+        setProducts(productsRes.data.filter((product) => product.activeStatus !== 'INACTIVE'));
+        setBoms(bomsRes.data);
+        setWarehouses(Array.isArray(whRes.data) ? whRes.data : []);
+      } catch (error) {
+        showToast(error.response?.data?.error || 'Failed to load work order form', 'error');
+      }
+    };
+    load();
+  }, [creating, authConfig, showToast]);
+
+  const closeCreate = () => navigate('/production/work-orders');
+
+  const save = async () => {
+    const errors = {};
+    if (!form.productId) errors.productId = 'Product is required';
+    if (!(parseFloat(form.quantity) > 0)) errors.quantity = 'Quantity must be greater than zero';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+      return;
+    }
+    setFieldErrors({});
+    setSaving(true);
+    try {
+      const res = await axios.post('/api/work-orders', {
+        ...form,
+        bomId: form.bomId || undefined,
+        warehouseId: form.warehouseId || undefined,
+        issueMode: form.issueMode || undefined,
+        quantity: parseFloat(form.quantity)
+      }, authConfig());
+      showToast('Work order created', 'success');
+      navigate(recordPath('/production/work-orders', res.data, 'orderNumber'));
+    } catch (error) {
+      setFieldErrors(error.response?.data?.fields || {});
+      showToast(error.response?.data?.error || 'Failed to create work order', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const productOptions = products.map((product) => ({ label: `${product.code} - ${product.name}`, value: product.id }));
+  const bomOptions = boms
+    .filter((bom) => bom.productId === form.productId)
+    .map((bom) => ({ label: `${bom.code} (v${bom.version})`, value: bom.id }));
 
   const saveSetting = async (patch) => {
     try {
@@ -155,7 +237,7 @@ export default function WorkOrders() {
                   <td style={{ padding: '0 1rem', textAlign: 'right' }}>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                       <button
-                        onClick={() => navigate(`/production/work-orders/${order.id}`)}
+                        onClick={() => navigate(recordPath('/production/work-orders', order, 'orderNumber'))}
                         style={{ display: 'flex', padding: '6px', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#64748b' }}
                         title="Open"
                       >
@@ -178,6 +260,69 @@ export default function WorkOrders() {
           </tbody>
         </table>
       </div>
+
+      <Modal
+        isOpen={!!creating}
+        onClose={closeCreate}
+        title="Create Work Order"
+        icon={ClipboardList}
+        maxWidth="760px"
+        overflow="visible"
+      >
+        <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+          <div>
+            <label style={LABEL_STYLE}>Product *</label>
+            <LiveSearchDropdown options={productOptions} value={form.productId} invalid={!!fieldErrors.productId} onChange={(value) => setForm((prev) => ({ ...prev, productId: value, bomId: '' }))} placeholder="Select product" />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>BOM</label>
+            <LiveSearchDropdown options={bomOptions} value={form.bomId} onChange={(value) => setForm((prev) => ({ ...prev, bomId: value }))} placeholder="Default active BOM" />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Quantity *</label>
+            <input type="number" min="0" step="any" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} className={fieldErrors.quantity ? 'field-invalid' : undefined} style={MODAL_FIELD} />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Priority</label>
+            <select value={form.priority} onChange={(event) => setForm((prev) => ({ ...prev, priority: event.target.value }))} style={MODAL_FIELD}>
+              {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((priority) => <option key={priority}>{priority}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Issue</label>
+            <select value={form.issueMode} onChange={(event) => setForm((prev) => ({ ...prev, issueMode: event.target.value }))} style={MODAL_FIELD}>
+              <option value="">Settings default</option>
+              <option value="BACKFLUSH">Backflush</option>
+              <option value="MANUAL">Manual</option>
+            </select>
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Warehouse</label>
+            <select value={form.warehouseId} onChange={(event) => setForm((prev) => ({ ...prev, warehouseId: event.target.value }))} style={MODAL_FIELD}>
+              <option value="">First warehouse</option>
+              {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Start</label>
+            <input type="date" value={form.startDate} onChange={(event) => setForm((prev) => ({ ...prev, startDate: event.target.value }))} style={MODAL_FIELD} />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>End</label>
+            <input type="date" value={form.endDate} onChange={(event) => setForm((prev) => ({ ...prev, endDate: event.target.value }))} style={MODAL_FIELD} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={LABEL_STYLE}>Notes</label>
+            <input value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} style={MODAL_FIELD} />
+          </div>
+        </div>
+        <div style={{ padding: '1rem 1.75rem 1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-color)', backgroundColor: '#f8fafc', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+          <button onClick={closeCreate} style={{ padding: '0.55rem 1.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#64748b', fontSize: '0.85rem' }}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{ padding: '0.55rem 1.5rem', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+            <CheckCircle size={16} /> {saving ? 'Saving...' : 'Create'}
+          </button>
+        </div>
+      </Modal>
     </AppLayout>
   );
 }

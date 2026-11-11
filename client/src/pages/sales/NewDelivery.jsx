@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -17,9 +18,9 @@ import { useToast } from '../../context/ToastContext';
 export default function NewDelivery() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const [searchParams] = useSearchParams();
-  const baseOrderId = searchParams.get('orderId');
+  const orderKey = searchParams.get('orderId') || '';
 
   const [activeTab, setActiveTab] = useState('primary');
   const [customers, setCustomers] = useState([]);
@@ -27,8 +28,9 @@ export default function NewDelivery() {
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deliveryId, setDeliveryId] = useState(id || null);
-  const [isInitialLoad, setIsInitialLoad] = useState(!!id || !!baseOrderId);
+  const [deliveryId, setDeliveryId] = useState(() => (isUuid(routeKey) ? routeKey : null));
+  const [baseOrderId, setBaseOrderId] = useState(() => (isUuid(orderKey) ? orderKey : ''));
+  const [isInitialLoad, setIsInitialLoad] = useState(!!routeKey || !!orderKey);
   const [deliveryNumber, setDeliveryNumber] = useState('Drafting...');
   const [lastSaved, setLastSaved] = useState(null);
   const [deliveryStatus, setDeliveryStatus] = useState('PENDING');
@@ -125,6 +127,7 @@ export default function NewDelivery() {
       const res = await axios.post('/api/sales/deliveries', payload, config);
       setDeliveryId(res.data.id);
       setDeliveryNumber(res.data.deliveryNumber);
+      showRecord(navigate, '/sales/deliveries', res.data, 'deliveryNumber');
       setLastSaved(new Date().toLocaleTimeString());
       setSaving(false);
     } catch (error) {
@@ -135,7 +138,7 @@ export default function NewDelivery() {
 
   useEffect(() => {
     fetchData();
-  }, [baseOrderId, id]);
+  }, [orderKey, routeKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -153,10 +156,12 @@ export default function NewDelivery() {
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
 
-      if (id) {
+      if (routeKey) {
         const delRes = await axios.get('/api/sales/deliveries', config);
-        const currentDel = delRes.data.find(o => o.id === id);
+        const currentDel = findByRouteKey(delRes.data, routeKey, 'deliveryNumber');
         if (currentDel) {
+          setDeliveryId(currentDel.id);
+          showRecord(navigate, '/sales/deliveries', currentDel, 'deliveryNumber');
           setDeliveryNumber(currentDel.deliveryNumber);
           setCustomerId(currentDel.customerId);
           setCustomerName(currentDel.customer?.name || '');
@@ -177,10 +182,11 @@ export default function NewDelivery() {
             })));
           }
         }
-      } else if (baseOrderId) {
+      } else if (orderKey) {
         const ordRes = await axios.get('/api/sales/orders', config);
-        const refOrder = ordRes.data.find(o => o.id === baseOrderId);
+        const refOrder = findByRouteKey(ordRes.data, orderKey, 'orderNumber');
         if (refOrder) {
+          setBaseOrderId(refOrder.id);
           setCustomerId(refOrder.customerId);
           setCustomerName(refOrder.customer?.name || '');
           
@@ -323,7 +329,7 @@ export default function NewDelivery() {
 
   return (
     <AppLayout title="Sales Delivery" icon={Truck}>
-      {isInitialLoad && (id || baseOrderId) ? (
+      {isInitialLoad && (routeKey || orderKey) ? (
         <PageSkeleton type="form" />
       ) : (
         <>
@@ -391,7 +397,7 @@ export default function NewDelivery() {
                        <button type="button" onClick={() => {}} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'not-allowed', fontWeight: 700, fontSize: '0.85rem', background: '#e2e8f0', color: '#94a3b8' }}>
                          Stock Deducted (Locked)
                        </button>
-                       <button type="button" onClick={() => navigate(`/sales/invoices/new?deliveryId=${deliveryId}`)} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}>
+                       <button type="button" onClick={() => navigate(`/sales/invoices/new?deliveryId=${queryRef(deliveryNumber)}`)} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}>
                          Create Invoice
                        </button>
                      </div>

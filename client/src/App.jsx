@@ -19,7 +19,6 @@ import NewProductionOrder from './pages/production/NewProductionOrder';
 import Workstations from './pages/production/Workstations';
 import NewWorkstation from './pages/production/NewWorkstation';
 import MRPPlanner from './pages/production/MRPPlanner';
-import Replenishment from './pages/production/Replenishment';
 import Alerts from './pages/Alerts';
 import DataImport from './pages/settings/DataImport';
 import Labels from './pages/warehouse/Labels';
@@ -146,20 +145,20 @@ function App() {
               <Route path="/production/boms/:id" element={<NewBOM />} />
               <Route path="/production/planning" element={<PlanningBoard />} />
               <Route path="/production/work-orders" element={<WorkOrders />} />
-              <Route path="/production/work-orders/new" element={<WorkOrderDetail />} />
-              <Route path="/production/work-orders/:id" element={<WorkOrderDetail />} />
+              <Route path="/production/work-orders/new" element={<WorkOrders />} />
+              <Route path="/production/work-orders/*" element={<WorkOrderDetail />} />
               <Route path="/production/shop-floor" element={<ShopFloor />} />
-              <Route path="/production/shop-floor/:id" element={<ShopFloor />} />
+              <Route path="/production/shop-floor/*" element={<ShopFloor />} />
               <Route path="/production/calendar" element={<ProductionCalendar />} />
               <Route path="/production/costing" element={<ProductionCosting />} />
               <Route path="/production/orders" element={<Navigate to="/production/work-orders" replace />} />
               <Route path="/production/orders/new" element={<NewProductionOrder />} />
-              <Route path="/production/orders/:id" element={<NewProductionOrder />} />
+              <Route path="/production/orders/*" element={<NewProductionOrder />} />
               <Route path="/production/workstations" element={<Workstations />} />
               <Route path="/production/workstations/new" element={<NewWorkstation />} />
               <Route path="/production/workstations/:id" element={<NewWorkstation />} />
               <Route path="/production/mrp" element={<MRPPlanner />} />
-              <Route path="/production/replenishment" element={<Replenishment />} />
+              <Route path="/production/replenishment" element={<Navigate to="/production/mrp" replace />} />
               <Route path="/production/groups" element={<ProductGroups />} />
               <Route path="/registries/brands" element={<Brands />} />
               <Route path="/registries/categories" element={<Categories />} />
@@ -181,16 +180,16 @@ function App() {
               <Route path="/sales/discount-groups/new" element={<NewDiscountGroup />} />
               <Route path="/sales/discount-groups/:id" element={<NewDiscountGroup />} />
               <Route path="/sales/quotations/new" element={<NewQuotation />} />
-              <Route path="/sales/quotations/:id" element={<NewQuotation />} />
+              <Route path="/sales/quotations/*" element={<NewQuotation />} />
               <Route path="/sales/quotations" element={<Quotations />} />
               <Route path="/sales/orders/new" element={<NewOrder />} />
-              <Route path="/sales/orders/:id" element={<NewOrder />} />
+              <Route path="/sales/orders/*" element={<NewOrder />} />
               <Route path="/sales/orders" element={<Orders />} />
               <Route path="/sales/deliveries/new" element={<NewDelivery />} />
-              <Route path="/sales/deliveries/:id" element={<NewDelivery />} />
+              <Route path="/sales/deliveries/*" element={<NewDelivery />} />
               <Route path="/sales/deliveries" element={<Deliveries />} />
               <Route path="/sales/invoices/new" element={<NewInvoice />} />
-              <Route path="/sales/invoices/:id" element={<NewInvoice />} />
+              <Route path="/sales/invoices/*" element={<NewInvoice />} />
               <Route path="/sales/invoices" element={<Invoices />} />
               <Route path="/sales/outstanding" element={<CustomerOutstanding />} />
               <Route path="/sales/customers/:id/statement" element={<PartyStatement kind="customer" />} />
@@ -201,17 +200,17 @@ function App() {
               <Route path="/procurement/suppliers/:id" element={<NewSupplier />} />
               <Route path="/procurement/payment-terms" element={<PaymentTerms />} />
               <Route path="/procurement/purchase-orders/new" element={<NewPurchaseOrder />} />
-              <Route path="/procurement/purchase-orders/:id" element={<NewPurchaseOrder />} />
+              <Route path="/procurement/purchase-orders/*" element={<NewPurchaseOrder />} />
               <Route path="/procurement/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/procurement/grn/new" element={<NewGRN />} />
-              <Route path="/procurement/grn/:id" element={<NewGRN />} />
+              <Route path="/procurement/grn/*" element={<NewGRN />} />
               <Route path="/procurement/grn" element={<GRNs />} />
               <Route path="/procurement/supplier-invoices/new" element={<NewSupplierInvoice />} />
-              <Route path="/procurement/supplier-invoices/:id" element={<NewSupplierInvoice />} />
+              <Route path="/procurement/supplier-invoices/*" element={<NewSupplierInvoice />} />
               <Route path="/procurement/supplier-invoices" element={<SupplierInvoices />} />
               <Route path="/procurement/purchase-requisitions" element={<PurchaseRequisitions />} />
               <Route path="/procurement/purchase-requisitions/new" element={<NewPurchaseRequisition />} />
-              <Route path="/procurement/purchase-requisitions/:id" element={<NewPurchaseRequisition />} />
+              <Route path="/procurement/purchase-requisitions/*" element={<NewPurchaseRequisition />} />
               <Route path="/procurement/tax-groups" element={<PurchaseTaxGroups />} />
               <Route path="/procurement/tax-groups/new" element={<NewPurchaseTaxGroup />} />
               <Route path="/procurement/tax-groups/:id" element={<NewPurchaseTaxGroup />} />
@@ -231,16 +230,16 @@ function App() {
 
               {/* Stock */}
               <Route path="/warehouse/issues/new" element={<NewStockIssue />} />
-              <Route path="/warehouse/issues/:id" element={<NewStockIssue />} />
+              <Route path="/warehouse/issues/*" element={<NewStockIssue />} />
               <Route path="/warehouse/issues" element={<StockIssues />} />
               <Route path="/warehouse/receipts/new" element={<NewStockReceipt />} />
-              <Route path="/warehouse/receipts/:id" element={<NewStockReceipt />} />
+              <Route path="/warehouse/receipts/*" element={<NewStockReceipt />} />
               <Route path="/warehouse/receipts" element={<StockReceipts />} />
               <Route path="/warehouse/transfers/new" element={<NewStockTransfer />} />
-              <Route path="/warehouse/transfers/:id" element={<NewStockTransfer />} />
+              <Route path="/warehouse/transfers/*" element={<NewStockTransfer />} />
               <Route path="/warehouse/transfers" element={<StockTransfers />} />
               <Route path="/warehouse/adjustments/new" element={<NewStockAdjustment />} />
-              <Route path="/warehouse/adjustments/:id" element={<NewStockAdjustment />} />
+              <Route path="/warehouse/adjustments/*" element={<NewStockAdjustment />} />
               <Route path="/warehouse/adjustments" element={<StockAdjustments />} />
               <Route path="/warehouse/inventory-report" element={<InventoryReport />} />
               <Route path="/warehouse/labels" element={<Labels />} />
@@ -254,7 +253,7 @@ function App() {
               <Route path="/hr/leaves" element={<LeaveManagement />} />
               <Route path="/hr/loans" element={<LoanManagement />} />
               <Route path="/hr/salary-process" element={<SalaryProcess />} />
-              <Route path="/hr/payslips/:runId" element={<PaySlips />} />
+              <Route path="/hr/payslips/*" element={<PaySlips />} />
               <Route path="/hr/payslips" element={<PaySlips />} />
               <Route path="/hr/holidays" element={<HolidayCalendar />} />
               <Route path="/hr/statutory" element={<StatutoryReport />} />
@@ -276,6 +275,7 @@ function App() {
               <Route path="/finance/receipts/new" element={<NewPaymentReceipt />} />
               <Route path="/finance/receipts" element={<PaymentReceipts />} />
               <Route path="/finance/vouchers/new" element={<NewPaymentVoucher />} />
+              <Route path="/finance/vouchers/wht/*" element={<WhtCertificate />} />
               <Route path="/finance/vouchers/:id/wht" element={<WhtCertificate />} />
               <Route path="/finance/vouchers" element={<PaymentVouchers />} />
               <Route path="/finance/currencies" element={<Currencies />} />

@@ -66,21 +66,6 @@ describe('Workstation Registry CRUD Operations', () => {
     expect(res.body.error).toContain('Code and Name are required');
   });
 
-  test('POST /api/workstations - Rejects negative hourlyRate', async () => {
-    const res = await request(app)
-      .post('/api/workstations')
-      .set('Authorization', `Bearer ${authToken}`)
-      .set('x-tenant-id', testTenant.id)
-      .send({
-        code: 'WS-01',
-        name: 'Workstation 01',
-        hourlyRate: -10.0
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('Hourly rate cannot be negative');
-  });
-
   test('POST /api/workstations - Successfully creates workstation', async () => {
     const res = await request(app)
       .post('/api/workstations')
@@ -90,14 +75,13 @@ describe('Workstation Registry CRUD Operations', () => {
         code: 'WS-CUT-01',
         name: 'Cutting Workstation 01',
         description: 'Primary cutting station',
-        hourlyRate: 25.0,
         status: 'ACTIVE'
       });
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBeDefined();
     expect(res.body.code).toBe('WS-CUT-01');
-    expect(parseFloat(res.body.hourlyRate)).toBe(25.0);
+    expect(res.body.hourlyRate).toBeUndefined();
     expect(res.body.efficiency).toBeUndefined();
     expect(res.body.capacity).toBeUndefined();
     expect(res.body.status).toBe('ACTIVE');
@@ -111,8 +95,7 @@ describe('Workstation Registry CRUD Operations', () => {
       .set('x-tenant-id', testTenant.id)
       .send({
         code: 'WS-CUT-01',
-        name: 'Another Cutting Workstation',
-        hourlyRate: 15.0
+        name: 'Another Cutting Workstation'
       });
 
     expect(res.status).toBe(400);
@@ -140,13 +123,12 @@ describe('Workstation Registry CRUD Operations', () => {
         code: 'WS-CUT-01-MOD',
         name: 'Cutting Workstation 01 Modified',
         description: 'Updated description',
-        hourlyRate: 30.0,
         status: 'UNDER_MAINTENANCE'
       });
 
     expect(res.status).toBe(200);
     expect(res.body.code).toBe('WS-CUT-01-MOD');
-    expect(parseFloat(res.body.hourlyRate)).toBe(30.0);
+    expect(res.body.hourlyRate).toBeUndefined();
     expect(res.body.efficiency).toBeUndefined();
     expect(res.body.capacity).toBeUndefined();
     expect(res.body.status).toBe('UNDER_MAINTENANCE');
