@@ -362,5 +362,41 @@ describe('Phase 4 production and planning', () => {
     expect(ap.credit).toBeGreaterThanOrEqual(50);
     const trace = await prisma.batchGenealogy.findFirst({ where: { tenantId: tenant.id, fgLotNumber: 'FG-CM' } });
     expect(trace.rmLotNumber).toBe('RM-1');
+    expect(trace.fgBatchId).toBeTruthy();
+    expect(trace.rmBatchId).toBeTruthy();
+    const batches = await prisma.stockBatch.findMany({ where: { id: { in: [trace.fgBatchId, trace.rmBatchId] } } });
+    expect(batches).toHaveLength(2);
+
+    const cancelled = await request(app).post(`/api/production/contracts/${id}/cancel`).set(auth()).send({
+      reason: 'Subcontractor could not finish the run'
+    });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.status).toBe('CANCELLED');
+    const audit = await prisma.auditLog.findFirst({
+      where: { tenantId: tenant.id, entity: 'CONTRACT_ORDER', entityId: id, action: 'REVERSE' }
+    });
+    expect(audit).toBeTruthy();
+    const booksAfter = await trialBalance(prisma, tenant.id);
+    expect(booksAfter.balanced).toBe(true);
+  });
+
+  test('production journals carry the cost center', async () => {
+    const center = await prisma.orgCenter.create({
+      data: { tenantId: tenant.id, code: 'SOYA', name: 'Soya Manufacturing', kind: 'COST' }
+    });
+    const created = await request(app).post('/api/work-orders').set(auth()).send({
+      productId: fg.id, quantity: 1, warehouseId: warehouse.id, issueMode: 'MANUAL', costCenterId: center.id
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    await request(app).post(`/api/work-orders/${id}/release`).set(auth());
+    const issued = await request(app).post(`/api/work-orders/${id}/issues`).set(auth()).send({
+      productId: rm.id, quantity: 1, lotNumber: 'RM-1'
+    });
+    expect(issued.status).toBe(201);
+    const line = await prisma.journalLine.findFirst({
+      where: { costCenterId: center.id, journalEntry: { tenantId: tenant.id, referenceId: id } }
+    });
+    expect(line).toBeTruthy();
   });
 });

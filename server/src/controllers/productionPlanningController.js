@@ -44,6 +44,7 @@ module.exports = {
   issueContract: wrap('Failed to issue material to the subcontractor', (req) => phase4.issueContract(req.tenantId, req.user?.userId || null, req.params.id, req.body)),
   receiveContract: wrap('Failed to receive finished goods', (req) => phase4.receiveContract(req.tenantId, req.user?.userId || null, req.params.id, req.body)),
   chargeContract: wrap('Failed to post the service charge', (req) => phase4.chargeContract(req.tenantId, req.user?.userId || null, req.params.id, req.body)),
+  cancelContract: wrap('Failed to cancel the contract order', (req) => phase4.cancelContract(req.tenantId, req.user?.userId || null, req.params.id, req.body)),
   async report(req, res) {
     try {
       const report = await phase4.reportByKey(req.tenantId, req.params.key, req.query);

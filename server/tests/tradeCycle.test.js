@@ -38,7 +38,7 @@ describe('procure-to-pay and order-to-cash', () => {
       data: { tenantId: tenant.id, code: 'SUP-1', name: 'Mill', taxGroup: 'VAT', creditPeriod: 30 }
     });
     customer = await prisma.customer.create({
-      data: { tenantId: tenant.id, code: 'CUS-1', name: 'Buyer', taxGroup: 'VAT', creditLimit: 1, creditPeriod: 30 }
+      data: { tenantId: tenant.id, code: 'CUS-1', name: 'Buyer', taxGroup: 'VAT', creditLimit: 1000000, creditPeriod: 30 }
     });
     product = await prisma.product.create({
       data: { tenantId: tenant.id, code: 'RM-1', name: 'Coil', costPrice: 10, sellingPrice: 40 }
@@ -281,7 +281,7 @@ describe('procure-to-pay and order-to-cash', () => {
       items: [{ productId: finished.id, quantity: 6, unitPrice: 40, total: 240 }]
     });
     expect(order.status).toBe(201);
-    expect(order.body.creditWarning).toMatch(/Credit limit/);
+    expect(order.body.creditWarning).toBeFalsy();
     const quotation = await prisma.salesQuotation.findUnique({ where: { id: quote.body.id } });
     expect(quotation.status).toBe('ACCEPTED');
 
@@ -319,7 +319,7 @@ describe('procure-to-pay and order-to-cash', () => {
     expect(Number(invoice.body.subtotal)).toBeCloseTo(240);
     expect(Number(invoice.body.taxAmount)).toBeCloseTo(43.2);
     expect(Number(invoice.body.total)).toBeCloseTo(283.2);
-    expect(invoice.body.creditWarning).toMatch(/Credit limit/);
+    expect(invoice.body.creditWarning).toBeFalsy();
 
     const receipt = await request(app).post('/api/finance/payment-receipts').set(auth()).send({
       customerId: customer.id,

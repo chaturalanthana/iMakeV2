@@ -4,6 +4,8 @@ const { ensureGlMap, postJournal } = require('../glService');
 const { money, dec } = require('../money');
 const { receiveLayer, issueFifo } = require('./fifo');
 const { ProductionError } = require('./errors');
+const { recordBatch } = require('../inventory/batches');
+const { writeAudit } = require('../auditService');
 const {
   round4, num, weekStart, weekKey, planItem, lineStandard, abnormalLoss,
   yieldPercents, substitutionDelta, stageCompletion, absorptionVariance, CONFIRMED_DEFAULTS
@@ -22,17 +24,18 @@ function movementQty(movements) {
 }
 
 async function batchIdFor(db, tenantId, productId, lotNumber) {
-  if (!lotNumber || typeof db.stockBatch?.findFirst !== 'function') return null;
-  const row = await db.stockBatch.findFirst({
-    where: { tenantId, productId, lotNumber: String(lotNumber) }
-  });
-  return row?.id || null;
+  if (!lotNumber || !productId) return null;
+  const batch = await recordBatch(db, { tenantId, productId, lotNumber });
+  return batch?.id || null;
+}
+
+function centered(lines, costCenterId) {
+  return lines.map((line) => ({ ...line, costCenterId: costCenterId || null }));
 }
 
 async function assertCostCenter(db, tenantId, costCenterId) {
   if (!costCenterId) return null;
-  if (typeof db.orgCenter?.findFirst !== 'function') return String(costCenterId);
-  const row = await db.orgCenter.findFirst({ where: { id: costCenterId, tenantId } });
+  const row = await db.orgCenter.findFirst({ where: { id: costCenterId, tenantId, active: true } });
   if (!row) throw new ProductionError('Cost center not found');
   return row.id;
 }
@@ -516,13 +519,13 @@ async function approveLoss(tenantId, userId, id, body) {
         description: `Abnormal loss ${loss.workOrder?.orderNumber || ''}`.trim(),
         referenceType: 'ABNORMAL_LOSS',
         referenceId: loss.id,
-        lines: [
+        lines: centered([
           { accountId: map.ABNORMAL_LOSS, debit: amount, credit: 0, description: reason },
           { accountId: map.WIP, debit: 0, credit: amount, description: 'Abnormal loss' }
-        ]
+        ], loss.workOrder?.costCenterId)
       });
     }
-    return tx.abnormalLoss.update({
+    const posted = await tx.abnormalLoss.update({
       where: { id },
       data: {
         status: 'POSTED',
@@ -532,6 +535,11 @@ async function approveLoss(tenantId, userId, id, body) {
         journalEntryId: journal?.id || null
       }
     });
+    await writeAudit(tx, {
+      tenantId, userId, action: 'POST', entity: 'ABNORMAL_LOSS', entityId: id,
+      before: { status: 'PENDING' }, after: { status: 'POSTED', reason, amount }
+    });
+    return posted;
   });
 }
 
@@ -839,7 +847,8 @@ async function importPayroll(tenantId, userId, body) {
         accountId,
         debit: money(line.debit),
         credit: money(line.credit),
-        description: line.description || 'Payroll import'
+        description: line.description || 'Payroll import',
+        costCenterId: body.costCenterId || null
       };
     });
     const journal = await postJournal(tx, {
@@ -854,7 +863,7 @@ async function importPayroll(tenantId, userId, body) {
     if (!journal) throw new ProductionError('Payroll journal is empty or unbalanced');
     await tx.journalEntry.update({ where: { id: journal.id }, data: { referenceId: journal.id } });
     const total = money(journalLines.reduce((sum, line) => sum + line.debit, 0));
-    return tx.payrollImport.create({
+    const imported = await tx.payrollImport.create({
       data: {
         tenantId,
         reference: body.reference || journal.entryNumber,
@@ -865,6 +874,11 @@ async function importPayroll(tenantId, userId, body) {
         createdBy: userId || null
       }
     });
+    await writeAudit(tx, {
+      tenantId, userId, action: 'POST', entity: 'PAYROLL_IMPORT', entityId: imported.id,
+      before: null, after: { reference: imported.reference, totalDebit: total }
+    });
+    return imported;
   });
 }
 
@@ -909,11 +923,11 @@ async function reconcileOverhead(tenantId, userId, body) {
       const amount = money(Math.abs(variance));
       if (!(amount > 0)) return;
       if (variance > 0) {
-        lines.push({ accountId: map[varianceKey], debit: amount, credit: 0, description: label });
-        lines.push({ accountId: map[absorbedKey], debit: 0, credit: amount, description: label });
+        lines.push({ accountId: map[varianceKey], debit: amount, credit: 0, costCenterId, description: label });
+        lines.push({ accountId: map[absorbedKey], debit: 0, credit: amount, costCenterId, description: label });
       } else {
-        lines.push({ accountId: map[absorbedKey], debit: amount, credit: 0, description: label });
-        lines.push({ accountId: map[varianceKey], debit: 0, credit: amount, description: label });
+        lines.push({ accountId: map[absorbedKey], debit: amount, credit: 0, costCenterId, description: label });
+        lines.push({ accountId: map[varianceKey], debit: 0, credit: amount, costCenterId, description: label });
       }
     };
     add(labourVariance, 'VARIANCE_LABOUR', 'ABSORBED_LABOUR', 'Labour absorption');
@@ -949,7 +963,9 @@ async function createContract(tenantId, userId, body) {
   const supplier = await prisma.supplier.findFirst({ where: { id: body.supplierId, tenantId } });
   if (!supplier) throw new ProductionError('Supplier not found');
   const virtual = await prisma.warehouse.findFirst({ where: { id: body.virtualWarehouseId, tenantId } });
-  if (!virtual || virtual.locationRole !== 'VIRTUAL') throw new ProductionError('Choose a factory sub-location virtual warehouse');
+  if (!virtual || !(virtual.isVirtual || virtual.locationRole === 'VIRTUAL')) {
+    throw new ProductionError('Choose a factory sub-location virtual warehouse');
+  }
   const fgWarehouse = await prisma.warehouse.findFirst({ where: { id: body.fgWarehouseId, tenantId } });
   if (!fgWarehouse) throw new ProductionError('Finished goods warehouse not found');
   const product = await prisma.product.findFirst({ where: { id: body.productId, tenantId } });
@@ -957,7 +973,7 @@ async function createContract(tenantId, userId, body) {
   const quantity = num(body.quantity);
   if (!(quantity > 0)) throw new ProductionError('Quantity must be greater than zero');
   const orderNumber = await generateDocumentNumber(tenantId, 'contractOrder', 'CM', 'orderNumber');
-  return prisma.contractOrder.create({
+  const created = await prisma.contractOrder.create({
     data: {
       tenantId,
       orderNumber,
@@ -968,6 +984,7 @@ async function createContract(tenantId, userId, body) {
       quantity,
       serviceCharge: Math.max(0, num(body.serviceCharge)),
       status: 'DRAFT',
+      costCenterId: await assertCostCenter(prisma, tenantId, body.costCenterId),
       createdBy: userId || null,
       issues: {
         create: (body.lines || []).filter((line) => num(line.quantity) > 0).map((line) => ({
@@ -980,6 +997,11 @@ async function createContract(tenantId, userId, body) {
     },
     include: { issues: true, supplier: true, virtualWarehouse: true }
   });
+  await writeAudit(prisma, {
+    tenantId, userId, action: 'CREATE', entity: 'CONTRACT_ORDER', entityId: created.id,
+    before: null, after: { orderNumber: created.orderNumber, status: 'DRAFT', quantity }
+  });
+  return created;
 }
 
 async function issueContract(tenantId, userId, id, body) {
@@ -998,6 +1020,7 @@ async function issueContract(tenantId, userId, id, body) {
     if (!product) throw new ProductionError('Component not found');
     const quantity = num(body.quantity);
     if (!(quantity > 0)) throw new ProductionError('Quantity must be greater than zero');
+    const batchId = await batchIdFor(tx, tenantId, product.id, body.lotNumber);
     const fifo = await issueFifo(tx, {
       tenantId,
       productId: product.id,
@@ -1009,18 +1032,19 @@ async function issueContract(tenantId, userId, id, body) {
       data: {
         tenantId, productId: product.id, type: 'GI', quantity, unitCost: fifo.unitCost, value: fifo.totalCost,
         referenceType: 'CONTRACT_ORDER', referenceId: order.id, warehouseId: source.id,
-        lotNumber: body.lotNumber || null, createdBy: userId || null
+        lotNumber: body.lotNumber || null, batchId, createdBy: userId || null
       }
     });
     await receiveLayer(tx, {
       tenantId, productId: product.id, warehouseId: order.virtualWarehouseId,
-      quantity, unitCost: fifo.unitCost, sourceType: 'CONTRACT_ORDER', sourceId: order.id, lotNumber: body.lotNumber || null
+      quantity, unitCost: fifo.unitCost, sourceType: 'CONTRACT_ORDER', sourceId: order.id,
+      lotNumber: body.lotNumber || null, batchId
     });
     await tx.stockMovement.create({
       data: {
         tenantId, productId: product.id, type: 'GR', quantity, unitCost: fifo.unitCost, value: fifo.totalCost,
         referenceType: 'CONTRACT_ORDER', referenceId: order.id, warehouseId: order.virtualWarehouseId,
-        lotNumber: body.lotNumber || null, createdBy: userId || null
+        lotNumber: body.lotNumber || null, batchId, createdBy: userId || null
       }
     });
     await tx.contractIssue.create({
@@ -1076,10 +1100,10 @@ async function receiveContract(tenantId, userId, id, body) {
         description: `Contract receipt ${order.orderNumber}`,
         referenceType: 'CONTRACT_ORDER',
         referenceId: order.id,
-        lines: [
+        lines: centered([
           { accountId: map.INVENTORY_FG, debit: value, credit: 0, description: 'Finished goods' },
           { accountId: map.INVENTORY, debit: 0, credit: value, description: 'Material at subcontractor' }
-        ]
+        ], order.costCenterId)
       });
     }
     await tx.stockMovement.create({
@@ -1131,10 +1155,10 @@ async function chargeContract(tenantId, userId, id, body) {
       description: `Contract service ${order.orderNumber}`,
       referenceType: 'CONTRACT_ORDER',
       referenceId: order.id,
-      lines: [
+        lines: centered([
         { accountId: map.SUBCONTRACT_EXPENSE, debit: amount, credit: 0, description: 'Service charge' },
         { accountId: map.AP, debit: 0, credit: amount, description: order.supplier?.name || 'Subcontractor' }
-      ]
+      ], order.costCenterId)
     });
     const invoiceNumber = await generateDocumentNumber(tenantId, 'supplierInvoice', 'SINV', 'invoiceNumber', tx);
     const invoice = await tx.supplierInvoice.create({
@@ -1197,6 +1221,88 @@ async function closeDueWorkOrders(now = new Date()) {
   return closed;
 }
 
+async function cancelContract(tenantId, userId, id, body) {
+  const reason = String(body.reason || '').trim();
+  if (!reason) throw new ProductionError('A reason is required to cancel');
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.contractOrder.findFirst({ where: { id, tenantId } });
+    if (!order) throw new ProductionError('Contract order not found', 404);
+    if (order.status === 'CANCELLED') return order;
+    if (order.status !== 'DRAFT') {
+      if (num(order.quantityReceived) > 0) {
+        const fifo = await issueFifo(tx, {
+          tenantId,
+          productId: order.productId,
+          warehouseId: order.fgWarehouseId,
+          quantity: num(order.quantityReceived),
+          strictWarehouse: true
+        });
+        await tx.stockMovement.create({
+          data: {
+            tenantId, productId: order.productId, type: 'GI', quantity: num(order.quantityReceived),
+            unitCost: fifo.unitCost, value: fifo.totalCost, referenceType: 'CONTRACT_REVERSAL',
+            referenceId: id, warehouseId: order.fgWarehouseId, createdBy: userId || null
+          }
+        });
+      }
+      const issues = await tx.contractIssue.findMany({ where: { contractOrderId: id, kind: 'ISSUE' } });
+      for (const issue of issues) {
+        await receiveLayer(tx, {
+          tenantId, productId: issue.productId, warehouseId: issue.warehouseId,
+          quantity: num(issue.quantity), unitCost: num(issue.unitCost),
+          sourceType: 'CONTRACT_REVERSAL', sourceId: id, lotNumber: issue.lotNumber
+        });
+        await tx.stockMovement.create({
+          data: {
+            tenantId, productId: issue.productId, type: 'GR', quantity: num(issue.quantity),
+            unitCost: num(issue.unitCost), value: round4(num(issue.quantity) * num(issue.unitCost)),
+            referenceType: 'CONTRACT_REVERSAL', referenceId: id, warehouseId: issue.warehouseId,
+            lotNumber: issue.lotNumber, createdBy: userId || null
+          }
+        });
+      }
+      const journals = await tx.journalEntry.findMany({
+        where: { tenantId, referenceType: 'CONTRACT_ORDER', referenceId: id, description: { not: { startsWith: 'Reversal:' } } },
+        include: { lines: true }
+      });
+      for (const entry of journals) {
+        await postJournal(tx, {
+          tenantId,
+          date: new Date(),
+          createdBy: userId,
+          description: `Reversal: ${entry.description}`,
+          referenceType: 'CONTRACT_REVERSAL',
+          referenceId: id,
+          lines: entry.lines.map((line) => ({
+            accountId: line.accountId,
+            debit: num(line.credit),
+            credit: num(line.debit),
+            costCenterId: line.costCenterId,
+            profitCenterId: line.profitCenterId,
+            description: 'Reversal'
+          }))
+        });
+      }
+    }
+    if (order.supplierInvoiceId) {
+      await tx.supplierInvoice.update({
+        where: { id: order.supplierInvoiceId },
+        data: { status: 'CANCELLED' }
+      });
+    }
+    const updated = await tx.contractOrder.update({
+      where: { id },
+      data: { status: 'CANCELLED', cancelReason: reason }
+    });
+    await writeAudit(tx, {
+      tenantId, userId, action: order.status === 'DRAFT' ? 'STATUS' : 'REVERSE',
+      entity: 'CONTRACT_ORDER', entityId: id,
+      before: { status: order.status }, after: { status: 'CANCELLED', reason }
+    });
+    return updated;
+  });
+}
+
 function defaults() {
   return {
     decisions: CONFIRMED_DEFAULTS,
@@ -1227,6 +1333,8 @@ module.exports = {
   listAlternates,
   findAlternate,
   deltaForIssue,
+  batchIdFor,
+  assertCostCenter,
   recordGenealogy,
   flagAbnormalLoss,
   listLosses,
@@ -1247,6 +1355,7 @@ module.exports = {
   issueContract,
   receiveContract,
   chargeContract,
+  cancelContract,
   listContracts,
   closeDueWorkOrders,
   defaults,

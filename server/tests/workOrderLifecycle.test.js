@@ -331,6 +331,14 @@ describe('Work order lifecycle', () => {
   });
 
   test('sales orders and MRP create draft work orders', async () => {
+    await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.costLayer.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.salesOrder.updateMany({
+      where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+      data: { status: 'CANCELLED' }
+    });
+    const before = await prisma.stockMovement.findMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    const onHand = before.reduce((sum, row) => sum + (row.type === 'GI' ? -Math.abs(Number(row.quantity)) : Number(row.quantity)), 0);
     const sales = await request(app)
       .post('/api/sales/orders')
       .set(auth())
@@ -338,7 +346,7 @@ describe('Work order lifecycle', () => {
         customerId: customer.id,
         date: new Date().toISOString(),
         status: 'PENDING',
-        items: [{ productId: fg.id, quantity: 6, unitPrice: 50, total: 300 }]
+        items: [{ productId: fg.id, quantity: onHand + 2, unitPrice: 50, total: (onHand + 2) * 50 }]
       });
     expect(sales.status).toBe(201);
     const drafts = await prisma.workOrder.findMany({
@@ -355,7 +363,7 @@ describe('Work order lifecycle', () => {
         customerId: customer.id,
         date: new Date().toISOString(),
         status: 'PENDING',
-        items: [{ productId: fg.id, quantity: 9, unitPrice: 50, total: 450 }]
+        items: [{ productId: fg.id, quantity: onHand + 5, unitPrice: 50, total: (onHand + 5) * 50 }]
       });
     expect(revised.status).toBe(200);
     const updatedDraft = await prisma.workOrder.findFirst({
@@ -390,13 +398,18 @@ describe('Work order lifecycle', () => {
   });
 
   test('a sales order makes only the quantity stock cannot cover', async () => {
+    await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.salesOrder.updateMany({
+      where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+      data: { status: 'CANCELLED' }
+    });
     await prisma.stockMovement.create({
       data: {
         tenantId: tenant.id,
         productId: fg.id,
         warehouseId: warehouse.id,
         type: 'GR',
-        quantity: 0,
+        quantity: 4,
         referenceType: 'ADJ',
         referenceId: 'FG-OPEN'
       }

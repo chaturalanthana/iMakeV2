@@ -34,6 +34,7 @@ router.post('/contracts', validateBody(schemas.contract), controller.createContr
 router.post('/contracts/:id/issue', validateBody(schemas.contractIssue), controller.issueContract);
 router.post('/contracts/:id/receive', validateBody(schemas.contractReceive), controller.receiveContract);
 router.post('/contracts/:id/charge', empty, validateBody(schemas.contractCharge), controller.chargeContract);
+router.post('/contracts/:id/cancel', validateBody(schemas.lossApproval), controller.cancelContract);
 router.get('/reports/:key', controller.report);
 
 module.exports = router;

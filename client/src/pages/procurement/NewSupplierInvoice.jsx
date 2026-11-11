@@ -6,8 +6,12 @@ import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
-import { ArrowLeft, FileText } from 'lucide-react';
+import PageHeader from '../../components/ui/PageHeader';
+import FormField, { TextControl, SelectControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import { FileText, Package } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { firstZodError, supplierInvoiceSchema } from '../../validation/controls';
 
 const emptyLine = () => ({ productId: '', productName: '', quantity: 1, unitPrice: 0 });
 
@@ -32,6 +36,7 @@ export default function NewSupplierInvoice() {
   const [receipts, setReceipts] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saved, setSaved] = useState(null);
+  const [knownInvoices, setKnownInvoices] = useState([]);
   const readOnly = Boolean(routeKey || saved);
 
   useEffect(() => {
@@ -45,6 +50,7 @@ export default function NewSupplierInvoice() {
           axios.get('/api/procurement/supplier-invoices', config)
         ]);
         setSuppliers(supplierRes.data);
+        setKnownInvoices(invoiceRes.data || []);
         setReceipts(grnRes.data || []);
         if (routeKey) {
           const current = findByRouteKey(invoiceRes.data, routeKey, 'invoiceNumber');
@@ -101,12 +107,19 @@ export default function NewSupplierInvoice() {
   }, [routeKey, grnKey]);
 
   const save = async () => {
+    const parsed = supplierInvoiceSchema.safeParse({ supplierId, date, supplierReference: reference, poId, grnId });
     const errors = {};
-    if (!supplierId) errors.supplierId = 'Supplier is required.';
-    if (!date) errors.date = 'Date is required.';
-    if (!poId && !grnId) errors.grnId = 'Link a goods receipt or a purchase order.';
+    if (!parsed.success) {
+      parsed.error.issues.forEach((issue) => {
+        errors[issue.path[0] || 'form'] = issue.message;
+      });
+    }
     const lines = items.filter((item) => item.productId);
     if (!lines.length) errors.items = 'Add at least one product.';
+    const vendorNo = reference.trim();
+    if (vendorNo && knownInvoices.some((row) => row.supplierId === supplierId && String(row.supplierReference || '').trim().toLowerCase() === vendorNo.toLowerCase() && row.status !== 'CANCELLED')) {
+      errors.supplierReference = 'This supplier invoice number is already used for this supplier.';
+    }
     if (Object.keys(errors).length) {
       setFieldErrors(errors);
       showToast(Object.values(errors)[0], 'error');
@@ -141,94 +154,120 @@ export default function NewSupplierInvoice() {
     }
   };
 
-  const total = (saved ? Number(saved.total) : items.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0), 0));
+  const goodsTotal = items.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0), 0);
 
   return (
     <AppLayout title="Supplier Invoice" icon={FileText}>
       {loading ? <PageSkeleton type="form" /> : (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <button onClick={() => navigate('/procurement/supplier-invoices')} style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', padding: '0.4rem' }}>
-                <ArrowLeft size={18} />
-              </button>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <h2 style={{ margin: 0 }}>{saved?.invoiceNumber || 'Supplier Invoice'}</h2>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{saved ? saved.status : 'Created from the goods receipt'}</span>
+          <PageHeader
+            onBack={() => navigate('/procurement/supplier-invoices')}
+            title={saved?.invoiceNumber ? `View Supplier Invoice` : 'Create Supplier Invoice'}
+            subtitle={saved ? saved.status : 'Created from the goods receipt'}
+            extra={saved?.invoiceNumber ? (
+              <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', backgroundColor: '#e0e7ff', color: '#4338ca', borderRadius: '4px', fontWeight: 600 }}>#{saved.invoiceNumber}</span>
+            ) : null}
+            actions={!readOnly && (
+              <>
+                <ActionButton variant="discard" onClick={() => navigate('/procurement/supplier-invoices')}>Discard</ActionButton>
+                <ActionButton variant="submit" disabled={saving} onClick={save}>
+                  {saving ? 'Processing...' : 'Post Invoice'}
+                </ActionButton>
+              </>
+            )}
+          />
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
+            <FormField label="Supplier" icon={FileText} width="350px" required error={fieldErrors.supplierId}>
+              <div style={{ pointerEvents: readOnly ? 'none' : 'auto', opacity: readOnly ? 0.7 : 1 }}>
+                <SupplierSearchDropdown
+                  suppliers={suppliers}
+                  value={supplierName}
+                  invalid={!!fieldErrors.supplierId}
+                  error=""
+                  onChange={(name, supplier) => { setSupplierName(name); setSupplierId(supplier?.id || ''); }}
+                  placeholder="Search or select supplier..."
+                  style={{ wrapper: { height: '42px', boxSizing: 'border-box' } }}
+                />
               </div>
-            </div>
-            {!readOnly && (
-              <button onClick={save} disabled={saving} style={{ padding: '0.5rem 1.25rem', border: 'none', borderRadius: '8px', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                {saving ? 'Saving...' : 'Post Invoice'}
-              </button>
+            </FormField>
+            <FormField label="Date" width="200px" required error={fieldErrors.date}>
+              <div style={{ pointerEvents: readOnly ? 'none' : 'auto', opacity: readOnly ? 0.7 : 1 }}>
+                <DatePicker value={date} onChange={setDate} invalid={!!fieldErrors.date} placeholder="Select Date" style={{ height: '42px', boxSizing: 'border-box' }} />
+              </div>
+            </FormField>
+            <FormField label="Exchange rate" width="160px">
+              <TextControl value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} disabled={readOnly} />
+            </FormField>
+            <FormField label="Supplier reference" width="240px">
+              <TextControl value={reference} onChange={(event) => setReference(event.target.value)} disabled={readOnly} />
+            </FormField>
+            {!routeKey && !grnKey && (
+              <FormField label="Goods receipt" width="350px" error={fieldErrors.grnId}>
+                <SelectControl
+                  value=""
+                  onChange={(event) => {
+                    const receipt = receipts.find((row) => row.id === event.target.value);
+                    if (receipt) navigate(`/procurement/supplier-invoices/new?grnId=${encodeURIComponent(receipt.grnNumber)}`);
+                  }}
+                  invalid={!!fieldErrors.grnId}
+                >
+                  <option value="">Choose the goods receipt to invoice</option>
+                  {receipts.map((receipt) => (
+                    <option key={receipt.id} value={receipt.id}>{receipt.grnNumber} — {receipt.supplier?.name || 'Supplier'}</option>
+                  ))}
+                </SelectControl>
+              </FormField>
             )}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{ width: 320 }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Supplier</label>
-              <SupplierSearchDropdown
-                suppliers={suppliers}
-                value={supplierName}
-                invalid={!!fieldErrors.supplierId}
-                error={fieldErrors.supplierId || ''}
-                onChange={(name, supplier) => { setSupplierName(name); setSupplierId(supplier?.id || ''); }}
-                placeholder="Supplier"
-              />
-            </div>
-            <div style={{ width: 180 }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Date</label>
-              <DatePicker value={date} onChange={setDate} invalid={!!fieldErrors.date} error={fieldErrors.date || ''} />
-            </div>
-            <div style={{ width: 180 }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Exchange rate</label>
-              <input className="input-field" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} disabled={readOnly} />
-            </div>
-            <div style={{ width: 220 }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Supplier reference</label>
-              <input className="input-field" value={reference} onChange={(event) => setReference(event.target.value)} disabled={readOnly} />
-            </div>
+          {fieldErrors.grnId && grnId && <div className="field-error-text" style={{ marginBottom: '0.75rem' }}>{fieldErrors.grnId}</div>}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <Package size={20} color="var(--accent)" />
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>Invoice Lines</h3>
           </div>
-          {!id && !grnId && (
-            <div style={{ marginBottom: '1rem', maxWidth: 420 }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Goods receipt</label>
-              <select
-                value=""
-                onChange={(event) => {
-                  const receipt = receipts.find((row) => row.id === event.target.value);
-                  if (receipt) navigate(`/procurement/supplier-invoices/new?grnId=${encodeURIComponent(receipt.grnNumber)}`);
-                }}
-                style={{ width: '100%', height: 42, borderRadius: 8, border: '1px solid var(--border-color)', padding: '0 0.75rem' }}
-              >
-                <option value="">Choose the goods receipt to invoice</option>
-                {receipts.map((receipt) => (
-                  <option key={receipt.id} value={receipt.id}>{receipt.grnNumber} — {receipt.supplier?.name || 'Supplier'}</option>
-                ))}
-              </select>
-              {fieldErrors.grnId && <div style={{ color: 'var(--error)', marginTop: 6 }}>{fieldErrors.grnId}</div>}
-            </div>
-          )}
-          {fieldErrors.grnId && grnId && <div style={{ color: 'var(--error)', marginBottom: '0.75rem' }}>{fieldErrors.grnId}</div>}
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-            <thead>
-              <tr>
-                {['Product', 'Quantity', 'Unit price', 'Total'].map((heading) => (
-                  <th key={heading} style={{ textAlign: heading === 'Product' ? 'left' : 'right', padding: '0.6rem', borderBottom: '1px solid var(--border-color)' }}>{heading}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={`${item.productId}-${index}`}>
-                  <td style={{ padding: '0.6rem' }}>{item.productName || item.productId}</td>
-                  <td style={{ padding: '0.6rem', textAlign: 'right' }}>{readOnly ? item.quantity : <input value={item.quantity} onChange={(event) => setItems(items.map((line, lineIndex) => lineIndex === index ? { ...line, quantity: event.target.value } : line))} style={{ width: 90, textAlign: 'right' }} />}</td>
-                  <td style={{ padding: '0.6rem', textAlign: 'right' }}>{readOnly ? item.unitPrice : <input value={item.unitPrice} onChange={(event) => setItems(items.map((line, lineIndex) => lineIndex === index ? { ...line, unitPrice: event.target.value } : line))} style={{ width: 110, textAlign: 'right' }} />}</td>
-                  <td style={{ padding: '0.6rem', textAlign: 'right' }}>{((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)).toFixed(2)}</td>
+          {fieldErrors.items && <div className="field-error-text" style={{ marginBottom: '0.75rem' }}>{fieldErrors.items}</div>}
+          <div style={{ borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', backgroundColor: '#fff', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '50px', textAlign: 'center' }}>#</th>
+                  <th>Product</th>
+                  <th style={{ textAlign: 'center', width: '150px' }}>Quantity</th>
+                  <th style={{ textAlign: 'center', width: '160px' }}>Unit price</th>
+                  <th style={{ textAlign: 'right', width: '140px' }}>Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ textAlign: 'right', marginTop: '1rem', fontWeight: 700 }}>
-            {saved ? `Subtotal Rs ${Number(saved.subtotal).toFixed(2)} · Tax Rs ${Number(saved.taxAmount).toFixed(2)} · Payable Rs ${Number(saved.total).toFixed(2)}` : `Goods total Rs ${total.toFixed(2)}`}
+              </thead>
+              <tbody>
+                {items.map((item, index) => (
+                  <tr key={`${item.productId}-${index}`}>
+                    <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{index + 1}</td>
+                    <td>{item.productName || item.productId || '—'}</td>
+                    <td className="spreadsheet-cell">
+                      {readOnly ? item.quantity : (
+                        <input className="spreadsheet-input" value={item.quantity} onChange={(event) => setItems(items.map((line, lineIndex) => lineIndex === index ? { ...line, quantity: event.target.value } : line))} style={{ textAlign: 'center', fontWeight: 700 }} />
+                      )}
+                    </td>
+                    <td className="spreadsheet-cell">
+                      {readOnly ? item.unitPrice : (
+                        <input className="spreadsheet-input" value={item.unitPrice} onChange={(event) => setItems(items.map((line, lineIndex) => lineIndex === index ? { ...line, unitPrice: event.target.value } : line))} style={{ textAlign: 'right', fontWeight: 600 }} />
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot style={{ borderTop: '2px solid var(--border-color)' }}>
+                <tr>
+                  <td colSpan={4} style={{ textAlign: 'right', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800 }}>
+                    {saved ? `Subtotal Rs ${Number(saved.subtotal).toFixed(2)} · Tax Rs ${Number(saved.taxAmount).toFixed(2)} · Payable` : 'Goods total'}
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                    Rs {saved ? Number(saved.total).toFixed(2) : goodsTotal.toFixed(2)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </>
       )}

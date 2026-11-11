@@ -317,3 +317,15 @@ ALTER TABLE "abnormal_losses" ADD CONSTRAINT "abnormal_losses_tenant_id_fkey" FO
 ALTER TABLE "abnormal_losses" ADD CONSTRAINT "abnormal_losses_work_order_id_fkey" FOREIGN KEY ("work_order_id") REFERENCES "work_orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "payroll_imports" ADD CONSTRAINT "payroll_imports_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "overhead_reconciliations" ADD CONSTRAINT "overhead_reconciliations_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "work_orders" ADD COLUMN "cost_center_id" TEXT;
+ALTER TABLE "contract_orders" ADD COLUMN "cost_center_id" TEXT;
+ALTER TABLE "contract_orders" ADD COLUMN "cancel_reason" TEXT;
+
+ALTER TABLE "work_orders" ADD CONSTRAINT "work_orders_cost_center_id_fkey" FOREIGN KEY ("cost_center_id") REFERENCES "org_centers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "contract_orders" ADD CONSTRAINT "contract_orders_cost_center_id_fkey" FOREIGN KEY ("cost_center_id") REFERENCES "org_centers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "planned_production_orders" ADD CONSTRAINT "planned_production_orders_cost_center_id_fkey" FOREIGN KEY ("cost_center_id") REFERENCES "org_centers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "overhead_reconciliations" ADD CONSTRAINT "overhead_reconciliations_cost_center_id_fkey" FOREIGN KEY ("cost_center_id") REFERENCES "org_centers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "batch_genealogy" ADD CONSTRAINT "batch_genealogy_fg_batch_id_fkey" FOREIGN KEY ("fg_batch_id") REFERENCES "stock_batches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "batch_genealogy" ADD CONSTRAINT "batch_genealogy_rm_batch_id_fkey" FOREIGN KEY ("rm_batch_id") REFERENCES "stock_batches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "machine_captures" ADD CONSTRAINT "machine_captures_batch_id_fkey" FOREIGN KEY ("batch_id") REFERENCES "stock_batches"("id") ON DELETE SET NULL ON UPDATE CASCADE;

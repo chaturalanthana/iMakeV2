@@ -62,8 +62,8 @@ export default function ContractManufacturing() {
     }
   };
 
-  const virtuals = warehouses.filter((row) => row.locationRole === 'VIRTUAL');
-  const stores = warehouses.filter((row) => row.locationRole !== 'VIRTUAL');
+  const virtuals = warehouses.filter((row) => row.isVirtual || row.locationRole === 'VIRTUAL');
+  const stores = warehouses.filter((row) => !(row.isVirtual || row.locationRole === 'VIRTUAL'));
 
   return (
     <AppLayout title="Contract Manufacturing" icon={Truck}>

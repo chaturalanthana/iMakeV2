@@ -1,17 +1,31 @@
 const prisma = require('../lib/prisma');
+const { respondList } = require('../services/listQuery');
+const { writeAudit } = require('../services/auditService');
 
 const getCustomers = async (req, res) => {
   try {
-    const customers = await prisma.customer.findMany({
+    await respondList(req, res, {
+      model: prisma.customer,
       where: { tenantId: req.tenantId },
       include: {
         accountsReceivable: true,
         revenueAccount: true,
         customerCategoryRel: true
       },
-      orderBy: { name: 'asc' }
+      search: ['code', 'name', 'email', 'phone'],
+      sortFields: ['name', 'code', 'createdAt'],
+      defaultSort: 'name',
+      defaultDir: 'asc',
+      filename: 'customers.xlsx',
+      exportHeaders: ['code', 'name', 'email', 'phone', 'creditLimit'],
+      toExport: (row) => ({
+        code: row.code,
+        name: row.name,
+        email: row.email || '',
+        phone: row.phone || '',
+        creditLimit: String(row.creditLimit ?? '')
+      })
     });
-    res.json(customers);
   } catch (error) {
     console.error('Fetch customers error:', error);
     res.status(500).json({ error: 'Failed to fetch customers' });
@@ -136,6 +150,14 @@ const createCustomer = async (req, res) => {
         revenueAccount: true,
         customerCategoryRel: true
       }
+    });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      action: 'CREATE',
+      entity: 'CUSTOMER',
+      entityId: customer.id,
+      after: customer
     });
     res.status(201).json(customer);
   } catch (error) {

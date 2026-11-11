@@ -3,7 +3,9 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
-import { ArrowLeft, FileText } from 'lucide-react';
+import PageHeader from '../../components/ui/PageHeader';
+import Section, { EmptyState } from '../../components/ui/Section';
+import { FileText } from 'lucide-react';
 
 export default function PartyStatement({ kind }) {
   const navigate = useNavigate();
@@ -32,44 +34,48 @@ export default function PartyStatement({ kind }) {
   }, [id, kind]);
 
   const money = (value) => `Rs ${Number(value || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const lines = statement?.lines || [];
 
   return (
     <AppLayout title={title} icon={FileText}>
       {loading ? <PageSkeleton /> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-            <button onClick={() => navigate(back)} style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', padding: '0.4rem', display: 'flex' }}>
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h2 style={{ margin: 0 }}>{statement?.party ? `${statement.party.code} - ${statement.party.name}` : title}</h2>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Balance {money(statement?.balance)}</div>
-            </div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#f8fafc' }}>
-                <tr>
-                  {['Date', 'Document', 'Number', 'Charge', 'Payment', 'Balance'].map((heading) => (
-                    <th key={heading} style={{ textAlign: heading === 'Date' || heading === 'Document' || heading === 'Number' ? 'left' : 'right', padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{heading}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(statement?.lines || []).map((line, index) => (
-                  <tr key={`${line.number}-${index}`} style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '0.75rem 1rem' }}>{new Date(line.date).toLocaleDateString()}</td>
-                    <td style={{ padding: '0.75rem 1rem' }}>{line.document}</td>
-                    <td style={{ padding: '0.75rem 1rem' }}>{line.number}</td>
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{money(line.charge)}</td>
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{money(line.payment)}</td>
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{money(line.balance)}</td>
+        <>
+          <PageHeader
+            onBack={() => navigate(back)}
+            title={statement?.party ? `${statement.party.code} - ${statement.party.name}` : title}
+            subtitle={`Balance ${money(statement?.balance)}`}
+          />
+          <Section>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Document</th>
+                    <th>Number</th>
+                    <th style={{ textAlign: 'right' }}>Charge</th>
+                    <th style={{ textAlign: 'right' }}>Payment</th>
+                    <th style={{ textAlign: 'right' }}>Balance</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                </thead>
+                <tbody>
+                  {lines.length === 0 ? (
+                    <tr><td colSpan={6}><EmptyState>No documents in this statement.</EmptyState></td></tr>
+                  ) : lines.map((line, index) => (
+                    <tr key={`${line.number}-${index}`}>
+                      <td>{new Date(line.date).toLocaleDateString()}</td>
+                      <td>{line.document}</td>
+                      <td style={{ fontWeight: 600 }}>{line.number}</td>
+                      <td style={{ textAlign: 'right' }}>{money(line.charge)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(line.payment)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(line.balance)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        </>
       )}
     </AppLayout>
   );

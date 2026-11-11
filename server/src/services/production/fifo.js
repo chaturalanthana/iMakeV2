@@ -1,4 +1,5 @@
 const { round4, num } = require('./costing');
+const { DocumentError } = require('../errors');
 
 /**
  * Minimal FIFO cost-layer service.
@@ -8,9 +9,10 @@ const { round4, num } = require('./costing');
  *   issueFifo()     consumes the oldest open layers first and returns the cost taken.
  *   Opening layer   if a product has no layers at all on its first issue, one OPENING layer is
  *                   created for the current on-hand at standard cost (or cost price). This does
- *                   not rewrite history when any layer already exists. A shortfall that still
- *                   remains is valued at standard/cost price and flagged `unlayered` — it does
- *                   not invent a second layer.
+ *                   not rewrite history when any layer already exists. A shortfall is rejected
+ *                   unless the tenant allows negative stock. When that setting is on, the
+ *                   short quantity is valued at the last FIFO unit cost (or zero), not at
+ *                   standard cost.
  * Sales issues, deliveries, and adjustments call issueFifo as well.
  * Pass strictWarehouse: true to consume only layers in that warehouse.
  * The default keeps the original fallback (null-warehouse layers, then any warehouse).
@@ -31,7 +33,12 @@ async function receiveLayer(db, {
   sourceType,
   sourceId = null,
   lotNumber = null,
-  receivedAt = null
+  receivedAt = null,
+  batchId = null,
+  binId = null,
+  palletId = null,
+  stockStatus = null,
+  expiryDate = null
 }) {
   const qty = round4(quantity);
   if (!(qty > 0)) return null;
@@ -46,7 +53,12 @@ async function receiveLayer(db, {
       sourceType,
       sourceId: sourceId || null,
       lotNumber: lotNumber || null,
-      receivedAt: receivedAt || new Date()
+      receivedAt: receivedAt || new Date(),
+      batchId: batchId || null,
+      binId: binId || null,
+      palletId: palletId || null,
+      stockStatus: stockStatus || 'UNRESTRICTED',
+      expiryDate: expiryDate ? new Date(expiryDate) : null
     }
   });
 }
@@ -75,12 +87,30 @@ async function ensureOpeningLayer(db, { tenantId, productId, warehouseId = null 
   });
 }
 
-async function issueFifo(db, { tenantId, productId, warehouseId = null, quantity, strictWarehouse = false }) {
+async function issueFifo(db, {
+  tenantId,
+  productId,
+  warehouseId = null,
+  quantity,
+  strictWarehouse = false,
+  batchId = null,
+  eligibleOnly = false
+}) {
   const requested = round4(quantity);
   if (!(requested > 0)) return { totalCost: 0, unitCost: 0, consumptions: [] };
 
   const where = { tenantId, productId, quantityRemaining: { gt: 0 } };
+  if (batchId) where.batchId = batchId;
   let layers = await db.costLayer.findMany({ where, orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }] });
+  if (eligibleOnly) {
+    const today = new Date().toISOString().slice(0, 10);
+    layers = layers.filter((layer) => {
+      const status = layer.stockStatus || 'UNRESTRICTED';
+      if (status !== 'UNRESTRICTED') return false;
+      if (!layer.expiryDate) return true;
+      return new Date(layer.expiryDate).toISOString().slice(0, 10) >= today;
+    });
+  }
   if (warehouseId) {
     const local = strictWarehouse
       ? layers.filter((layer) => layer.warehouseId === warehouseId)
@@ -110,8 +140,13 @@ async function issueFifo(db, { tenantId, productId, warehouseId = null, quantity
   }
 
   if (left > 0.00005) {
-    const product = await db.product.findFirst({ where: { id: productId, tenantId } });
-    const unit = num(product?.standardCost) > 0 ? num(product.standardCost) : num(product?.costPrice);
+    const settings = await db.operationsSetting.findUnique({ where: { tenantId } });
+    if (!settings?.allowNegativeStock) {
+      throw new DocumentError('Not enough stock in this warehouse.', {
+        quantity: 'Not enough stock in this warehouse.'
+      });
+    }
+    const unit = consumptions.length ? num(consumptions[consumptions.length - 1].unitCost) : 0;
     const cost = round4(left * unit);
     total = round4(total + cost);
     consumptions.push({ layerId: null, quantity: left, unitCost: unit, cost, unlayered: true });

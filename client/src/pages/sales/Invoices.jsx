@@ -7,6 +7,7 @@ import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import OrderPrintModal from '../../components/ui/OrderPrintModal';
 import DataTable from '../../components/ui/DataTable';
+import ExportButton from '../../components/ui/ExportButton';
 import { Receipt, Plus, Printer, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -18,18 +19,21 @@ export default function Invoices() {
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [printModalData, setPrintModalData] = useState(null);
+  const [query, setQuery] = useState({ page: 1, q: '', sort: 'date', dir: 'desc' });
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     fetchInvoices();
-  }, []);
+  }, [query]);
 
   const fetchInvoices = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const res = await axios.get('/api/sales/invoices', config);
-      setInvoices(res.data);
+      const res = await axios.get('/api/sales/invoices', { ...config, params: { page: query.page, pageSize: 15, q: query.q || undefined, sort: query.sort || undefined, dir: query.dir || undefined } });
+      setInvoices(res.data.items || []);
+      setTotal(res.data.total || 0);
     } finally {
       setLoading(false);
       setIsInitialLoad(false);
@@ -133,6 +137,8 @@ export default function Invoices() {
   ];
 
   const extraActions = (
+    <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <ExportButton url="/api/sales/invoices" filename="invoices.xlsx" params={{ q: query.q, sort: query.sort, dir: query.dir }} />
     <button
       onClick={() => navigate('/sales/invoices/new')}
       style={{
@@ -153,6 +159,7 @@ export default function Invoices() {
     >
       <Plus size={16} /> New Invoice
     </button>
+    </div>
   );
 
   return (
@@ -183,6 +190,9 @@ export default function Invoices() {
             loading={loading}
             searchPlaceholder="Search by invoice number or customer..."
             searchKeys={['invoiceNumber', 'customer.name']}
+            onServerQuery={(next) => setQuery((prev) => ({ ...prev, q: next.q ?? prev.q, page: next.page || 1, sort: next.sort || prev.sort, dir: next.dir || prev.dir }))}
+            serverTotal={total}
+            serverPage={query.page}
             extraActions={extraActions}
             onRowClick={(row) => navigate(recordPath('/sales/invoices', row, 'invoiceNumber'))}
           />

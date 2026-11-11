@@ -7,6 +7,7 @@ const categoryRoutes = require('./categoryRoutes');
 const productTypeRoutes = require('./productTypeRoutes');
 const productGroupRoutes = require('./productGroupRoutes');
 const financeRoutes = require('./financeRoutes');
+const phase2Routes = require('./phase2Routes');
 const customerRoutes = require('./customerRoutes');
 const salesRoutes = require('./salesRoutes');
 const supplierRoutes = require('./supplierRoutes');
@@ -37,6 +38,8 @@ const replenishmentRoutes = require('./replenishmentRoutes');
 const alertRoutes = require('./alertRoutes');
 const importRoutes = require('./importRoutes');
 const labelRoutes = require('./labelRoutes');
+const { work: controlWorkRoutes, controls: controlSettingsRoutes } = require('./controlRoutes');
+const inventoryRoutes = require('./inventoryRoutes');
 const { secureModule, secureAny } = require('../middlewares/rbacMiddleware');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
 
@@ -64,8 +67,10 @@ router.use('/procurement', ...secureModule('procurement'), procurementRoutes);
 
 router.use('/warehouse', ...secureModule('warehouse'), warehouseRoutes);
 router.use('/warehouses', ...secureModule('warehouse'), warehouseMasterRoutes);
+router.use('/inventory', ...secureModule('warehouse'), inventoryRoutes);
 
 router.use('/finance', ...secureModule('finance'), financeRoutes);
+router.use('/phase2', ...secureAny(['finance', 'procurement']), phase2Routes);
 router.use('/hr', ...secureModule('hr'), hrRoutes);
 
 router.use('/boms', ...secureModule('production'), bomRoutes);
@@ -86,5 +91,7 @@ router.use('/production', ...secureModule('production'), productionPlanningRoute
 
 router.use('/roles', ...secureModule('settings'), roleRoutes);
 router.use('/users', ...secureModule('settings'), userRoutes);
+router.use('/controls', ...secureModule('settings'), controlSettingsRoutes);
+router.use('/', ...secureAny(['sales', 'procurement', 'finance', 'hr', 'warehouse', 'production', 'products', 'settings']), controlWorkRoutes);
 
 module.exports = router;

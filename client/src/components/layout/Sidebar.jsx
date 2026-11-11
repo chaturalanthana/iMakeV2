@@ -5,13 +5,29 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, ScrollText, Briefcase
 } from 'lucide-react';
 
 export default function Sidebar() {
   const location = useLocation();
   const [expandedMenu, setExpandedMenu] = useState(null);
   const [shouldAnimate, setShouldAnimate] = useState(false);
+  const [approvalCount, setApprovalCount] = useState(0);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return undefined;
+    let stop = false;
+    const load = () => {
+      fetch('/api/approvals/count', { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => res.ok ? res.json() : { count: 0 })
+        .then((data) => { if (!stop) setApprovalCount(data.count || 0); })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 30000);
+    return () => { stop = true; clearInterval(timer); };
+  }, []);
 
   const isPathActive = (path) => {
     if (!path) return false;
@@ -20,6 +36,7 @@ export default function Sidebar() {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { name: 'Approvals', icon: ClipboardList, path: '/approvals', badge: approvalCount },
     {
       name: 'Production',
       icon: Factory,
@@ -40,6 +57,7 @@ export default function Sidebar() {
         { name: 'Brands', icon: Tag, path: '/registries/brands' },
         { name: 'Categories', icon: Layers, path: '/registries/categories' },
         { name: 'UOMs', icon: RefreshCw, path: '/registries/uoms' },
+        { name: 'UOM Templates', icon: RefreshCw, path: '/registries/uom-templates' },
       ]
     },
     { 
@@ -68,6 +86,10 @@ export default function Sidebar() {
         { name: 'Purchase Orders', icon: ShoppingBag, path: '/procurement/purchase-orders' },
         { name: 'GRNs', icon: Package, path: '/procurement/grn' },
         { name: 'Supplier Invoices', icon: FileText, path: '/procurement/supplier-invoices' },
+        { name: 'RFQs', icon: ClipboardList, path: '/procurement/rfqs' },
+        { name: 'Contract Prices', icon: DollarSign, path: '/procurement/contracts' },
+        { name: 'Landed Cost', icon: Receipt, path: '/procurement/landed-costs' },
+        { name: 'Capex Request', icon: Briefcase, path: '/procurement/capex/new' },
       ]
     },
     { 
@@ -75,6 +97,16 @@ export default function Sidebar() {
       icon: Archive, 
       subItems: [
         { name: 'Warehouses', icon: Layers, path: '/registries/warehouses' },
+        { name: 'Bins', icon: Layers, path: '/warehouse/bins' },
+        { name: 'Batches', icon: Package, path: '/warehouse/batches' },
+        { name: 'Pallets', icon: Boxes, path: '/warehouse/pallets' },
+        { name: 'Material Requests', icon: ClipboardList, path: '/warehouse/material-requests' },
+        { name: 'Batch Receipts', icon: ArrowDownLeft, path: '/warehouse/batch-receipts/new' },
+        { name: 'Goods Transfers', icon: RefreshCw, path: '/warehouse/goods-transfers' },
+        { name: 'Returns', icon: ArrowUpRight, path: '/warehouse/returns' },
+        { name: 'Cycle Counts', icon: BarChart2, path: '/warehouse/cycle-counts' },
+        { name: 'Allocations', icon: ClipboardList, path: '/warehouse/allocations' },
+        { name: 'Stock Reports', icon: FileText, path: '/warehouse/stock-reports' },
         { name: 'Stock Receipts', icon: ArrowDownLeft, path: '/warehouse/receipts' },
         { name: 'Stock Issues', icon: ArrowUpRight, path: '/warehouse/issues' },
         { name: 'Stock Transfers', icon: RefreshCw, path: '/warehouse/transfers' },
@@ -105,6 +137,16 @@ export default function Sidebar() {
         { name: 'Tax Groups', icon: Percent, path: '/finance/tax-groups' },
         { name: 'VAT Report', icon: FileText, path: '/finance/vat' },
         { name: 'Bank Reconciliation', icon: Landmark, path: '/finance/reconciliation' },
+        { name: 'Cost Centers', icon: Network, path: '/finance/centers' },
+        { name: 'Budgets', icon: Scale, path: '/finance/budgets' },
+        { name: 'Capital Projects', icon: Briefcase, path: '/finance/projects' },
+        { name: 'Fixed Assets', icon: Landmark, path: '/finance/assets' },
+        { name: 'Credit and Debit Notes', icon: Receipt, path: '/finance/notes' },
+        { name: 'Collections', icon: Wallet, path: '/finance/collections' },
+        { name: 'Cheques', icon: CreditCard, path: '/finance/cheques' },
+        { name: 'IOU and Petty Cash', icon: Banknote, path: '/finance/ious' },
+        { name: 'Period Close', icon: CalendarDays, path: '/finance/period-close' },
+        { name: 'Finance Reports', icon: FileText, path: '/finance/reports' },
       ]
     },
     {
@@ -131,6 +173,9 @@ export default function Sidebar() {
       subItems: [
         { name: 'Users', icon: Users, path: '/settings/users' },
         { name: 'Roles', icon: Layers, path: '/settings/roles' },
+        { name: 'Approval rules', icon: ClipboardList, path: '/settings/approval-rules' },
+        { name: 'Fiscal periods', icon: CalendarDays, path: '/settings/periods' },
+        { name: 'Audit log', icon: ScrollText, path: '/settings/audit' },
         { name: 'Data import', icon: Upload, path: '/settings/import' },
       ] 
     }
@@ -312,6 +357,7 @@ export default function Sidebar() {
               >
                 <item.icon size={22} style={{ flexShrink: 0 }} />
                 <span className="menu-item-text">{item.name}</span>
+                {item.badge > 0 && <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{item.badge}</span>}
               </NavLink>
             ) : (
               <button
@@ -359,6 +405,7 @@ export default function Sidebar() {
               >
                 <item.icon size={22} style={{ flexShrink: 0 }} />
                 <span className="menu-item-text">{item.name}</span>
+                {item.badge > 0 && <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{item.badge}</span>}
               </NavLink>
             ) : (
               <button

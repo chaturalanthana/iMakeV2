@@ -9,6 +9,11 @@ const { absorbCosts } = require('./productionMath');
 const { buildLoadProfile } = require('./capacity');
 const { ProductionError } = require('./errors');
 const phase4 = require('./phase4');
+const {
+  mirrorProductionReservation,
+  consumeProductionReservation,
+  releaseProductionOrder
+} = require('../inventory/allocations');
 
 const runTx = (fn) => prisma.$transaction(fn, { timeout: 20000 });
 
@@ -243,6 +248,15 @@ async function buildSnapshot(db, { tenantId, productId, bomId, quantity }) {
     instructions: operation.instructions || null
   }));
 
+  if (routed.length && routed.some((operation) => operation.workstationId)) {
+    const ids = [...new Set(routed.map((operation) => operation.workstationId).filter(Boolean))];
+    const stations = await db.workstation.findMany({ where: { id: { in: ids } } });
+    const rates = new Map(stations.map((station) => [station.id, num(station.hourlyRate)]));
+    routed.forEach((operation) => {
+      if (operation.workstationId) operation.machineRatePerHour = rates.get(operation.workstationId) || 0;
+    });
+  }
+
   const operations = routed.length ? routed : [{
     sequence: 10,
     name: 'Final assembly',
@@ -366,6 +380,7 @@ async function createInside(db, args) {
         plannedSubcontractCost: planned.subcontract,
         plannedOverheadCost: planned.overhead,
         plannedScrapCost: planned.scrap,
+        costCenterId: args.costCenterId || null,
         createdBy: args.userId || null,
         components: {
           create: snapshot.components.map((component) => ({
@@ -440,7 +455,7 @@ async function ensureReservations(db, wo, { mode }) {
     }
     const reserve = round4(Math.max(0, Math.min(need, Math.max(0, available))));
     if (reserve > 0) {
-      await db.materialReservation.create({
+      const reservation = await db.materialReservation.create({
         data: {
           tenantId: wo.tenantId,
           workOrderId: wo.id,
@@ -450,6 +465,14 @@ async function ensureReservations(db, wo, { mode }) {
           quantity: reserve,
           status: 'OPEN'
         }
+      });
+      await mirrorProductionReservation(db, {
+        tenantId: wo.tenantId,
+        productId: component.productId,
+        warehouseId: wo.warehouseId,
+        workOrderId: wo.id,
+        reservationId: reservation.id,
+        quantity: reserve
       });
       await db.workOrderComponent.update({
         where: { id: component.id },
@@ -474,13 +497,15 @@ async function consumeReservation(db, component, quantity) {
     const take = round4(Math.min(open, left));
     if (!(take > 0)) continue;
     const consumed = round4(num(row.consumedQty) + take);
+    const closed = consumed + 0.00005 >= num(row.quantity);
     await db.materialReservation.update({
       where: { id: row.id },
       data: {
         consumedQty: consumed,
-        status: consumed + 0.00005 >= num(row.quantity) ? 'CLOSED' : 'OPEN'
+        status: closed ? 'CLOSED' : 'OPEN'
       }
     });
+    await consumeProductionReservation(db, row.id, take, closed);
     consumedNow = round4(consumedNow + take);
     left = round4(left - take);
   }
@@ -504,6 +529,7 @@ async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialN
   if (stockQty - available > 0.00005) {
     throw new ProductionError(`Insufficient stock to issue ${component.product?.code || 'component'}`);
   }
+  const batchId = await phase4.batchIdFor(db, wo.tenantId, stockProductId, lotNumber);
   const fifo = await issueFifo(db, {
     tenantId: wo.tenantId,
     productId: stockProductId,
@@ -527,6 +553,7 @@ async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialN
       warehouseId: wo.warehouseId,
       lotNumber: lotNumber || null,
       serialNumber: serialNumber || null,
+      batchId,
       createdBy: userId || null
     }
   });
@@ -540,8 +567,8 @@ async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialN
       referenceType: 'WORK_ORDER',
       referenceId: wo.id,
       lines: [
-        { accountId: map.WIP, debit: fifo.totalCost, credit: 0, description: component.product?.code || 'Material' },
-        { accountId: map.INVENTORY, debit: 0, credit: fifo.totalCost, description: component.product?.code || 'Material' }
+        { accountId: map.WIP, debit: fifo.totalCost, credit: 0, costCenterId: wo.costCenterId, description: component.product?.code || 'Material' },
+        { accountId: map.INVENTORY, debit: 0, credit: fifo.totalCost, costCenterId: wo.costCenterId, description: component.product?.code || 'Material' }
       ]
     });
   }
@@ -578,6 +605,7 @@ async function postFinishedGoods(db, wo, { quantity, unitCost, lotNumber, serial
   const qty = round4(quantity);
   if (!(qty > 0)) return;
   const value = round4(qty * num(unitCost));
+  const batchId = await phase4.batchIdFor(db, wo.tenantId, wo.productId, lotNumber);
   await db.stockMovement.create({
     data: {
       tenantId: wo.tenantId,
@@ -591,6 +619,7 @@ async function postFinishedGoods(db, wo, { quantity, unitCost, lotNumber, serial
       warehouseId: wo.warehouseId,
       lotNumber: lotNumber || null,
       serialNumber: serialNumber || null,
+      batchId,
       createdBy: userId || null
     }
   });
@@ -603,9 +632,9 @@ async function postFinishedGoods(db, wo, { quantity, unitCost, lotNumber, serial
       description: `Finished goods ${wo.orderNumber}`,
       referenceType: 'WORK_ORDER',
       referenceId: wo.id,
-      lines: [
-        { accountId: map.INVENTORY_FG, debit: value, credit: 0, description: 'Finished goods' },
-        { accountId: map.WIP, debit: 0, credit: value, description: 'Finished goods' }
+        lines: [
+        { accountId: map.INVENTORY_FG, debit: value, credit: 0, costCenterId: wo.costCenterId, description: 'Finished goods' },
+        { accountId: map.WIP, debit: 0, credit: value, costCenterId: wo.costCenterId, description: 'Finished goods' }
       ]
     });
   }
@@ -616,7 +645,9 @@ async function postFinishedGoods(db, wo, { quantity, unitCost, lotNumber, serial
     quantity: qty,
     unitCost,
     sourceType: 'WORK_ORDER',
-    sourceId: wo.id
+    sourceId: wo.id,
+    lotNumber: lotNumber || null,
+    batchId
   });
 }
 
@@ -670,6 +701,7 @@ async function closeReservations(db, workOrderId) {
     where: { workOrderId, status: 'OPEN' },
     data: { status: 'CLOSED' }
   });
+  await releaseProductionOrder(db, workOrderId);
 }
 
 const plannedTotal = (wo) => round4(
@@ -810,6 +842,7 @@ async function getWorkOrder(tenantId, id) {
 
 async function createWorkOrder(tenantId, userId, body, db = prisma) {
   if (!body.productId) throw new ProductionError('Product is required');
+  if (body.costCenterId) await phase4.assertCostCenter(db, tenantId, body.costCenterId);
   const status = body.status === 'DRAFT' ? 'DRAFT' : 'CREATED';
   return createInside(db, {
     tenantId,
@@ -824,6 +857,7 @@ async function createWorkOrder(tenantId, userId, body, db = prisma) {
     assignedTo: body.assignedTo,
     warehouseId: body.warehouseId,
     issueMode: body.issueMode,
+    costCenterId: body.costCenterId || null,
     sourceType: body.sourceType || 'MANUAL',
     sourceId: body.sourceId || null,
     salesOrderId: body.salesOrderId || null,
@@ -1129,9 +1163,9 @@ async function confirmOperation(tenantId, id, body, userId) {
         referenceType: 'WORK_ORDER',
         referenceId: wo.id,
         lines: [
-          { accountId: map.WIP, debit: round4(labourAbsorb + overheadCost), credit: 0, description: 'Absorption' },
-          { accountId: map.ABSORBED_LABOUR, debit: 0, credit: labourAbsorb, description: 'Absorbed labour' },
-          { accountId: map.ABSORBED_OVERHEAD, debit: 0, credit: overheadCost, description: 'Absorbed overhead' }
+          { accountId: map.WIP, debit: round4(labourAbsorb + overheadCost), credit: 0, costCenterId: wo.costCenterId, description: 'Absorption' },
+          { accountId: map.ABSORBED_LABOUR, debit: 0, credit: labourAbsorb, costCenterId: wo.costCenterId, description: 'Absorbed labour' },
+          { accountId: map.ABSORBED_OVERHEAD, debit: 0, credit: overheadCost, costCenterId: wo.costCenterId, description: 'Absorbed overhead' }
         ]
       });
     }
@@ -1291,8 +1325,8 @@ async function closeWorkOrder(tenantId, id) {
           : money(amount * row.weight / weightTotal);
         used = money(used + share);
         return balance > 0
-          ? { accountId: map[row.key], debit: share, credit: 0, description: row.key }
-          : { accountId: map[row.key], debit: 0, credit: share, description: row.key };
+          ? { accountId: map[row.key], debit: share, credit: 0, costCenterId: wo.costCenterId, description: row.key }
+          : { accountId: map[row.key], debit: 0, credit: share, costCenterId: wo.costCenterId, description: row.key };
       }).filter((line) => line.debit > 0 || line.credit > 0);
       await postJournal(tx, {
         tenantId,
@@ -1303,8 +1337,8 @@ async function closeWorkOrder(tenantId, id) {
         lines: [
           ...varianceLines,
           balance > 0
-            ? { accountId: map.WIP, debit: 0, credit: money(balance), description: 'Close WIP' }
-            : { accountId: map.WIP, debit: money(amount), credit: 0, description: 'Close WIP' }
+            ? { accountId: map.WIP, debit: 0, credit: money(balance), costCenterId: wo.costCenterId, description: 'Close WIP' }
+            : { accountId: map.WIP, debit: money(amount), credit: 0, costCenterId: wo.costCenterId, description: 'Close WIP' }
         ]
       });
     }

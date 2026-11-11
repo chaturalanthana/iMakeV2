@@ -1,5 +1,9 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { sendError } = require('../services/errors');
+const { writeAudit } = require('../services/auditService');
+const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
+const { classifyPurchase } = require('../services/phase2/procurement');
 
 // Fetch all purchase requisitions
 const getPurchaseRequisitions = async (req, res) => {
@@ -69,38 +73,93 @@ const createPurchaseRequisition = async (req, res) => {
       'PR',
       'prNumber'
     );
+    const rule = await loadRule(prisma, req.tenantId, 'PR');
+    const needed = levelsForAmount(rule, totalAmount);
+    const hold = Boolean(rule?.enabled && needed.length);
 
-    const requisition = await prisma.purchaseRequisition.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId: supplierId || null,
-        prNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        total: totalAmount,
-        currencyId: currencyId || null,
-        exchangeRate: parseFloat(exchangeRate) || 1.0,
-        createdBy: req.user.userId,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice),
-            total: parseFloat(item.total)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        currency: true,
-        items: { include: { product: true } }
+    const capexRule = String(req.body.spendClass || '').toUpperCase() === 'CAPEX'
+      ? await loadRule(prisma, req.tenantId, 'CAPEX_PR')
+      : null;
+    const capexNeeded = levelsForAmount(capexRule, totalAmount);
+    const holdCapex = Boolean(capexRule?.enabled && capexNeeded.length);
+
+    const requisition = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseRequisition.create({
+        data: {
+          tenantId: req.tenantId,
+          supplierId: supplierId || null,
+          prNumber,
+          date: new Date(date),
+          status: (hold || holdCapex) ? 'PENDING_APPROVAL' : (status || 'PENDING'),
+          total: totalAmount,
+          currencyId: currencyId || null,
+          exchangeRate: parseFloat(exchangeRate) || 1.0,
+          createdBy: req.user.userId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice),
+              total: parseFloat(item.total)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          currency: true,
+          items: { include: { product: true } }
+        }
+      });
+      if (req.body.spendClass) {
+        await classifyPurchase(tx, {
+          tenantId: req.tenantId,
+          documentType: 'PR',
+          documentId: created.id,
+          spendClass: req.body.spendClass,
+          glAccountId: req.body.glAccountId,
+          costCenterId: req.body.costCenterId,
+          profitCenterId: req.body.profitCenterId,
+          capitalProjectId: req.body.capitalProjectId,
+          amountBase: totalAmount * (parseFloat(exchangeRate) || 1),
+          date,
+          executiveOverride: req.body.executiveOverride,
+          overrideReason: req.body.overrideReason
+        });
       }
+      if (holdCapex) {
+        await submitForApproval(tx, {
+          tenantId: req.tenantId,
+          documentType: 'CAPEX_PR',
+          documentId: created.id,
+          documentNumber: created.prNumber,
+          amount: totalAmount,
+          userId: req.user.userId
+        });
+      }
+      return created;
     });
 
+    if (rule?.enabled) {
+      await submitForApproval(prisma, {
+        tenantId: req.tenantId,
+        documentType: 'PR',
+        documentId: requisition.id,
+        documentNumber: requisition.prNumber,
+        amount: totalAmount,
+        userId: req.user.userId
+      });
+    }
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      action: 'CREATE',
+      entity: 'PR',
+      entityId: requisition.id,
+      after: requisition
+    });
     res.status(201).json(requisition);
   } catch (error) {
-    console.error('Failed to create PR:', error);
-    res.status(500).json({ error: 'Failed to create purchase requisition' });
+    return sendError(res, error, 'Failed to create purchase requisition');
   }
 };
 
@@ -159,25 +218,60 @@ const updatePurchaseRequisition = async (req, res) => {
   }
 };
 
-// Delete a purchase requisition
 const deletePurchaseRequisition = async (req, res) => {
   try {
     const { id } = req.params;
     const existing = await prisma.purchaseRequisition.findFirst({
       where: { id, tenantId: req.tenantId }
     });
-    if (!existing) {
-      return res.status(404).json({ error: 'Purchase requisition not found' });
+    if (!existing) return res.status(404).json({ error: 'Purchase requisition not found' });
+    if (String(existing.status).toUpperCase() !== 'DRAFT') {
+      return res.status(400).json({ error: 'Purchase requisitions cannot be deleted. Cancel the requisition and give a reason.' });
     }
-
-    await prisma.purchaseRequisition.delete({
-      where: { id }
+    await prisma.purchaseRequisition.delete({ where: { id } });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user?.userId,
+      action: 'DELETE',
+      entity: 'PR',
+      entityId: id,
+      before: existing,
+      after: null
     });
-
     res.json({ success: true });
   } catch (error) {
-    console.error('Failed to delete PR:', error);
     res.status(500).json({ error: 'Failed to delete purchase requisition' });
+  }
+};
+
+const cancelPurchaseRequisition = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
+    const existing = await prisma.purchaseRequisition.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Purchase requisition not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Purchase requisition is already cancelled.' });
+    if (['ORDERED', 'PARTIALLY_ORDERED'].includes(existing.status)) {
+      return res.status(400).json({ error: 'Cancel the purchase orders before cancelling this requisition.' });
+    }
+    const { cancelOpenRequests } = require('../services/approvalService');
+    const updated = await prisma.$transaction(async (tx) => {
+      await cancelOpenRequests(tx, { tenantId: req.tenantId, documentId: id });
+      return tx.purchaseRequisition.update({ where: { id }, data: { status: 'CANCELLED' } });
+    });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user?.userId,
+      action: 'STATUS',
+      entity: 'PR',
+      entityId: id,
+      before: existing,
+      after: { ...updated, reason }
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel purchase requisition');
   }
 };
 
@@ -186,5 +280,6 @@ module.exports = {
   getPurchaseRequisitionById,
   createPurchaseRequisition,
   updatePurchaseRequisition,
-  deletePurchaseRequisition
+  deletePurchaseRequisition,
+  cancelPurchaseRequisition
 };

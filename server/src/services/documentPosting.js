@@ -1,8 +1,10 @@
 const { receive, issue, transfer, reverseReceipt, reverseIssue } = require('./stockService');
+const { recordBatch } = require('./inventory/batches');
 const { ensureGlMap, postJournal, reverseJournal } = require('./glService');
 const { slabsFor, applySlabs, sumBucket } = require('./taxService');
 const { DocumentError } = require('./errors');
 const { num, money, dec, rateOf, addDays } = require('./money');
+const { capitalDebitKey, recordCwipReceipt } = require('./phase2/capitalTreatment');
 
 function requireWarehouse(warehouseId) {
   if (!warehouseId) {
@@ -72,7 +74,10 @@ async function postIssueDocument(tx, { tenantId, warehouseId, items, referenceTy
       referenceId,
       movementType: 'GI',
       quantitySign,
-      createdBy
+      createdBy,
+      batchId: item.batchId || null,
+      eligibleOnly: !!item.eligibleOnly,
+      lotNumber: item.lotNumber || null
     });
     value = money(value + result.value);
     results.push({ ...result, productId: item.productId, itemId: item.id });
@@ -208,6 +213,7 @@ async function grnUnitPrice(tx, { poId, productId, item }) {
 
 async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, createdBy }) {
   const rate = rateOf(grn.exchangeRate);
+  const debitKey = await capitalDebitKey(tx, tenantId, grn.poId);
   if (grn.poId) {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: grn.poId, tenantId },
@@ -247,19 +253,52 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
       where: { id: item.id },
       data: { unitPrice: dec(unitPrice) }
     });
-    const result = await receive(tx, {
+    if (debitKey === 'CWIP') {
+      inventoryValue = money(inventoryValue + money(qty * baseUnitCost));
+      continue;
+    }
+    const damaged = money(item.damagedQty || 0);
+    const rejected = money(item.rejectedQty || 0);
+    if (damaged + rejected - qty > 0.0001) {
+      throw new DocumentError('Damaged and rejected quantities cannot exceed the receipt.', {
+        damagedQty: 'Damaged and rejected quantities cannot exceed the receipt.'
+      });
+    }
+    const batch = item.lotNumber ? await recordBatch(tx, {
       tenantId,
       productId: item.productId,
-      warehouseId: grn.warehouseId,
-      quantity: qty,
-      unitCost: baseUnitCost,
-      referenceType: 'GRN',
-      referenceId: grn.id,
-      movementType: 'GR',
-      createdBy,
-      receivedAt: grn.date
-    });
-    inventoryValue = money(inventoryValue + result.value);
+      lotNumber: item.lotNumber,
+      expiryDate: item.expiryDate,
+      supplierId: grn.supplierId,
+      receiptDate: grn.date
+    }) : null;
+    const usable = money(qty - damaged - rejected);
+    const slices = [];
+    if (damaged <= 0 && rejected <= 0) slices.push({ quantity: qty, stockStatus: item.stockStatus || 'UNRESTRICTED' });
+    else {
+      if (usable > 0) slices.push({ quantity: usable, stockStatus: 'UNRESTRICTED' });
+      if (damaged > 0) slices.push({ quantity: damaged, stockStatus: 'QUARANTINE' });
+      if (rejected > 0) slices.push({ quantity: rejected, stockStatus: 'BLOCKED' });
+    }
+    for (const slice of slices) {
+      const result = await receive(tx, {
+        tenantId,
+        productId: item.productId,
+        warehouseId: grn.warehouseId,
+        quantity: slice.quantity,
+        unitCost: baseUnitCost,
+        referenceType: 'GRN',
+        referenceId: grn.id,
+        movementType: 'GR',
+        createdBy,
+        receivedAt: grn.date,
+        lotNumber: item.lotNumber || null,
+        batchId: batch?.id || null,
+        stockStatus: slice.stockStatus,
+        expiryDate: item.expiryDate || null
+      });
+      inventoryValue = money(inventoryValue + result.value);
+    }
   }
 
   await inventoryJournal(tx, {
@@ -269,10 +308,13 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
     referenceType: 'GRN',
     referenceId: grn.id,
     description: `Goods receipt ${grn.grnNumber}`,
-    debitKey: 'INVENTORY',
+    debitKey,
     creditKey: 'GRNI',
     amount: inventoryValue
   });
+  if (debitKey === 'CWIP') {
+    await recordCwipReceipt(tx, { tenantId, grn, amount: inventoryValue, createdBy });
+  }
   await refreshPoReceiptStatus(tx, grn.poId);
   return inventoryValue;
 }
@@ -373,23 +415,42 @@ async function refreshQuotationStatus(tx, quotationId) {
   await tx.salesQuotation.update({ where: { id: quotationId }, data: { status } });
 }
 
-async function creditWarning(db, { tenantId, customerId, documentBase }) {
+async function assessCredit(db, { tenantId, customerId, documentBase }) {
   const customer = await db.customer.findFirst({ where: { id: customerId, tenantId } });
-  if (!customer) return null;
+  if (!customer) return { blocked: false, message: null, open: 0, limit: 0, overdue: false };
   const limit = num(customer.creditLimit);
-  if (limit <= 0) return null;
   const invoices = await db.salesInvoice.findMany({
     where: { tenantId, customerId, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
   });
   let open = 0;
+  let overdue = false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   for (const invoice of invoices) {
-    open = money(open + (num(invoice.total) - num(invoice.amountPaid)) * (num(invoice.exchangeRate) || 1));
+    const balance = (num(invoice.total) - num(invoice.amountPaid)) * (num(invoice.exchangeRate) || 1);
+    if (balance <= 0.0001) continue;
+    open = money(open + balance);
+    let due = invoice.dueDate ? new Date(invoice.dueDate) : null;
+    if (!due && num(customer.creditPeriod) > 0) due = addDays(invoice.date, customer.creditPeriod);
+    if (due) {
+      const dueDay = new Date(due);
+      dueDay.setHours(0, 0, 0, 0);
+      if (dueDay < today) overdue = true;
+    }
   }
   const next = money(documentBase);
-  if (open + next > limit + 0.0001) {
-    return `Credit limit of ${limit.toFixed(2)} LKR is exceeded. Open balance ${open.toFixed(2)}, this document ${next.toFixed(2)}.`;
-  }
-  return null;
+  const overLimit = limit > 0 && open + next > limit + 0.0001;
+  if (!overLimit && !overdue) return { blocked: false, message: null, open, limit, overdue };
+  if (limit <= 0 && !overdue) return { blocked: false, message: null, open, limit, overdue };
+  const message = overdue
+    ? `Customer has overdue invoices. Open balance ${open.toFixed(2)} LKR.`
+    : `Credit limit of ${limit.toFixed(2)} LKR is exceeded. Open balance ${open.toFixed(2)}, this document ${next.toFixed(2)}.`;
+  return { blocked: true, message, open, limit, overdue, overLimit };
+}
+
+async function creditWarning(db, args) {
+  const result = await assessCredit(db, args);
+  return result.message;
 }
 
 function ageBucket(date, today = new Date()) {
@@ -509,6 +570,22 @@ async function createSupplierInvoice(tx, input) {
   }
   const supplier = await tx.supplier.findFirst({ where: { id: supplierId, tenantId } });
   if (!supplier) throw new DocumentError('Supplier is required.', { supplierId: 'Supplier is required.' });
+  const vendorInvoiceNo = String(supplierReference || '').trim();
+  if (vendorInvoiceNo) {
+    const duplicate = await tx.supplierInvoice.findFirst({
+      where: {
+        tenantId,
+        supplierId,
+        supplierReference: vendorInvoiceNo,
+        status: { not: 'CANCELLED' }
+      }
+    });
+    if (duplicate) {
+      throw new DocumentError('This supplier invoice number is already used for this supplier.', {
+        supplierReference: 'This supplier invoice number is already used for this supplier.'
+      });
+    }
+  }
 
   let po = null;
   if (poId) {
@@ -597,7 +674,7 @@ async function createSupplierInvoice(tx, input) {
       poId: po?.id || poId || null,
       grnId: grnId || null,
       invoiceNumber,
-      supplierReference: supplierReference || null,
+      supplierReference: vendorInvoiceNo || null,
       date: new Date(date),
       dueDate,
       status: 'UNPAID',
@@ -994,6 +1071,7 @@ module.exports = {
   refreshPrStatus,
   assertQuotationQuantity,
   refreshQuotationStatus,
+  assessCredit,
   creditWarning,
   finalizeSalesInvoice,
   createSupplierInvoice,
