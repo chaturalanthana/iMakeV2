@@ -1,6 +1,7 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { sendError } = require('../services/errors');
+const { purchaseLineQuantities } = require('../services/inventory/itemMaster');
 const { money } = require('../services/money');
 const {
   postGrn,
@@ -60,12 +61,7 @@ const createPurchaseOrder = async (req, res) => {
           createdBy: req.user.userId,
           prId: prId || null,
           items: items && items.length > 0 ? {
-            create: items.map(item => ({
-              productId: item.productId,
-              quantity: parseFloat(item.quantity),
-              unitPrice: parseFloat(item.unitPrice),
-              total: parseFloat(item.total)
-            }))
+            create: await mapPurchaseLines(tx, req.tenantId, items)
           } : undefined
         },
         include: {
@@ -125,12 +121,7 @@ const updatePurchaseOrder = async (req, res) => {
         currencyId: currencyId !== undefined ? currencyId : existing.currencyId,
         exchangeRate: exchangeRate !== undefined ? parseFloat(exchangeRate) : existing.exchangeRate,
         items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice),
-            total: parseFloat(item.total)
-          }))
+          create: await mapPurchaseLines(prisma, req.tenantId, items)
         } : undefined
       },
       include: {
@@ -199,7 +190,13 @@ const createGrn = async (req, res) => {
               productId: item.productId,
               quantityReceived: parseFloat(item.quantityReceived),
               quantityOrdered: parseFloat(item.quantityOrdered || item.quantityReceived),
-              unitPrice: parseFloat(item.unitPrice || 0)
+              unitPrice: parseFloat(item.unitPrice || 0),
+              lotNumber: item.lotNumber || null,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+              palletCode: item.palletCode || null,
+              damagedQty: Number(item.damagedQty || 0),
+              rejectedQty: Number(item.rejectedQty || 0),
+              stockStatus: item.stockStatus || 'UNRESTRICTED'
             }))
           }
         },
@@ -352,6 +349,23 @@ const getSupplierStatement = async (req, res) => {
     res.status(500).json({ error: 'Failed to build supplier statement' });
   }
 };
+
+async function mapPurchaseLines(db, tenantId, items) {
+  const mapped = [];
+  for (const item of items) {
+    const uom = await purchaseLineQuantities(db, tenantId, item);
+    mapped.push({
+      productId: item.productId,
+      quantity: parseFloat(item.quantity),
+      unitPrice: parseFloat(item.unitPrice),
+      total: parseFloat(item.total),
+      uomId: uom.uomId,
+      conversionFactor: uom.conversionFactor,
+      baseQuantity: uom.baseQuantity
+    });
+  }
+  return mapped;
+}
 
 module.exports = {
   getPurchaseOrders,

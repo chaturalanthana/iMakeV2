@@ -36,7 +36,7 @@ const line = z.object({
 
 const productFields = {
   type: z.enum(['PRODUCT', 'SERVICE'], { error: 'Invalid product type. Must be PRODUCT or SERVICE' }).optional(),
-  costingMethod: z.enum(['FIFO'], { error: 'Stock is costed with FIFO. Other costing methods are not used.' }).optional(),
+  costingMethod: z.string().optional(),
   activeStatus: z.enum(['ACTIVE', 'INACTIVE'], { error: 'Invalid active status. Must be ACTIVE or INACTIVE' }).optional(),
   costPrice: optionalNumber('Cost price'),
   sellingPrice: optionalNumber('Selling price'),
@@ -469,6 +469,73 @@ module.exports = {
     epfEmployeePercent: optionalNumber('EPF employee rate'),
     epfEmployerPercent: optionalNumber('EPF employer rate'),
     etfEmployerPercent: optionalNumber('ETF rate')
+  }).passthrough(),
+  inventoryBranch: z.object({
+    code: requiredText('Code is required.'),
+    name: requiredText('Name is required.')
+  }).passthrough(),
+  inventoryBin: z.object({
+    warehouseId: requiredText('Warehouse is required.'),
+    code: requiredText('Code is required.'),
+    name: requiredText('Name is required.')
+  }).passthrough(),
+  inventoryBinUpdate: z.object({
+    code: requiredText('Code is required.'),
+    name: requiredText('Name is required.')
+  }).passthrough(),
+  inventoryBatch: z.object({
+    productId: requiredText('Product is required.'),
+    lotNumber: requiredText('Lot number is required.')
+  }).passthrough(),
+  inventoryRetest: z.object({
+    proposedExpiry: requiredText('Proposed expiry is required.')
+  }).passthrough(),
+  inventoryDecision: z.object({
+    decision: z.enum(['APPROVED', 'REJECTED'], { error: 'Decision must be approved or rejected.' })
+  }).passthrough(),
+  inventoryBatchStatus: z.object({
+    status: z.enum(['UNRESTRICTED', 'QUARANTINE', 'BLOCKED'], { error: 'Unknown stock status.' })
+  }).passthrough(),
+  inventoryPallet: z.object({
+    warehouseId: requiredText('Warehouse is required.'),
+    code: requiredText('Code is required.')
+  }).passthrough(),
+  inventoryRenumber: z.object({
+    code: requiredText('Code is required.')
+  }).passthrough(),
+  inventoryApplyTemplate: z.object({
+    productId: requiredText('Product is required.')
+  }).passthrough(),
+  inventoryReceipt: z.object({
+    warehouseId: requiredText('Warehouse is required.'),
+    items: z.array(line).min(1, 'Add at least one product.')
+  }).passthrough(),
+  materialRequest: z.object({
+    date: requiredText('Date is required.'),
+    requestingParty: requiredText('Requesting party is required.'),
+    sourceWarehouseId: requiredText('Source warehouse is required.'),
+    kind: z.enum(['ISSUE', 'TRANSFER'], { error: 'Choose issue or transfer.' }),
+    items: z.array(line).min(1, 'Add at least one product.')
+  }).passthrough(),
+  inventoryFulfil: z.object({
+    lines: z.array(line).min(1, 'Add at least one product.').optional(),
+    items: z.array(line).min(1, 'Add at least one product.').optional()
+  }).passthrough(),
+  inventoryTransfer: z.object({
+    date: requiredText('Date is required.'),
+    fromWarehouseId: requiredText('Source warehouse is required.'),
+    toWarehouseId: requiredText('Destination warehouse is required.'),
+    items: z.array(line).min(1, 'Add at least one product.')
+  }).passthrough(),
+  inventoryReturn: z.object({
+    date: requiredText('Date is required.'),
+    kind: z.enum(['MARKET', 'DAMAGE', 'GRA', 'SUPPLIER'], { error: 'Unknown return type.' }),
+    warehouseId: requiredText('Warehouse is required.'),
+    items: z.array(line).min(1, 'Add at least one product.')
+  }).passthrough(),
+  inventoryCount: z.object({
+    date: requiredText('Date is required.'),
+    warehouseId: requiredText('Warehouse is required.')
   }).passthrough(),
   labelRender: z.object({
     type: z.enum(['item', 'lot', 'work-order']).optional(),

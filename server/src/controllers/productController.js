@@ -1,9 +1,22 @@
 const prisma = require('../lib/prisma');
+const { DocumentError, sendError } = require('../services/errors');
+const { prepareItem, SENSITIVE_BULK, OPERATIONAL_BULK } = require('../services/inventory/itemMaster');
 
 const getProducts = async (req, res) => {
   try {
+    const q = String(req.query.q || '').trim();
+    const where = { tenantId: req.tenantId };
+    if (q) {
+      where.OR = [
+        { code: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, mode: 'insensitive' } },
+        { barcode: { contains: q, mode: 'insensitive' } },
+        { sku: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } }
+      ];
+    }
     const products = await prisma.product.findMany({
-      where: { tenantId: req.tenantId },
+      where,
       include: {
         category: true,
         brand: true,
@@ -260,6 +273,8 @@ const createProduct = async (req, res) => {
       if (!pg) return res.status(400).json({ error: 'Invalid Product Group ID' });
     }
 
+    const master = await prepareItem(prisma, req.tenantId, req.body, null);
+
     let resolvedCategoryId = categoryId || null;
 
     if (!resolvedCategoryId && categoryName) {
@@ -318,7 +333,8 @@ const createProduct = async (req, res) => {
         cogsAccountId: cogsAccountId || null,
         productGroupId: productGroupId || null,
         productGroup: productGroup || null,
-        
+        ...master.fields,
+        reorderLevel: req.body.reorderLevel !== undefined ? (parseInt(reorderLevel) || 0) : (master.fields.reorderLevel || 0),
         createdBy: req.user.userId
       },
       include: { 
@@ -338,6 +354,7 @@ const createProduct = async (req, res) => {
 
     res.status(201).json(newProduct);
   } catch (error) {
+    if (error instanceof DocumentError) return sendError(res, error, 'Failed to create product');
     console.error('Create product error:', error);
     res.status(500).json({ error: 'Failed to create product' });
   }
@@ -388,6 +405,15 @@ const updateProduct = async (req, res) => {
 
     if (type !== undefined && !['PRODUCT', 'SERVICE'].includes(type)) {
       return res.status(400).json({ error: 'Invalid product type. Must be PRODUCT or SERVICE' });
+    }
+    if (costingMethod !== undefined && costingMethod !== product.costingMethod) {
+      const [layers, movements] = await Promise.all([
+        prisma.costLayer.count({ where: { tenantId: req.tenantId, productId: product.id } }),
+        prisma.stockMovement.count({ where: { tenantId: req.tenantId, productId: product.id } })
+      ]);
+      if (layers || movements || product.valuationLocked) {
+        return res.status(400).json({ error: 'Valuation method is locked after stock history.', fields: { costingMethod: 'Valuation method is locked after stock history.' } });
+      }
     }
     if (costingMethod !== undefined && !['FIFO'].includes(costingMethod)) {
       return res.status(400).json({ error: 'Invalid costing method' });
@@ -490,6 +516,8 @@ const updateProduct = async (req, res) => {
       if (!pg) return res.status(400).json({ error: 'Invalid Product Group ID' });
     }
 
+    const master = await prepareItem(prisma, req.tenantId, req.body, product);
+
     let resolvedCategoryId = categoryId || null;
 
     if (!resolvedCategoryId && categoryName) {
@@ -547,7 +575,8 @@ const updateProduct = async (req, res) => {
         inventoryAccountId: inventoryAccountId !== undefined ? (inventoryAccountId || null) : undefined,
         cogsAccountId: cogsAccountId !== undefined ? (cogsAccountId || null) : undefined,
         productGroupId: productGroupId !== undefined ? (productGroupId || null) : undefined,
-        productGroup: productGroup !== undefined ? productGroup : undefined
+        productGroup: productGroup !== undefined ? productGroup : undefined,
+        ...master.fields
       },
       include: { 
         category: true, 
@@ -566,6 +595,7 @@ const updateProduct = async (req, res) => {
 
     res.json(updatedProduct);
   } catch (error) {
+    if (error instanceof DocumentError) return sendError(res, error, 'Failed to update product');
     console.error('Update product error:', error);
     res.status(500).json({ error: 'Failed to update product' });
   }
@@ -683,7 +713,9 @@ const BATCH_FIELDS = new Set([
   'stockUomId', 'purchaseUomId', 'salesUomId',
   'costingMethod', 'standardCost', 'scrapPercent', 'safetyStock', 'reorderLevel',
   'taxGroup', 'currencyId', 'inventoryAccountId', 'cogsAccountId',
-  'activeStatus', 'bomApplicable', 'isLocked'
+  'activeStatus', 'bomApplicable', 'isLocked',
+  'hsCode', 'leadTimeDays', 'dailyDemand',
+  ...OPERATIONAL_BULK
 ]);
 
 const batchUpdateProducts = async (req, res) => {
@@ -701,6 +733,13 @@ const batchUpdateProducts = async (req, res) => {
     const keys = Object.keys(changes).filter((key) => BATCH_FIELDS.has(key) && changes[key] !== undefined);
     if (uniqueIds.length === 0 || keys.length === 0) {
       return res.status(400).json({ error: 'Select a parameter to update' });
+    }
+    const sensitive = keys.filter((key) => SENSITIVE_BULK.has(key));
+    if (sensitive.length && req.body.authorizedUpdate !== true) {
+      return res.status(400).json({
+        error: 'Tax group, HS code, reorder settings and costing need an authorized update.',
+        fields: { authorizedUpdate: 'Confirm this authorized master update.' }
+      });
     }
 
     const owned = await prisma.product.findMany({
@@ -725,7 +764,22 @@ const batchUpdateProducts = async (req, res) => {
     for (const key of keys) {
       const value = changes[key];
 
-      if (key === 'productTypeId') {
+      if (['description', 'barcode', 'sku', 'variant', 'sizeLabel', 'hsCode'].includes(key)) {
+        data[key] = String(value || '').trim() || null;
+      } else if (key === 'weight' || key === 'volume' || key === 'dailyDemand') {
+        const num = parseFloat(value);
+        if (!Number.isFinite(num) || num < 0) return res.status(400).json({ error: 'Enter a zero or positive number.' });
+        data[key] = num;
+      } else if (key === 'leadTimeDays') {
+        const num = parseInt(value, 10);
+        if (!Number.isFinite(num) || num < 0) return res.status(400).json({ error: 'Lead time cannot be negative' });
+        data[key] = num;
+      } else if (key === 'batchTracked' || key === 'expiryTracked') {
+        data[key] = value === true || value === 'true';
+      } else if (key === 'pickRule') {
+        if (!['FIFO', 'FEFO'].includes(value)) return res.status(400).json({ error: 'Pick rule must be FIFO or FEFO.' });
+        data.pickRule = value;
+      } else if (key === 'productTypeId') {
         const row = await requireId('productType', value, 'Item Type');
         if (typeof row === 'string') return res.status(400).json({ error: row });
         data.productTypeId = value;

@@ -36,6 +36,7 @@ const replenishmentRoutes = require('./replenishmentRoutes');
 const alertRoutes = require('./alertRoutes');
 const importRoutes = require('./importRoutes');
 const labelRoutes = require('./labelRoutes');
+const inventoryRoutes = require('./inventoryRoutes');
 const { secureModule, secureAny } = require('../middlewares/rbacMiddleware');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
 
@@ -63,6 +64,7 @@ router.use('/procurement', ...secureModule('procurement'), procurementRoutes);
 
 router.use('/warehouse', ...secureModule('warehouse'), warehouseRoutes);
 router.use('/warehouses', ...secureModule('warehouse'), warehouseMasterRoutes);
+router.use('/inventory', ...secureModule('warehouse'), inventoryRoutes);
 
 router.use('/finance', ...secureModule('finance'), financeRoutes);
 router.use('/hr', ...secureModule('hr'), hrRoutes);
