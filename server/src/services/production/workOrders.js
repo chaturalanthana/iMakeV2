@@ -6,6 +6,11 @@ const { ensureGlMap, postJournal } = require('../glService');
 const { money } = require('../money');
 const { round4, num, materialUnitCost, rollupCost, prorateSheet, splitIssueCost, varianceReport } = require('./costing');
 const { buildLoadProfile } = require('./capacity');
+const {
+  mirrorProductionReservation,
+  consumeProductionReservation,
+  releaseProductionOrder
+} = require('../inventory/allocations');
 
 const runTx = (fn) => prisma.$transaction(fn, { timeout: 20000 });
 
@@ -418,7 +423,7 @@ async function ensureReservations(db, wo, { mode }) {
     }
     const reserve = round4(Math.max(0, Math.min(need, Math.max(0, available))));
     if (reserve > 0) {
-      await db.materialReservation.create({
+      const reservation = await db.materialReservation.create({
         data: {
           tenantId: wo.tenantId,
           workOrderId: wo.id,
@@ -428,6 +433,14 @@ async function ensureReservations(db, wo, { mode }) {
           quantity: reserve,
           status: 'OPEN'
         }
+      });
+      await mirrorProductionReservation(db, {
+        tenantId: wo.tenantId,
+        productId: component.productId,
+        warehouseId: wo.warehouseId,
+        workOrderId: wo.id,
+        reservationId: reservation.id,
+        quantity: reserve
       });
       await db.workOrderComponent.update({
         where: { id: component.id },
@@ -452,13 +465,15 @@ async function consumeReservation(db, component, quantity) {
     const take = round4(Math.min(open, left));
     if (!(take > 0)) continue;
     const consumed = round4(num(row.consumedQty) + take);
+    const closed = consumed + 0.00005 >= num(row.quantity);
     await db.materialReservation.update({
       where: { id: row.id },
       data: {
         consumedQty: consumed,
-        status: consumed + 0.00005 >= num(row.quantity) ? 'CLOSED' : 'OPEN'
+        status: closed ? 'CLOSED' : 'OPEN'
       }
     });
+    await consumeProductionReservation(db, row.id, take, closed);
     consumedNow = round4(consumedNow + take);
     left = round4(left - take);
   }
@@ -639,6 +654,7 @@ async function closeReservations(db, workOrderId) {
     where: { workOrderId, status: 'OPEN' },
     data: { status: 'CLOSED' }
   });
+  await releaseProductionOrder(db, workOrderId);
 }
 
 const plannedTotal = (wo) => round4(

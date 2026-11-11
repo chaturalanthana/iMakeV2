@@ -1,9 +1,27 @@
 const prisma = require('../lib/prisma');
+const { assertWarehouseType } = require('../services/inventory/locations');
+const { sendError } = require('../services/errors');
+
+function warehouseData(body, userId) {
+  assertWarehouseType(body.warehouseType);
+  const data = {
+    code: body.code,
+    name: body.name,
+    address: body.address
+  };
+  if (body.branchId !== undefined) data.branchId = body.branchId || null;
+  if (body.warehouseType) data.warehouseType = body.warehouseType;
+  if (body.isVirtual !== undefined) data.isVirtual = body.isVirtual === true || body.isVirtual === 'true';
+  if (body.tracksPallets !== undefined) data.tracksPallets = body.tracksPallets === true || body.tracksPallets === 'true';
+  if (userId) data.createdBy = userId;
+  return data;
+}
 
 const getWarehouses = async (req, res) => {
   try {
     const warehouses = await prisma.warehouse.findMany({
       where: { tenantId: req.tenantId },
+      include: { branch: true, bins: true },
       orderBy: { name: 'asc' }
     });
     res.json(warehouses);
@@ -15,7 +33,7 @@ const getWarehouses = async (req, res) => {
 
 const createWarehouse = async (req, res) => {
   try {
-    const { code, name, address } = req.body;
+    const { code, name } = req.body;
     
     if (!code || !name) {
       return res.status(400).json({ error: 'Code and Name are required' });
@@ -24,31 +42,22 @@ const createWarehouse = async (req, res) => {
     const warehouse = await prisma.warehouse.create({
       data: {
         tenantId: req.tenantId,
-        code,
-        name,
-        address,
-        createdBy: req.user?.userId || null
+        ...warehouseData(req.body, req.user?.userId || null)
       }
     });
     res.status(201).json(warehouse);
   } catch (error) {
-    console.error('Error creating warehouse:', error);
-    res.status(500).json({ error: 'Failed to create warehouse' });
+    return sendError(res, error, 'Failed to create warehouse');
   }
 };
 
 const updateWarehouse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { code, name, address } = req.body;
 
     const warehouse = await prisma.warehouse.update({
       where: { id, tenantId: req.tenantId },
-      data: {
-        code,
-        name,
-        address
-      }
+      data: warehouseData(req.body)
     });
     res.json(warehouse);
   } catch (error) {

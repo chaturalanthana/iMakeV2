@@ -1,4 +1,5 @@
 const prisma = require('../lib/prisma');
+const { syncHard, syncSoft, releaseSource, consumeSource } = require('../services/inventory/allocations');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { sendError } = require('../services/errors');
 const { dec, money, rateOf } = require('../services/money');
@@ -83,6 +84,18 @@ const createQuotation = async (req, res) => {
       }
     });
 
+    if (['SENT', 'APPROVED'].includes(quotation.status)) {
+      await syncSoft(prisma, {
+        tenantId: req.tenantId,
+        sourceType: 'QUOTATION',
+        sourceId: quotation.id,
+        lines: (quotation.items || []).map((item) => ({
+          lineId: item.id,
+          productId: item.productId,
+          quantity: item.quantity
+        }))
+      });
+    }
     res.status(201).json(quotation);
   } catch (error) {
     console.error('Create quotation error:', error);
@@ -229,7 +242,25 @@ const createOrder = async (req, res) => {
       }
     });
 
-    if (quotationId) await refreshQuotationStatus(prisma, quotationId);
+    if (quotationId) {
+      await refreshQuotationStatus(prisma, quotationId);
+      await releaseSource(prisma, req.tenantId, 'QUOTATION', quotationId);
+    }
+    const savedOrder = await prisma.salesOrder.findFirst({
+      where: { id: order.id, tenantId: req.tenantId },
+      include: { items: true }
+    });
+    const allocation = await syncHard(prisma, {
+      tenantId: req.tenantId,
+      sourceType: 'SALES_ORDER',
+      sourceId: order.id,
+      lines: (savedOrder?.items || []).map((item) => ({
+        lineId: item.id,
+        productId: item.productId,
+        quantity: item.quantity
+      }))
+    });
+    order.allocationShortages = allocation.shortages;
     const warning = await creditWarning(prisma, {
       tenantId: req.tenantId,
       customerId,
@@ -500,7 +531,15 @@ const createDelivery = async (req, res) => {
             data: { unitCost: dec(result.unitCost), costValue: dec(result.value) }
           });
         }
-        if (orderId) await updateOrderStatusOnDelivery(orderId, tx);
+        if (orderId) {
+          await updateOrderStatusOnDelivery(orderId, tx);
+          await consumeSource(tx, {
+            tenantId: req.tenantId,
+            sourceType: 'SALES_ORDER',
+            sourceId: orderId,
+            lines: savedItems
+          });
+        }
       }
       return created;
     });

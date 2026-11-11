@@ -6,7 +6,8 @@ const DEFAULT_PRODUCT_TYPES = [
   { name: 'Raw Material', kind: 'RAW_MATERIAL', description: 'Raw materials used in production' },
   { name: 'Packaging Material', kind: 'PACKAGING', description: 'Packaging used to ship finished goods' },
   { name: 'Consumable', kind: 'CONSUMABLE', description: 'Consumables used in production' },
-  { name: 'Service', kind: 'SERVICE', description: 'Non-inventory service items' }
+  { name: 'Service', kind: 'SERVICE', description: 'Non-inventory service items' },
+  { name: 'Non-stock', kind: 'NON_STOCK', description: 'Indirect and non-stock items' }
 ];
 
 const ensureProductTypes = async (db, tenantId) => {

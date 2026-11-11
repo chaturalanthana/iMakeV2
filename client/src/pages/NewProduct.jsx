@@ -76,6 +76,17 @@ export default function NewProduct() {
     scrapPercent: '0.0',
     reorderLevel: '0',
     safetyStock: '0',
+    sku: '',
+    barcode: '',
+    variant: '',
+    sizeLabel: '',
+    weight: '',
+    volume: '',
+    leadTimeDays: '0',
+    dailyDemand: '0',
+    pickRule: 'FIFO',
+    batchTracked: false,
+    expiryTracked: false,
 
     // Finance Section
     taxGroup: 'Tax Exempt',
@@ -157,6 +168,17 @@ export default function NewProduct() {
             standardCost: product.standardCost !== undefined ? product.standardCost.toString() : '0.0',
             scrapPercent: product.scrapPercent !== undefined ? product.scrapPercent.toString() : '0.0',
             safetyStock: product.safetyStock !== undefined ? product.safetyStock.toString() : '0',
+            sku: product.sku || '',
+            barcode: product.barcode || '',
+            variant: product.variant || '',
+            sizeLabel: product.sizeLabel || '',
+            weight: product.weight != null ? String(product.weight) : '',
+            volume: product.volume != null ? String(product.volume) : '',
+            leadTimeDays: product.leadTimeDays != null ? String(product.leadTimeDays) : '0',
+            dailyDemand: product.dailyDemand != null ? String(product.dailyDemand) : '0',
+            pickRule: product.pickRule || 'FIFO',
+            batchTracked: !!product.batchTracked,
+            expiryTracked: !!product.expiryTracked,
             taxGroup: product.taxGroup || 'Tax Exempt',
             inventoryAccountId: product.inventoryAccountId || '',
             cogsAccountId: product.cogsAccountId || '',
@@ -1012,6 +1034,59 @@ export default function NewProduct() {
                       style={inputStyle}
                     />
                   </div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>SKU</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input name="sku" value={formData.sku || ''} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Barcode</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input name="barcode" value={formData.barcode || ''} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Variant</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input name="variant" value={formData.variant || ''} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Size / weight</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input name="sizeLabel" value={formData.sizeLabel || ''} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Weight</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input type="number" name="weight" value={formData.weight || ''} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Volume</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input type="number" name="volume" value={formData.volume || ''} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Lead time (days)</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input type="number" name="leadTimeDays" value={formData.leadTimeDays || '0'} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Daily demand</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}><input type="number" name="dailyDemand" value={formData.dailyDemand || '0'} onChange={handleInputChange} style={inputStyle} /></div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Pick rule</label>
+                  <div style={{ flexGrow: 1, minWidth: 0 }}>
+                    <select name="pickRule" value={formData.pickRule || 'FIFO'} onChange={handleInputChange} style={inputStyle}>
+                      <option value="FIFO">FIFO</option>
+                      <option value="FEFO">FEFO</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Batch tracked</label>
+                  <button type="button" onClick={() => handleToggleChange('batchTracked')} style={{ width: '46px', height: '24px', borderRadius: '12px', backgroundColor: formData.batchTracked ? 'var(--accent)' : '#cbd5e1', border: 'none', cursor: 'pointer', position: 'relative' }}>
+                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#fff', position: 'absolute', top: '3px', left: formData.batchTracked ? '25px' : '3px' }} />
+                  </button>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Expiry tracked</label>
+                  <button type="button" onClick={() => handleToggleChange('expiryTracked')} style={{ width: '46px', height: '24px', borderRadius: '12px', backgroundColor: formData.expiryTracked ? 'var(--accent)' : '#cbd5e1', border: 'none', cursor: 'pointer', position: 'relative' }}>
+                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#fff', position: 'absolute', top: '3px', left: formData.expiryTracked ? '25px' : '3px' }} />
+                  </button>
                 </div>
                 <div style={formRowStyle}>
                   <label style={labelStyle}>BOM Applicable</label>
