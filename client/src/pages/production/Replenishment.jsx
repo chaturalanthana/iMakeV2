@@ -35,7 +35,7 @@ export default function Replenishment() {
     setPolicies(policyRes.data);
     setRun(currentRes.data.run);
     setDaily(Boolean(currentRes.data.settings?.replenishDaily));
-    setProducts(productRes.data);
+    setProducts(productRes.data.filter((product) => product.type !== 'SERVICE' && product.activeStatus !== 'INACTIVE' && !product.bomApplicable));
     setWarehouses(warehouseRes.data);
   };
 
@@ -119,6 +119,7 @@ export default function Replenishment() {
           <input type="checkbox" checked={daily} onChange={(event) => toggleDaily(event.target.checked)} />
           Run daily
         </label>
+        <div style={{ flexBasis: '100%', color: '#64748b', fontSize: '0.8rem' }}>Bought items only. Made items are planned in MRP Shortage Planner.</div>
       </form>
 
       <DataTable
@@ -150,16 +151,15 @@ export default function Replenishment() {
         columns={[
           { header: 'Item', accessor: 'code' },
           { header: 'Name', accessor: 'name' },
-          { header: 'Action', accessor: 'kind' },
           { header: 'Qty', accessor: 'quantity', align: 'right' },
           { header: 'Why', accessor: 'reason' },
           { header: 'Min/max', accessor: 'minMaxQty', align: 'right' },
           { header: 'MRP', accessor: 'mrpQty', align: 'right' }
         ]}
         data={lines}
-        searchKeys={['code', 'name', 'kind', 'reason']}
+        searchKeys={['code', 'name', 'reason']}
         searchPlaceholder="Search suggestions"
-        noDataMessage="Run replenishment to draft purchase requisitions and work orders."
+        noDataMessage="Run replenishment to draft purchase requisitions."
       />
     </AppLayout>
   );

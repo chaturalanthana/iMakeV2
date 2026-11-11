@@ -123,7 +123,7 @@ describe('operations, imports, and Sri Lanka compliance', () => {
     await prisma.tenant.delete({ where: { id: tenant.id } });
   });
 
-  test('drafts merged purchase and make orders, then approves them in one step', async () => {
+  test('drafts purchase requisitions for bought items and skips made items', async () => {
     await prisma.productionOrder.create({
       data: { tenantId: tenant.id, orderNumber: 'MFG-1', productId: made.id, quantity: 12, status: 'RELEASED' }
     });
@@ -134,29 +134,44 @@ describe('operations, imports, and Sri Lanka compliance', () => {
     const madePolicy = await request(app).post('/api/replenishment/policies').set(auth()).send({
       productId: made.id, warehouseId: warehouse.id, reorderPoint: 1, minQty: 1, maxQty: 4
     });
-    expect(madePolicy.status).toBe(201);
+    expect(madePolicy.status).toBe(400);
+    await prisma.itemWarehousePolicy.create({
+      data: { tenantId: tenant.id, productId: made.id, warehouseId: warehouse.id, reorderPoint: 1, minQty: 1, maxQty: 4 }
+    });
+    const listed = await request(app).get('/api/replenishment/policies').set(auth());
+    expect(listed.body.map((row) => row.productId)).toEqual([bought.id]);
 
     const first = await request(app).post('/api/replenishment/run').set(auth()).send({});
     expect(first.status).toBe(201);
     const buy = first.body.lines.find((line) => line.productId === bought.id);
-    const make = first.body.lines.find((line) => line.productId === made.id);
-    expect(buy).toMatchObject({ kind: 'BUY', quantity: 12, reason: 'BOTH' });
-    expect(make).toMatchObject({ kind: 'MAKE', quantity: 4, reason: 'MINMAX' });
+    expect(buy).toMatchObject({ kind: 'BUY', quantity: 12, reason: 'BOTH', workOrderId: null });
+    expect(first.body.lines.some((line) => line.productId === made.id)).toBe(false);
+    expect(first.body.message).toMatch(/purchase line/);
+    expect(first.body.message).not.toMatch(/work order/i);
+    const pending = await request(app).get('/api/alerts').set(auth());
+    const approval = pending.body.alerts.find((alert) => alert.documentNumber === first.body.runNumber);
+    expect(approval.detail).toBe('1 draft purchase line.');
+    expect(approval.detail).not.toMatch(/work order/i);
+    const madeLow = pending.body.alerts.find((alert) => alert.type === 'LOW_STOCK' && alert.documentNumber === 'FG-1');
+    expect(madeLow.href).toBe('/production/mrp');
+    expect(madeLow.detail).toMatch(/planned in MRP/);
+    const boughtLow = pending.body.alerts.find((alert) => alert.type === 'LOW_STOCK' && alert.documentNumber === 'RM-1');
+    expect(boughtLow.href).toBe('/production/replenishment');
 
     const second = await request(app).post('/api/replenishment/run').set(auth()).send({});
     expect(second.status).toBe(201);
     expect(second.body.runNumber).toBe(first.body.runNumber);
     expect(await prisma.purchaseRequisition.count({ where: { tenantId: tenant.id, sourceType: 'REPLENISHMENT' } })).toBe(1);
-    expect(await prisma.workOrder.count({ where: { tenantId: tenant.id, sourceType: 'REPLENISHMENT' } })).toBe(1);
+    expect(await prisma.workOrder.count({ where: { tenantId: tenant.id, sourceType: 'REPLENISHMENT' } })).toBe(0);
 
     const approved = await request(app).post('/api/replenishment/approve').set(auth()).send({});
     expect(approved.status).toBe(200);
     expect(approved.body.purchaseRequisitions).toBe(1);
-    expect(approved.body.workOrders).toBe(1);
+    expect(approved.body.workOrders).toBeUndefined();
+    expect(approved.body.message).toBe('Approved 1 requisition');
     const requisition = await prisma.purchaseRequisition.findFirst({ where: { tenantId: tenant.id, sourceType: 'REPLENISHMENT' } });
-    const order = await prisma.workOrder.findFirst({ where: { tenantId: tenant.id, sourceType: 'REPLENISHMENT' } });
     expect(requisition.status).toBe('APPROVED');
-    expect(order.status).toBe('CREATED');
+    expect(await prisma.workOrder.count({ where: { tenantId: tenant.id, sourceType: 'REPLENISHMENT' } })).toBe(0);
 
     const schedule = await request(app).put('/api/replenishment/settings').set(auth()).send({ replenishDaily: true });
     expect(schedule.body.replenishDaily).toBe(true);

@@ -341,10 +341,10 @@ async function main() {
     });
   });
 
+  // Replenishment buys stocked materials. Chairs and tables are made from sales orders and MRP.
   for (const policy of [
     { productId: teak.id, reorderPoint: 15, minQty: 10, maxQty: 40 },
-    { productId: screw.id, reorderPoint: 200, minQty: 100, maxQty: 1000 },
-    { productId: chair.id, reorderPoint: 2, minQty: 1, maxQty: 6 }
+    { productId: screw.id, reorderPoint: 200, minQty: 100, maxQty: 1000 }
   ]) {
     await prisma.itemWarehousePolicy.create({
       data: { tenantId, warehouseId: warehouse.id, ...policy }
@@ -369,6 +369,7 @@ async function main() {
   console.log(`  Sign in   ${EMAIL}`);
   console.log(`  Password  ${PASSWORD}`);
   console.log('  Stores    MAIN — teak, screws, varnish, fabric, glue');
+  console.log('  Buy       reorder teak and screws. Chairs and tables are planned in MRP.');
   console.log('  Make      CHAIR and TABLE, routed across SAW, ASM, and FIN');
 }
 

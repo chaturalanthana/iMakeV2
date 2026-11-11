@@ -1,7 +1,6 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { movementEffect } = require('./stockService');
-const { createWorkOrder } = require('./production/workOrders');
 const { num, money, dec } = require('./money');
 
 const round = (value) => money(value);
@@ -196,7 +195,8 @@ async function buildSuggestions(db, tenantId) {
 
   const suggestions = [];
   productById.forEach((product) => {
-    if (product.type === 'SERVICE' || product.activeStatus === 'INACTIVE') return;
+    // Made items are planned from sales orders and MRP. Reorder point only buys.
+    if (product.type === 'SERVICE' || product.activeStatus === 'INACTIVE' || product.bomApplicable) return;
     const rows = byProduct.get(product.id) || [];
     let raw = 0;
     let warehouseId = rows[0]?.warehouseId || null;
@@ -214,9 +214,8 @@ async function buildSuggestions(db, tenantId) {
     const covered = round((firm.po[product.id] || 0) + (firm.pr[product.id] || 0) + (firm.wo[product.id] || 0));
     const minMaxQty = round(Math.max(0, raw - covered));
     const mrpQty = round(shortages.get(product.id)?.shortage || 0);
-    const made = Boolean(product.bomApplicable);
-    const mrpNet = made ? mrpQty : round(Math.max(0, mrpQty - (firm.po[product.id] || 0) - (firm.pr[product.id] || 0)));
-    const quantity = made ? round(Math.max(minMaxQty, mrpQty)) : round(Math.max(minMaxQty, mrpNet));
+    const mrpNet = round(Math.max(0, mrpQty - (firm.po[product.id] || 0) - (firm.pr[product.id] || 0)));
+    const quantity = round(Math.max(minMaxQty, mrpNet));
     if (quantity <= 0.00005) return;
     let reason = 'MINMAX';
     if (minMaxQty > 0.00005 && mrpNet > 0.00005) reason = 'BOTH';
@@ -224,7 +223,7 @@ async function buildSuggestions(db, tenantId) {
     suggestions.push({
       product,
       warehouseId,
-      kind: made ? 'MAKE' : 'BUY',
+      kind: 'BUY',
       quantity,
       minMaxQty,
       mrpQty,
@@ -276,10 +275,8 @@ async function executeRun(tenantId, userId, trigger = 'MANUAL') {
       await tx.replenishmentRun.update({ where: { id: run.id }, data: { trigger } });
     }
 
-    const buy = suggestions.filter((row) => row.kind === 'BUY');
-    const make = suggestions.filter((row) => row.kind === 'MAKE');
     const bySupplier = new Map();
-    buy.forEach((row) => {
+    suggestions.forEach((row) => {
       const key = row.product.supplierId || '';
       if (!bySupplier.has(key)) bySupplier.set(key, []);
       bySupplier.get(key).push(row);
@@ -314,20 +311,6 @@ async function executeRun(tenantId, userId, trigger = 'MANUAL') {
       rows.forEach((row) => prByProduct.set(row.product.id, { id: requisition.id, number: requisition.prNumber }));
     }
 
-    const woByProduct = new Map();
-    for (const row of make) {
-      const order = await createWorkOrder(tenantId, userId, {
-        productId: row.product.id,
-        quantity: row.quantity,
-        warehouseId: row.warehouseId,
-        status: 'DRAFT',
-        sourceType: 'REPLENISHMENT',
-        sourceId: run.id,
-        notes: `Replenishment ${run.runNumber} (${row.reason})`
-      }, tx);
-      woByProduct.set(row.product.id, { id: order.id, number: order.orderNumber });
-    }
-
     if (suggestions.length) {
       await tx.replenishmentLine.createMany({
         data: suggestions.map((row) => ({
@@ -341,7 +324,7 @@ async function executeRun(tenantId, userId, trigger = 'MANUAL') {
           minMaxQty: dec(row.minMaxQty),
           mrpQty: dec(row.mrpQty),
           prId: prByProduct.get(row.product.id)?.id || null,
-          workOrderId: woByProduct.get(row.product.id)?.id || null
+          workOrderId: null
         }))
       });
     }
@@ -358,7 +341,7 @@ async function executeRun(tenantId, userId, trigger = 'MANUAL') {
 
 function presentRun(run) {
   if (!run) return null;
-  const lines = (run.lines || []).map((line) => ({
+  const lines = (run.lines || []).filter((line) => line.kind !== 'MAKE').map((line) => ({
     id: line.id,
     productId: line.productId,
     code: line.product?.code || null,
@@ -381,7 +364,7 @@ function presentRun(run) {
     createdAt: run.createdAt,
     lines,
     message: lines.length
-      ? `${run.runNumber} drafted ${lines.filter((line) => line.kind === 'BUY').length} purchase lines and ${lines.filter((line) => line.kind === 'MAKE').length} work orders`
+      ? `${run.runNumber} drafted ${lines.length} purchase ${lines.length === 1 ? 'line' : 'lines'}`
       : 'No replenishment needed'
   };
 }
@@ -392,7 +375,7 @@ async function listPolicies(tenantId) {
     include: { product: true, warehouse: true },
     orderBy: [{ product: { code: 'asc' } }, { warehouse: { code: 'asc' } }]
   });
-  return rows.map((row) => ({
+  return rows.filter((row) => !row.product.bomApplicable).map((row) => ({
     id: row.id,
     productId: row.productId,
     code: row.product.code,
@@ -419,6 +402,11 @@ async function savePolicy(tenantId, body) {
   const warehouse = await prisma.warehouse.findFirst({ where: { id: body.warehouseId, tenantId } });
   if (!product) {
     const error = new Error('Product not found');
+    error.status = 400;
+    throw error;
+  }
+  if (product.bomApplicable) {
+    const error = new Error('Made items are planned in MRP. Reorder policies are for bought items.');
     error.status = 400;
     throw error;
   }
@@ -499,9 +487,8 @@ async function approveDrafts(tenantId) {
     where: { tenantId, status: 'DRAFT' },
     include: { lines: true }
   });
-  if (!runs.length) return { runs: 0, purchaseRequisitions: 0, workOrders: 0, message: 'Nothing is waiting for approval' };
+  if (!runs.length) return { runs: 0, purchaseRequisitions: 0, message: 'Nothing is waiting for approval' };
   let purchaseRequisitions = 0;
-  let workOrders = 0;
   await prisma.$transaction(async (tx) => {
     for (const run of runs) {
       const prIds = [...new Set(run.lines.map((line) => line.prId).filter(Boolean))];
@@ -514,11 +501,9 @@ async function approveDrafts(tenantId) {
         purchaseRequisitions += updated.count;
       }
       if (woIds.length) {
-        const updated = await tx.workOrder.updateMany({
-          where: { id: { in: woIds }, tenantId, status: 'DRAFT' },
-          data: { status: 'CREATED' }
+        await tx.workOrder.deleteMany({
+          where: { id: { in: woIds }, tenantId, status: 'DRAFT', sourceType: 'REPLENISHMENT' }
         });
-        workOrders += updated.count;
       }
       await tx.replenishmentRun.update({ where: { id: run.id }, data: { status: 'APPROVED' } });
     }
@@ -526,8 +511,7 @@ async function approveDrafts(tenantId) {
   return {
     runs: runs.length,
     purchaseRequisitions,
-    workOrders,
-    message: `Approved ${purchaseRequisitions} requisition${purchaseRequisitions === 1 ? '' : 's'} and ${workOrders} work order${workOrders === 1 ? '' : 's'}`
+    message: `Approved ${purchaseRequisitions} requisition${purchaseRequisitions === 1 ? '' : 's'}`
   };
 }
 
