@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight, Sparkles } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 export default function Login() {
@@ -19,15 +19,11 @@ export default function Login() {
       const response = await axios.post('/api/auth/login', formData);
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
-      showToast('Login successful! Redirecting...', 'success');
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 1000);
+      window.location.href = '/dashboard';
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Authentication failed. Please check your credentials.';
       setError(errorMsg);
       showToast(errorMsg, 'error');
-    } finally {
       setLoading(false);
     }
   };
@@ -103,9 +99,29 @@ export default function Login() {
               />
             </div>
 
-            <button type="submit" disabled={loading} className="btn-primary" style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-              {loading ? 'Authenticating...' : 'Sign Into Workspace'}
-              {!loading && <ArrowRight size={20} />}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary"
+              style={{
+                marginTop: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.625rem'
+              }}
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Authenticating...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign Into Workspace</span>
+                  <ArrowRight size={20} />
+                </>
+              )}
             </button>
           </form>
           

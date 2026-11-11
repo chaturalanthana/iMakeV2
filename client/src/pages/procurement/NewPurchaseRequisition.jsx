@@ -344,7 +344,7 @@ export default function NewPurchaseRequisition() {
                 </button>
               )}
               {isCompleted ? (
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #a7f3d0', backgroundColor: '#ecfdf5' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center' }}>
                   Already Converted to PO
                 </span>
               ) : (
@@ -352,7 +352,7 @@ export default function NewPurchaseRequisition() {
                   {prId && (
                     <button 
                       onClick={() => navigate(`/procurement/purchase-orders/new?prId=${queryRef(prNumber)}`)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1.25rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.5rem 1.25rem', borderRadius: '8px', border: '1px solid var(--accent)', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', backgroundColor: 'var(--accent)', color: '#ffffff', boxShadow: 'none' }}
                     >
                       <ArrowUpRight size={16} /> Convert to PO
                     </button>

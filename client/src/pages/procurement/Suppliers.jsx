@@ -6,6 +6,7 @@ import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
 import ExportButton from '../../components/ui/ExportButton';
 import { Truck, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -93,18 +94,7 @@ export default function Suppliers() {
     {
       header: 'Status',
       accessor: 'activeStatus',
-      render: (row) => (
-        <span style={{ 
-          fontSize: '0.75rem', 
-          fontWeight: 700, 
-          padding: '0.2rem 0.6rem', 
-          borderRadius: '4px',
-          backgroundColor: row.activeStatus === 'ACTIVE' ? '#ecfdf5' : '#fef2f2',
-          color: row.activeStatus === 'ACTIVE' ? '#059669' : '#dc2626'
-        }}>
-          {row.activeStatus || 'ACTIVE'}
-        </span>
-      )
+      render: (row) => <StatusBadge status={row.activeStatus || 'ACTIVE'} />
     },
     {
       header: 'Actions',

@@ -21,114 +21,229 @@ const stockOnHand = (movements) => movements.reduce((total, movement) => {
 
 const runMRPAna = async (req, res) => {
   try {
-    const orders = await prisma.productionOrder.findMany({
-      where: {
-        tenantId: req.tenantId,
-        status: { in: ['RELEASED', 'WIP'] }
+    const [
+      allProducts,
+      activeBoms,
+      movements,
+      openWorkOrders,
+      openJobs,
+      openProductionOrders,
+      openSalesOrders
+    ] = await Promise.all([
+      prisma.product.findMany({
+        where: { tenantId: req.tenantId },
+        include: { productType: true }
+      }),
+      prisma.bOM.findMany({
+        where: { tenantId: req.tenantId, status: 'ACTIVE' },
+        include: {
+          items: {
+            include: {
+              componentProduct: {
+                include: { productType: true }
+              }
+            }
+          }
+        },
+        orderBy: [{ isDefault: 'desc' }, { version: 'desc' }, { updatedAt: 'desc' }]
+      }),
+      prisma.stockMovement.findMany({ where: { tenantId: req.tenantId } }),
+      prisma.workOrder.findMany({
+        where: { tenantId: req.tenantId, status: { in: ['CREATED', 'RELEASED', 'IN_PROGRESS'] } },
+        include: { components: true }
+      }),
+      prisma.productionJob.findMany({
+        where: { tenantId: req.tenantId, status: { in: ['QUEUED', 'WIP', 'QC'] } }
+      }),
+      prisma.productionOrder.findMany({
+        where: { tenantId: req.tenantId, status: { in: ['DRAFT', 'RELEASED', 'WIP'] } }
+      }),
+      prisma.salesOrder.findMany({
+        where: { tenantId: req.tenantId, status: { in: ['CONFIRMED', 'PROCESSING', 'APPROVED'] } },
+        include: { items: true }
+      })
+    ]);
+
+    const productById = new Map(allProducts.map((p) => [p.id, p]));
+    const bomByProduct = new Map();
+    const bomById = new Map();
+    activeBoms.forEach((bom) => {
+      bomById.set(bom.id, bom);
+      if (!bomByProduct.has(bom.productId)) {
+        bomByProduct.set(bom.productId, bom);
       }
     });
 
-    const [activeBoms, orderBoms, movements] = await Promise.all([
-      prisma.bOM.findMany({
-        where: { tenantId: req.tenantId, status: 'ACTIVE', isDefault: true },
-        include: { items: { include: { componentProduct: true } } }
-      }),
-      prisma.bOM.findMany({
-        where: { tenantId: req.tenantId, id: { in: orders.map((order) => order.bomId).filter(Boolean) } },
-        include: { items: { include: { componentProduct: true } } }
-      }),
-      prisma.stockMovement.findMany({ where: { tenantId: req.tenantId } })
-    ]);
+    const isMakeProduct = (product) => {
+      if (!product) return false;
+      if (product.bomApplicable) return true;
+      const typeName = (product.productType?.name || product.type || '').toLowerCase();
+      if (typeName.includes('semi') || typeName.includes('finished') || typeName === 'fg' || typeName === 'sfg') {
+        return true;
+      }
+      return bomByProduct.has(product.id);
+    };
 
-    const bomByProduct = new Map(activeBoms.map((bom) => [bom.productId, bom]));
-    const bomById = new Map(orderBoms.map((bom) => [bom.id, bom]));
+    // Calculate stock on hand
     const movementsByProduct = {};
     movements.forEach((movement) => {
       if (!movementsByProduct[movement.productId]) movementsByProduct[movement.productId] = [];
       movementsByProduct[movement.productId].push(movement);
     });
     const stockByProduct = {};
-    Object.keys(movementsByProduct).forEach((productId) => {
-      stockByProduct[productId] = stockOnHand(movementsByProduct[productId]);
+    allProducts.forEach((p) => {
+      stockByProduct[p.id] = stockOnHand(movementsByProduct[p.id] || []);
     });
 
-    const supply = {};
-    const [openJobs, openWorkOrders] = await Promise.all([
-      prisma.productionJob.findMany({
-        where: { tenantId: req.tenantId, status: { in: ['QUEUED', 'WIP', 'QC'] } }
-      }),
-      prisma.workOrder.findMany({
-        where: { tenantId: req.tenantId, status: { in: ['CREATED', 'RELEASED', 'IN_PROGRESS'] } }
-      })
-    ]);
+    // Open production supply
+    const productionSupply = {};
     const linkedJobs = new Set(openWorkOrders.map((row) => row.legacyJobId).filter(Boolean));
     const linkedOrders = new Set(openWorkOrders.map((row) => row.legacyOrderId).filter(Boolean));
-    orders.forEach((order) => {
-      if (linkedOrders.has(order.id)) return;
-      supply[order.productId] = num(supply[order.productId]) + num(order.quantity);
+
+    openWorkOrders.forEach((wo) => {
+      const remaining = Math.max(0, num(wo.quantity) - num(wo.quantityCompleted));
+      productionSupply[wo.productId] = num(productionSupply[wo.productId]) + remaining;
     });
     openJobs.forEach((job) => {
       if (linkedJobs.has(job.id)) return;
-      supply[job.productId] = num(supply[job.productId]) + num(job.quantity);
+      productionSupply[job.productId] = num(productionSupply[job.productId]) + num(job.quantity);
     });
-    openWorkOrders.forEach((row) => {
-      const remaining = Math.max(0, num(row.quantity) - num(row.quantityCompleted));
-      supply[row.productId] = num(supply[row.productId]) + remaining;
+    openProductionOrders.forEach((order) => {
+      if (linkedOrders.has(order.id)) return;
+      productionSupply[order.productId] = num(productionSupply[order.productId]) + num(order.quantity);
     });
 
-    const products = {};
+    // Demand tracking & recursive multi-level explosion
     const demand = {};
-    const planned = {};
+    const plannedMake = {};
 
-    const plan = (productId, path) => {
-      const product = products[productId];
-      if (!product || !product.bomApplicable || path.has(productId)) return;
-      const safety = Math.max(0, num(product.safetyStock));
-      const shortage = num(demand[productId]) + safety - num(stockByProduct[productId]) - num(supply[productId]) - num(planned[productId]);
-      if (shortage <= 0.00005) return;
-      planned[productId] = num(planned[productId]) + shortage;
-      const bom = bomByProduct.get(productId);
-      if (!bom) return;
-      const nextPath = new Set(path);
-      nextPath.add(productId);
-      bom.items.forEach((item) => {
-        const component = item.componentProduct;
-        if (!component || nextPath.has(component.id)) return;
-        const need = num(item.quantity) * shortage * scrapFactor(item.scrapPercent);
-        if (!(need > 0)) return;
-        products[component.id] = component;
-        demand[component.id] = num(demand[component.id]) + need;
-        plan(component.id, nextPath);
-      });
+    const explodeComponent = (productId, grossNeeded, path = new Set()) => {
+      if (path.has(productId) || !(grossNeeded > 0)) return;
+      const product = productById.get(productId);
+      if (!product) return;
+
+      demand[productId] = num(demand[productId]) + grossNeeded;
+
+      // If it is a manufactured item (SFG or FG), check net shortage to trigger multi-level BOM explosion
+      if (isMakeProduct(product)) {
+        const bom = bomByProduct.get(productId);
+        if (!bom || !bom.items || !bom.items.length) return;
+
+        const onHand = num(stockByProduct[productId]);
+        const openSupply = num(productionSupply[productId]);
+        const safety = Math.max(0, num(product.safetyStock));
+        const alreadyPlanned = num(plannedMake[productId]);
+
+        const totalRequired = num(demand[productId]) + safety;
+        const totalAvailable = onHand + openSupply + alreadyPlanned;
+        const netShortage = Math.max(0, totalRequired - totalAvailable);
+
+        if (netShortage > 0) {
+          plannedMake[productId] = alreadyPlanned + netShortage;
+
+          const nextPath = new Set(path);
+          nextPath.add(productId);
+
+          bom.items.forEach((item) => {
+            const compId = item.productId || item.componentProduct?.id;
+            if (!compId || nextPath.has(compId)) return;
+            const need = num(item.quantity) * netShortage * scrapFactor(item.scrapPercent);
+            if (need > 0) {
+              explodeComponent(compId, need, nextPath);
+            }
+          });
+        }
+      }
     };
 
-    orders.forEach((order) => {
-      const bom = (order.bomId && bomById.get(order.bomId)) || bomByProduct.get(order.productId);
+    // 1. Explode demand from open Work Orders
+    openWorkOrders.forEach((wo) => {
+      const remaining = Math.max(0, num(wo.quantity) - num(wo.quantityCompleted));
+      if (!(remaining > 0)) return;
+
+      if (wo.components && wo.components.length > 0) {
+        wo.components.forEach((c) => {
+          const unissued = Math.max(0, num(c.requiredQty) - num(c.issuedQty));
+          if (unissued > 0) {
+            explodeComponent(c.productId, unissued, new Set([wo.productId]));
+          }
+        });
+      } else {
+        const bom = (wo.bomId && bomById.get(wo.bomId)) || bomByProduct.get(wo.productId);
+        if (bom && bom.items) {
+          bom.items.forEach((item) => {
+            const compId = item.productId || item.componentProduct?.id;
+            const need = num(item.quantity) * remaining * scrapFactor(item.scrapPercent);
+            if (need > 0) {
+              explodeComponent(compId, need, new Set([wo.productId]));
+            }
+          });
+        }
+      }
+    });
+
+    // 2. Explode demand from standalone Production Jobs
+    openJobs.forEach((job) => {
+      if (linkedJobs.has(job.id)) return;
+      const quantity = num(job.quantity);
+      if (!(quantity > 0)) return;
+      const bom = (job.bomId && bomById.get(job.bomId)) || bomByProduct.get(job.productId);
+      if (bom && bom.items) {
+        bom.items.forEach((item) => {
+          const compId = item.productId || item.componentProduct?.id;
+          const need = num(item.quantity) * quantity * scrapFactor(item.scrapPercent);
+          if (need > 0) {
+            explodeComponent(compId, need, new Set([job.productId]));
+          }
+        });
+      }
+    });
+
+    // 3. Explode demand from standalone Production Orders
+    openProductionOrders.forEach((order) => {
+      if (linkedOrders.has(order.id)) return;
       const quantity = num(order.quantity);
-      if (!bom || !(quantity > 0)) return;
-      const path = new Set([order.productId]);
-      bom.items.forEach((item) => {
-        const component = item.componentProduct;
-        if (!component) return;
-        const need = num(item.quantity) * quantity * scrapFactor(item.scrapPercent);
-        if (!(need > 0)) return;
-        products[component.id] = component;
-        demand[component.id] = num(demand[component.id]) + need;
-        plan(component.id, path);
+      if (!(quantity > 0)) return;
+      const bom = (order.bomId && bomById.get(order.bomId)) || bomByProduct.get(order.productId);
+      if (bom && bom.items) {
+        bom.items.forEach((item) => {
+          const compId = item.productId || item.componentProduct?.id;
+          const need = num(item.quantity) * quantity * scrapFactor(item.scrapPercent);
+          if (need > 0) {
+            explodeComponent(compId, need, new Set([order.productId]));
+          }
+        });
+      }
+    });
+
+    // 4. Sales Orders not yet linked to work orders
+    const linkedSalesOrderItems = new Set(openWorkOrders.map((wo) => wo.salesOrderItemId).filter(Boolean));
+    openSalesOrders.forEach((so) => {
+      so.items.forEach((item) => {
+        if (linkedSalesOrderItems.has(item.id)) return;
+        const unfulfilled = Math.max(0, num(item.quantity) - num(item.deliveredQuantity));
+        if (unfulfilled > 0) {
+          explodeComponent(item.productId, unfulfilled, new Set());
+        }
       });
     });
 
+    // Suggestions generation
     const purchaseSuggestions = [];
     const productionSuggestions = [];
+
     Object.keys(demand).forEach((productId) => {
-      const product = products[productId];
+      const product = productById.get(productId);
       if (!product) return;
+
       const grossDemand = roundQty(num(demand[productId]));
       const currentStock = roundQty(num(stockByProduct[productId]));
       const safetyStock = roundQty(Math.max(0, num(product.safetyStock)));
-      const openOrders = roundQty(num(supply[productId]));
-      const shortage = roundQty(grossDemand + safetyStock - currentStock - openOrders);
-      if (shortage <= 0) return;
+      const openOrders = roundQty(num(productionSupply[productId]));
+
+      const shortage = roundQty(Math.max(0, grossDemand + safetyStock - currentStock));
+      if (shortage <= 0 && grossDemand <= 0) return;
+
       const item = {
         productId,
         code: product.code,
@@ -140,30 +255,39 @@ const runMRPAna = async (req, res) => {
         shortage,
         costPrice: num(product.costPrice)
       };
-      if (product.bomApplicable) productionSuggestions.push(item);
-      else purchaseSuggestions.push(item);
+
+      if (isMakeProduct(product)) {
+        productionSuggestions.push(item);
+      } else {
+        purchaseSuggestions.push(item);
+      }
     });
 
     const byCode = (a, b) => String(a.code).localeCompare(String(b.code));
     purchaseSuggestions.sort(byCode);
     productionSuggestions.sort(byCode);
 
-    const mps = await runMps({
-      tenantId: req.tenantId,
-      userId: req.user?.userId || null,
-      horizonWeeks: req.body?.horizonWeeks
-    });
-    for (const need of mps.purchaseNeeds) {
-      if (!(need.quantity > 0)) continue;
-      const existing = purchaseSuggestions.find((row) => row.productId === need.productId);
-      if (existing) {
-        existing.shortage = roundQty(num(existing.shortage) + need.quantity);
-        existing.grossDemand = roundQty(num(existing.grossDemand) + need.quantity);
-      } else {
-        purchaseSuggestions.push(need);
+    let mps = { runId: null, horizonWeeks: 8, weekStart: new Date(), buckets: [], plannedOrders: [] };
+    try {
+      mps = await runMps({
+        tenantId: req.tenantId,
+        userId: req.user?.userId || null,
+        horizonWeeks: req.body?.horizonWeeks
+      });
+      for (const need of mps.purchaseNeeds || []) {
+        if (!(need.quantity > 0)) continue;
+        const existing = purchaseSuggestions.find((row) => row.productId === need.productId);
+        if (existing) {
+          existing.shortage = roundQty(num(existing.shortage) + need.quantity);
+          existing.grossDemand = roundQty(num(existing.grossDemand) + need.quantity);
+        } else {
+          purchaseSuggestions.push(need);
+        }
       }
+      purchaseSuggestions.sort(byCode);
+    } catch (mpsErr) {
+      console.warn('MPS run skipped or warning during MRP:', mpsErr.message);
     }
-    purchaseSuggestions.sort(byCode);
 
     const raised = await raiseRequirements({
       tenantId: req.tenantId,
@@ -247,7 +371,10 @@ const raiseRequirements = async ({ tenantId, userId, purchaseSuggestions, produc
     });
     const jobByProduct = new Map();
     jobs.forEach((job) => {
-      if (!jobByProduct.has(job.productId)) jobByProduct.set(job.productId, job);
+      const current = jobByProduct.get(job.productId) || { qty: 0, job: null };
+      current.qty = roundQty(current.qty + num(job.quantity));
+      if (!current.job) current.job = job;
+      jobByProduct.set(job.productId, current);
     });
     const freshLines = [];
 
@@ -259,7 +386,7 @@ const raiseRequirements = async ({ tenantId, userId, purchaseSuggestions, produc
         row.action = 'open';
         continue;
       }
-      if (covered) {
+      if (covered && covered.item) {
         const nextQty = roundQty(num(covered.item.quantity) + gap);
         const unit = num(covered.item.unitPrice);
         await tx.purchaseRequisitionItem.update({
@@ -318,10 +445,17 @@ const raiseRequirements = async ({ tenantId, userId, purchaseSuggestions, produc
 
     for (const row of productionSuggestions) {
       const covered = jobByProduct.get(row.productId);
-      if (covered) {
+      const gap = roundQty(row.shortage - (covered ? covered.qty : 0));
+      if (covered && gap <= 0) {
+        row.documentNumber = covered.job?.jobNumber || covered.job?.orderNumber || '';
+        row.action = 'open';
+        continue;
+      }
+      if (covered && covered.job) {
+        const nextQty = roundQty(num(covered.job.quantity) + gap);
         const updated = await tx.productionJob.update({
-          where: { id: covered.id },
-          data: { quantity: roundQty(num(covered.quantity) + row.shortage) }
+          where: { id: covered.job.id },
+          data: { quantity: nextQty }
         });
         await syncLegacy(tx, {
           tenantId,
@@ -331,6 +465,7 @@ const raiseRequirements = async ({ tenantId, userId, purchaseSuggestions, produc
           sourceType: 'MRP',
           receiptOnComplete: false
         });
+        covered.qty = roundQty(covered.qty + gap);
         row.documentNumber = updated.jobNumber;
         row.action = 'updated';
         updatedOrders += 1;

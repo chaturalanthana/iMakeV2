@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import { Plus, Trash2, Sliders } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -81,27 +82,7 @@ export default function Workstations() {
     {
       header: 'Status',
       accessor: 'status',
-      render: (row) => {
-        const colors = {
-          ACTIVE: { bg: '#ecfdf5', color: '#047857' },
-          INACTIVE: { bg: '#f1f5f9', color: '#475569' },
-          UNDER_MAINTENANCE: { bg: '#fff7ed', color: '#c2410c' }
-        };
-        const style = colors[row.status] || { bg: '#f1f5f9', color: '#475569' };
-        return (
-          <span style={{
-            padding: '0.2rem 0.6rem',
-            borderRadius: '4px',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            backgroundColor: style.bg,
-            color: style.color,
-            textTransform: 'uppercase'
-          }}>
-            {row.status.replace('_', ' ')}
-          </span>
-        );
-      }
+      render: (row) => <StatusBadge status={row.status} />
     },
     {
       header: 'Actions',
@@ -131,19 +112,16 @@ export default function Workstations() {
     <button onClick={() => navigate('/production/workstations/new')} style={{
       display: 'flex', alignItems: 'center', gap: '7px',
       padding: '0.55rem 1.25rem',
-      background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)',
-      border: 'none',
+      backgroundColor: 'var(--accent)',
+      border: '1px solid var(--accent)',
       borderRadius: '8px',
       color: '#ffffff',
       fontSize: '0.85rem',
       fontWeight: 600,
       cursor: 'pointer',
-      transition: 'opacity 0.2s',
+      boxShadow: 'none',
       whiteSpace: 'nowrap',
-    }}
-      onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-    >
+    }}>
       <Plus size={16} /> Add Workstation
     </button>
   );

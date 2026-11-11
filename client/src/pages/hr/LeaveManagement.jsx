@@ -114,7 +114,7 @@ export default function LeaveManagement() {
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
         <button type="button" style={tabStyle('applications')} onClick={() => setActiveTab('applications')}>
           <CalendarDays size={16} /> Leave Applications
-          <span style={{ background: '#e0e7ff', color: '#4338ca', borderRadius: '10px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 700 }}>{applications.length}</span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)' }}>({applications.length})</span>
         </button>
         <button type="button" style={tabStyle('types')} onClick={() => setActiveTab('types')}>
           <CheckCircle size={16} /> Leave Types
@@ -159,8 +159,8 @@ export default function LeaveManagement() {
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', fontWeight: 700, color: '#1e293b' }}>{parseFloat(app.days)}</td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#64748b', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.reason || '—'}</td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: '20px', background: sc.bg, color: sc.color }}>
-                          <Icon size={12} /> {sc.label}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', fontWeight: 700, color: sc.color }}>
+                          <Icon size={13} /> {sc.label}
                         </span>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>

@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node init && node src/server.js",
+    "dev": "node init && node --watch src/server.js",
     "test": "prisma generate && jest --detectOpenHandles",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",

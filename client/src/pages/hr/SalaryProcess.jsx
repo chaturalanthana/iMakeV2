@@ -141,7 +141,7 @@ export default function SalaryProcess() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           <span style={{ fontWeight: 800, color: '#1e293b', fontSize: '0.95rem' }}>{MONTHS[run.month - 1]} {run.year}</span>
                           <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>{run.runNumber}</span>
-                          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '10px', background: '#dcfce7', color: '#16a34a' }}>{run.status}</span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#16a34a' }}>{run.status}</span>
                         </div>
                         <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>{run.lines.length} employees processed</div>
                       </div>
@@ -232,7 +232,7 @@ export default function SalaryProcess() {
                         <div key={di} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', gap: '0.5rem' }}>
                           <span style={{ fontSize: '0.82rem', color: '#475569', flex: 1 }}>
                             {d.name}
-                            {d.type === 'LOAN_EMI' && <span style={{ fontSize: '0.65rem', background: '#fee2e2', color: '#dc2626', borderRadius: '4px', padding: '1px 5px', marginLeft: '4px' }}>EMI</span>}
+                            {d.type === 'LOAN_EMI' && <span style={{ fontSize: '0.7rem', color: '#dc2626', fontWeight: 700, marginLeft: '6px' }}>EMI</span>}
                           </span>
                           <input type="number" value={d.amount} onChange={e => updateAmount(ei, 'deductions', di, e.target.value)} style={{ width: '100px', height: '32px', padding: '0 0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.85rem', fontWeight: 700, textAlign: 'right', outline: 'none' }} />
                         </div>

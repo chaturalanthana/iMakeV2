@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import DataTable from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { Users, Plus, Pencil, Trash2, X, CheckCircle, Briefcase, Phone, Mail, Calendar } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { confirmDialog } from '../../components/ui/appDialog';
@@ -144,22 +145,7 @@ export default function Employees() {
     {
       header: 'Status',
       accessor: 'status',
-      render: (row) => {
-        const isActive = row.status === 'ACTIVE';
-        return (
-          <span style={{
-            fontSize: '0.75rem',
-            fontWeight: 700,
-            padding: '3px 10px',
-            borderRadius: '4px',
-            background: isActive ? '#ecfdf5' : '#fee2e2',
-            color: isActive ? '#16a34a' : '#dc2626',
-            textTransform: 'uppercase'
-          }}>
-            {row.status}
-          </span>
-        );
-      }
+      render: (row) => <StatusBadge status={row.status} />
     },
     {
       header: 'Actions',

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { ArrowUpFromLine, ArrowLeft, Plus, Trash2, CheckCircle, Briefcase, FileText, CreditCard } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import AccountSearchDropdown from '../../components/ui/AccountSearchDropdown';
@@ -169,11 +170,9 @@ export default function NewPaymentVoucher() {
                 <ArrowLeft size={18} />
               </button>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   New Payment Voucher
-                  <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '12px', background: '#fee2e2', color: '#dc2626', fontWeight: 700, border: '1px solid #fecaca' }}>
-                    DRAFT
-                  </span>
+                  <StatusBadge status="DRAFT" />
                 </h2>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Record outgoing payment and associated expenses</span>

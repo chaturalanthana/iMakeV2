@@ -21,7 +21,7 @@ import NewWorkstation from './pages/production/NewWorkstation';
 import MRPPlanner from './pages/production/MRPPlanner';
 import ProductionReports from './pages/production/ProductionReports';
 import Losses from './pages/production/Losses';
-import ContractManufacturing from './pages/production/ContractManufacturing';
+import ReportsHub from './pages/reports/ReportsHub';
 import Alerts from './pages/Alerts';
 import DataImport from './pages/settings/DataImport';
 import Labels from './pages/warehouse/Labels';
@@ -35,7 +35,6 @@ import StatutoryReport from './pages/hr/StatutoryReport';
 import ProductGroups from './pages/production/ProductGroups';
 import Brands from './pages/registries/Brands';
 import Categories from './pages/registries/Categories';
-import ProductTypes from './pages/registries/ProductTypes';
 import Warehouses from './pages/registries/Warehouses';
 import Uoms from './pages/registries/Uoms';
 import PaymentTerms from './pages/registries/PaymentTerms';
@@ -135,6 +134,7 @@ import Approvals from './pages/Approvals';
 import ApprovalRules from './pages/settings/ApprovalRules';
 import FiscalPeriods from './pages/settings/FiscalPeriods';
 import AuditLog from './pages/settings/AuditLog';
+import SystemSettings from './pages/settings/SystemSettings';
 
 function App() {
   const isAuthenticated = !!localStorage.getItem('token');
@@ -177,12 +177,12 @@ function App() {
               <Route path="/production/mrp" element={<MRPPlanner />} />
               <Route path="/production/reports" element={<ProductionReports />} />
               <Route path="/production/losses" element={<Losses />} />
-              <Route path="/production/contracts" element={<ContractManufacturing />} />
+              <Route path="/production/contracts" element={<Navigate to="/production/work-orders" replace />} />
               <Route path="/production/replenishment" element={<Navigate to="/production/mrp" replace />} />
               <Route path="/production/groups" element={<ProductGroups />} />
               <Route path="/registries/brands" element={<Brands />} />
               <Route path="/registries/categories" element={<Categories />} />
-              <Route path="/registries/product-types" element={<ProductTypes />} />
+              <Route path="/registries/product-types" element={<Navigate to="/products" replace />} />
               <Route path="/registries/warehouses" element={<Warehouses />} />
               <Route path="/registries/uoms" element={<Uoms />} />
               
@@ -289,7 +289,7 @@ function App() {
               <Route path="/warehouse/pallets" element={<InventoryMaster kind="pallets" />} />
               <Route path="/warehouse/allocations" element={<Allocations />} />
               <Route path="/warehouse/stock-reports" element={<StockReports />} />
-              <Route path="/registries/uom-templates" element={<InventoryMaster kind="templates" />} />
+              <Route path="/registries/uom-templates" element={<Navigate to="/registries/uoms" replace />} />
               <Route path="/warehouse/labels" element={<Labels />} />
               <Route path="/warehouse/movements/new" element={<NewStockMovement />} />
               <Route path="/warehouse/movements" element={<StockMovements />} />
@@ -355,7 +355,14 @@ function App() {
               <Route path="/finance/period-close" element={<Closes />} />
               <Route path="/finance/reports" element={<FinanceReports />} />
               
+              {/* Reports Module */}
+              <Route path="/reports" element={<ReportsHub />} />
+              <Route path="/reports/production" element={<Navigate to="/production/reports" replace />} />
+              <Route path="/reports/losses" element={<Navigate to="/production/losses" replace />} />
+              
               {/* Settings */}
+              <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
+              <Route path="/settings/system" element={<SystemSettings />} />
               <Route path="/settings/users" element={<Users />} />
               <Route path="/settings/roles" element={<Roles />} />
               <Route path="/settings/import" element={<DataImport />} />

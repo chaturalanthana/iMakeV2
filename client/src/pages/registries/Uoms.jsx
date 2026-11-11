@@ -1,12 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import Modal from '../../components/ui/Modal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
-import { RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { 
+  RefreshCw, Plus, Trash2, Scale, Ruler, Maximize2, 
+  Droplet, Package, Clock, Check, Layers
+} from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+
+export const UOM_TYPES = [
+  {
+    id: 'MASS',
+    label: 'Mass',
+    icon: Scale,
+    color: '#d97706',
+    bgColor: '#fef3c7',
+    borderColor: '#fde68a'
+  },
+  {
+    id: 'LENGTH',
+    label: 'Length',
+    icon: Ruler,
+    color: '#2563eb',
+    bgColor: '#eff6ff',
+    borderColor: '#bfdbfe'
+  },
+  {
+    id: 'AREA',
+    label: 'Area',
+    icon: Maximize2,
+    color: '#7c3aed',
+    bgColor: '#f5f3ff',
+    borderColor: '#ddd6fe'
+  },
+  {
+    id: 'VOLUME',
+    label: 'Volume',
+    icon: Droplet,
+    color: '#0891b2',
+    bgColor: '#ecfeff',
+    borderColor: '#a5f3fc'
+  },
+  {
+    id: 'COUNT',
+    label: 'Count',
+    icon: Package,
+    color: '#16a34a',
+    bgColor: '#f0fdf4',
+    borderColor: '#bbf7d0'
+  },
+  {
+    id: 'TIME',
+    label: 'Time',
+    icon: Clock,
+    color: '#475569',
+    bgColor: '#f8fafc',
+    borderColor: '#e2e8f0'
+  }
+];
 
 export default function Uoms() {
   const { showToast } = useToast();
@@ -19,8 +73,11 @@ export default function Uoms() {
 
   // Form states
   const [formData, setFormData] = useState({
-    name: ''
+    name: '',
+    type: 'COUNT'
   });
+
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     fetchUoms();
@@ -47,8 +104,6 @@ export default function Uoms() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const [fieldErrors, setFieldErrors] = useState({});
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!String(formData.name || '').trim()) {
@@ -62,7 +117,8 @@ export default function Uoms() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
       const payload = {
-        name: formData.name
+        name: formData.name.trim(),
+        type: formData.type || 'COUNT'
       };
 
       if (editingUom) {
@@ -108,21 +164,25 @@ export default function Uoms() {
     if (uom) {
       setEditingUom(uom);
       setFormData({
-        name: uom.name
+        name: uom.name,
+        type: uom.type || 'COUNT'
       });
     } else {
       setEditingUom(null);
       setFormData({
-        name: ''
+        name: '',
+        type: 'COUNT'
       });
     }
+    setFieldErrors({});
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingUom(null);
-    setFormData({ name: '' });
+    setFormData({ name: '', type: 'COUNT' });
+    setFieldErrors({});
   };
 
   const columns = [
@@ -130,6 +190,29 @@ export default function Uoms() {
       header: 'Name',
       accessor: 'name',
       fontWeight: 700
+    },
+    {
+      header: 'Type',
+      accessor: 'type',
+      render: (row) => {
+        const typeInfo = UOM_TYPES.find(t => t.id === row.type) || UOM_TYPES[4];
+        const Icon = typeInfo.icon;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: typeInfo.color,
+              fontSize: '0.85rem',
+              fontWeight: 600
+            }}
+          >
+            <Icon size={15} />
+            {typeInfo.label}
+          </span>
+        );
+      }
     },
     {
       header: 'Actions',
@@ -142,6 +225,7 @@ export default function Uoms() {
             handleDeleteClick(row.id); 
           }} 
           style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.25rem' }}
+          title="Delete UOM"
         >
           <Trash2 size={16} />
         </button>
@@ -153,20 +237,18 @@ export default function Uoms() {
     <button
       onClick={() => openModal()}
       style={{
-        display: 'flex', alignItems: 'center', gap: '7px',
-        padding: '0.55rem 1.25rem',
-        background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)',
-        border: 'none',
+        display: 'flex', alignItems: 'center', gap: '6px',
+        padding: '0.55rem 1.15rem',
+        backgroundColor: 'var(--accent)',
+        border: '1px solid var(--accent)',
         borderRadius: '8px',
         color: '#ffffff',
         fontSize: '0.85rem',
         fontWeight: 600,
         cursor: 'pointer',
-        transition: 'opacity 0.2s',
-        whiteSpace: 'nowrap',
+        boxShadow: 'none',
+        whiteSpace: 'nowrap'
       }}
-      onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
     >
       <Plus size={16} /> New UOM
     </button>
@@ -183,7 +265,7 @@ export default function Uoms() {
             data={uoms}
             loading={loading}
             searchPlaceholder="Search Units of Measure..."
-            searchKeys={['name']}
+            searchKeys={['name', 'type']}
             extraActions={extraActions}
             onRowClick={(row) => openModal(row)}
           />
@@ -192,33 +274,75 @@ export default function Uoms() {
             isOpen={isModalOpen} 
             onClose={closeModal}
             title={editingUom ? 'Update Unit of Measure' : 'Create Unit of Measure'}
-            subtitle={editingUom ? 'Modify the details of this Unit of Measure.' : 'Define a new Unit of Measure.'}
+            maxWidth="480px"
             icon={RefreshCw}
           >
-            <form onSubmit={handleSubmit} style={{ padding: '1.75rem' }} autoComplete="off">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-                    Name <span style={{ color: 'var(--error)' }}>*</span>
-                  </label>
-                  <input 
-                    type="text" 
-                    name="name" 
-                    value={formData.name} 
-                    onChange={handleInputChange} 
-                    placeholder="e.g. PCS, BOX, KG" 
-                    style={{ width: '100%', padding: '0.7rem 0.85rem', borderRadius: '8px', border: fieldErrors.name ? '1px solid var(--error)' : '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.9rem', backgroundColor: '#fff' }} 
-                    required 
-                  />
-                  {fieldErrors.name && <div style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '0.35rem' }}>{fieldErrors.name}</div>}
+            <form onSubmit={handleSubmit} style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }} autoComplete="off">
+              
+              {/* Type Selection */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                  Type <span style={{ color: 'var(--error)' }}>*</span>
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                  {UOM_TYPES.map(t => {
+                    const isSelected = formData.type === t.id;
+                    const Icon = t.icon;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, type: t.id }))}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.65rem 0.75rem',
+                          borderRadius: '8px',
+                          border: isSelected ? '1.5px solid var(--accent)' : '1px solid var(--border-color)',
+                          backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          textAlign: 'left',
+                          boxShadow: 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                          <Icon size={16} color={isSelected ? 'var(--accent)' : t.color} />
+                          <span style={{ fontWeight: 600, fontSize: '0.82rem', color: isSelected ? 'var(--accent)' : 'var(--text-main)' }}>
+                            {t.label}
+                          </span>
+                        </div>
+                        {isSelected && <Check size={14} color="var(--accent)" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                <button type="button" onClick={closeModal} style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '0.65rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }} onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = '#f8fafc'}>
+              {/* UOM Name Field */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                  Name <span style={{ color: 'var(--error)' }}>*</span>
+                </label>
+                <input 
+                  type="text" 
+                  name="name" 
+                  value={formData.name} 
+                  onChange={handleInputChange} 
+                  placeholder="e.g. PCS, KG, METER" 
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: fieldErrors.name ? '1px solid var(--error)' : '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.9rem', backgroundColor: '#fff' }} 
+                  required 
+                />
+                {fieldErrors.name && <div style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '0.35rem' }}>{fieldErrors.name}</div>}
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                <button type="button" onClick={closeModal} style={{ background: '#ffffff', color: 'var(--text-main)', border: '1px solid var(--border-color)', padding: '0.6rem 1.25rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
                   Cancel
                 </button>
-                <button type="submit" style={{ padding: '0.65rem 2rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#ffffff' }}>
+                <button type="submit" style={{ padding: '0.6rem 1.75rem', borderRadius: '8px', border: '1px solid var(--accent)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff' }}>
                   {editingUom ? 'Update' : 'Create'}
                 </button>
               </div>

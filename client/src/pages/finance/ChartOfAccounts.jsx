@@ -227,7 +227,7 @@ export default function ChartOfAccounts() {
             {parent.code ? `${parent.code} - ` : ''}{parent.name}
           </span>
         ) : (
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.025em', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '2px 8px', borderRadius: '4px' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.025em' }}>
             Root
           </span>
         );

@@ -38,6 +38,7 @@ const replenishmentRoutes = require('./replenishmentRoutes');
 const alertRoutes = require('./alertRoutes');
 const importRoutes = require('./importRoutes');
 const labelRoutes = require('./labelRoutes');
+const systemRoutes = require('./systemRoutes');
 const { work: controlWorkRoutes, controls: controlSettingsRoutes } = require('./controlRoutes');
 const inventoryRoutes = require('./inventoryRoutes');
 const { secureModule, secureAny } = require('../middlewares/rbacMiddleware');
@@ -92,6 +93,7 @@ router.use('/production', ...secureModule('production'), productionPlanningRoute
 router.use('/roles', ...secureModule('settings'), roleRoutes);
 router.use('/users', ...secureModule('settings'), userRoutes);
 router.use('/controls', ...secureModule('settings'), controlSettingsRoutes);
+router.use('/system', ...secureModule('settings'), systemRoutes);
 router.use('/', ...secureAny(['sales', 'procurement', 'finance', 'hr', 'warehouse', 'production', 'products', 'settings']), controlWorkRoutes);
 
 module.exports = router;
