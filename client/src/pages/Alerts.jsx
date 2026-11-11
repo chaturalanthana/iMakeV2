@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import AppLayout from '../components/layout/AppLayout';
+import PageSkeleton from '../components/ui/PageSkeleton';
+import DataTable from '../components/ui/DataTable';
+import StatusBadge from '../components/ui/StatusBadge';
 import { Bell } from 'lucide-react';
 
 const LABELS = {
@@ -27,24 +30,32 @@ export default function Alerts() {
       .finally(() => setLoading(false));
   }, []);
 
+  const rows = alerts.map((alert) => ({
+    ...alert,
+    typeLabel: LABELS[alert.type] || alert.type
+  }));
+
   return (
     <AppLayout title="Alerts" icon={Bell}>
-      {loading && <div style={{ color: '#64748b' }}>Loading alerts…</div>}
-      {!loading && alerts.length === 0 && <div style={{ color: '#64748b' }}>Nothing needs attention.</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-        {alerts.map((alert) => (
-          <button
-            key={alert.id}
-            type="button"
-            onClick={() => alert.href && navigate(alert.href)}
-            style={{ textAlign: 'left', background: '#fff', border: '1px solid var(--border-color)', borderLeft: `4px solid ${alert.severity === 'high' ? '#dc2626' : '#d97706'}`, borderRadius: 10, padding: '0.8rem 1rem', cursor: 'pointer' }}
-          >
-            <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>{LABELS[alert.type] || alert.type}</div>
-            <div style={{ fontWeight: 750, marginTop: 2 }}>{alert.title}</div>
-            <div style={{ color: '#475569', fontSize: '0.85rem' }}>{alert.detail}</div>
-          </button>
-        ))}
-      </div>
+      {loading ? <PageSkeleton type="table" /> : (
+        <DataTable
+          columns={[
+            { header: 'Type', accessor: 'typeLabel', fontWeight: 600 },
+            { header: 'Title', accessor: 'title' },
+            { header: 'Detail', accessor: 'detail', color: 'var(--text-muted)' },
+            {
+              header: 'Severity',
+              accessor: 'severity',
+              render: (row) => <StatusBadge status={row.severity} />
+            }
+          ]}
+          data={rows}
+          searchKeys={['typeLabel', 'title', 'detail']}
+          searchPlaceholder="Search alerts..."
+          noDataMessage="Nothing needs attention."
+          onRowClick={(row) => row.href && navigate(row.href)}
+        />
+      )}
     </AppLayout>
   );
 }
