@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import CustomerSearchDropdown from '../../components/ui/CustomerSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -15,17 +16,18 @@ import { useToast } from '../../context/ToastContext';
 export default function NewOrder() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const [searchParams] = useSearchParams();
-  const baseQuotationId = searchParams.get('quotationId');
+  const quotationKey = searchParams.get('quotationId') || '';
 
   const [activeTab, setActiveTab] = useState('primary');
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [orderId, setOrderId] = useState(id || null);
-  const [isInitialLoad, setIsInitialLoad] = useState(!!id || !!baseQuotationId);
+  const [orderId, setOrderId] = useState(() => (isUuid(routeKey) ? routeKey : null));
+  const [linkedQuotationId, setLinkedQuotationId] = useState(() => (isUuid(quotationKey) ? quotationKey : null));
+  const [isInitialLoad, setIsInitialLoad] = useState(!!routeKey || !!quotationKey);
   const [orderNumber, setOrderNumber] = useState('Drafting...');
   const [lastSaved, setLastSaved] = useState(null);
   const [orderStatus, setOrderStatus] = useState('PENDING');
@@ -79,7 +81,7 @@ export default function NewOrder() {
       
       const payload = {
         customerId,
-        quotationId: baseQuotationId,
+        quotationId: linkedQuotationId,
         date,
         items: validLines.map(l => ({
           productId: l.productId,
@@ -109,7 +111,7 @@ export default function NewOrder() {
       const validLines = items.filter(l => l.productId);
       const payload = {
         customerId: selectedCustomerId,
-        quotationId: baseQuotationId,
+        quotationId: linkedQuotationId,
         date,
         status: 'PENDING',
         items: validLines.map(l => ({
@@ -123,6 +125,7 @@ export default function NewOrder() {
       const res = await axios.post('/api/sales/orders', payload, config);
       setOrderId(res.data.id);
       setOrderNumber(res.data.orderNumber);
+      showRecord(navigate, '/sales/orders', res.data, 'orderNumber');
       setLastSaved(new Date().toLocaleTimeString());
       setSaving(false);
     } catch (error) {
@@ -133,7 +136,7 @@ export default function NewOrder() {
 
   useEffect(() => {
     fetchData();
-  }, [baseQuotationId, id]);
+  }, [quotationKey, routeKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -151,11 +154,13 @@ export default function NewOrder() {
       setProducts(prodRes.data);
       setProductAttributes(attrRes.data);
 
-      if (id) {
+      if (routeKey) {
         // Load an existing order
         const ordRes = await axios.get('/api/sales/orders', config);
-        const currentOrd = ordRes.data.find(o => o.id === id);
+        const currentOrd = findByRouteKey(ordRes.data, routeKey, 'orderNumber');
         if (currentOrd) {
+          setOrderId(currentOrd.id);
+          showRecord(navigate, '/sales/orders', currentOrd, 'orderNumber');
           setOrderNumber(currentOrd.orderNumber);
           setCustomerId(currentOrd.customerId);
           setCustomerName(currentOrd.customer?.name || '');
@@ -197,11 +202,12 @@ export default function NewOrder() {
             })));
           }
         }
-      } else if (baseQuotationId) {
+      } else if (quotationKey) {
         // Instantiate order dynamically directly from a quotation transfer
         const quoRes = await axios.get('/api/sales/quotations', config);
-        const refQuote = quoRes.data.find(q => q.id === baseQuotationId);
+        const refQuote = findByRouteKey(quoRes.data, quotationKey, 'quotationNumber');
         if (refQuote) {
+          setLinkedQuotationId(refQuote.id);
           setCustomerId(refQuote.customerId);
           setCustomerName(refQuote.customer?.name || '');
           if (refQuote.items && refQuote.items.length > 0) {
@@ -282,7 +288,7 @@ export default function NewOrder() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       const payload = {
         customerId,
-        quotationId: baseQuotationId,
+        quotationId: linkedQuotationId,
         orderNumber,
         date,
         status: finalStatus,
@@ -326,7 +332,7 @@ export default function NewOrder() {
 
   return (
     <AppLayout title="Sales Order" icon={ShoppingCart}>
-      {isInitialLoad && (id || baseQuotationId) ? (
+      {isInitialLoad && (routeKey || quotationKey) ? (
         <PageSkeleton type="form" />
       ) : (
         <>
@@ -391,10 +397,10 @@ export default function NewOrder() {
                   )}
                   {isCompleted ? (
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                      <button type="button" onClick={() => navigate(`/sales/deliveries/new?orderId=${orderId}`)} style={{ padding: '0.5rem 1.25rem', borderRadius: '8px', border: '1px solid var(--accent)', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: '#fff', color: 'var(--accent)', transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor='#f8fafc'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor='#fff'}>
+                      <button type="button" onClick={() => navigate(`/sales/deliveries/new?orderId=${queryRef(orderNumber)}`)} style={{ padding: '0.5rem 1.25rem', borderRadius: '8px', border: '1px solid var(--accent)', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: '#fff', color: 'var(--accent)', transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor='#f8fafc'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor='#fff'}>
                         Create Delivery
                       </button>
-                      <button type="button" onClick={() => navigate(`/sales/invoices/new?orderId=${orderId}`)} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}>
+                      <button type="button" onClick={() => navigate(`/sales/invoices/new?orderId=${queryRef(orderNumber)}`)} style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', background: 'var(--accent)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)' }}>
                         Create Invoice
                       </button>
                     </div>

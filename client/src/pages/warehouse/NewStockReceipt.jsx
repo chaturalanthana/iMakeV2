@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, recordPath, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
@@ -11,7 +12,8 @@ import { ArrowDownLeft, ArrowLeft, Plus, Trash2, Save, CheckCircle, Calendar, Fi
 import { useToast } from '../../context/ToastContext';
 
 export default function NewStockReceipt() {
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -39,7 +41,7 @@ export default function NewStockReceipt() {
 
   useEffect(() => {
     fetchInitialData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchInitialData = async () => {
     try {
@@ -53,10 +55,12 @@ export default function NewStockReceipt() {
       setWarehouses(whRes.data);
       setSuppliers(suppRes.data);
 
-      if (id) {
+      if (routeKey) {
         const res = await axios.get('/api/warehouse/receipts', { headers: { Authorization: `Bearer ${token}` } });
-        const existing = res.data.find(r => r.id === id);
+        const existing = findByRouteKey(res.data, routeKey, 'receiptNumber');
         if (existing) {
+          setId(existing.id);
+          showRecord(navigate, '/warehouse/receipts', existing, 'receiptNumber');
           setReceiptNumber(existing.receiptNumber);
           setStatus(existing.status);
           setDate(new Date(existing.date).toISOString().split('T')[0]);
@@ -162,7 +166,7 @@ export default function NewStockReceipt() {
       }
       
       showToast('Saved successfully!', 'success');
-      if (!id) navigate(`/warehouse/receipts/${res.data.id}`, { replace: true });
+      if (!id) navigate(recordPath('/warehouse/receipts', res.data, 'receiptNumber'), { replace: true });
       else fetchInitialData();
       
     } catch (error) {
@@ -176,7 +180,7 @@ export default function NewStockReceipt() {
   const isCompleted = isReadOnly;
 
   return (
-    <AppLayout title={id ? `Stock Receipt - ${receiptNumber}` : "New Stock Receipt"} icon={ArrowDownLeft}>
+    <AppLayout title={routeKey ? `Stock Receipt - ${receiptNumber}` : "New Stock Receipt"} icon={ArrowDownLeft}>
       {isInitialLoad ? (
         <PageSkeleton type="form" />
       ) : (
@@ -189,7 +193,7 @@ export default function NewStockReceipt() {
               </button>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  {id ? receiptNumber : 'New Stock Receipt (SR)'}
+                  {routeKey ? receiptNumber : 'New Stock Receipt (SR)'}
                   <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '12px', background: isReadOnly ? '#ecfdf5' : '#fef3c7', color: isReadOnly ? '#059669' : '#d97706', fontWeight: 700, border: `1px solid ${isReadOnly ? '#a7f3d0' : '#fde68a'}` }}>
                     {status}
                   </span>

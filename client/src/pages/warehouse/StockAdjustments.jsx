@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -136,7 +137,7 @@ export default function StockAdjustments() {
             searchPlaceholder="Search by ADJ Code or reason..."
             searchKeys={['adjNumber', 'reason']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/warehouse/adjustments/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/warehouse/adjustments', row, 'adjNumber'))}
           />
 
           <ConfirmModal 

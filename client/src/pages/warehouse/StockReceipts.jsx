@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -128,7 +129,7 @@ export default function StockReceipts() {
             searchPlaceholder="Search by document or warehouse..."
             searchKeys={['receiptNumber', 'warehouse.name', 'reason']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/warehouse/receipts/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/warehouse/receipts', row, 'receiptNumber'))}
           />
 
           <ConfirmModal 

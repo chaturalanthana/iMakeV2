@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, queryRef, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
@@ -15,9 +16,9 @@ import { useToast } from '../../context/ToastContext';
 export default function NewGRN() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const [searchParams] = useSearchParams();
-  const queryPoId = searchParams.get('poId');
+  const poKey = searchParams.get('poId') || '';
 
   const [activeTab, setActiveTab] = useState('primary');
   const [suppliers, setSuppliers] = useState([]);
@@ -27,9 +28,9 @@ export default function NewGRN() {
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   
-  const [grnId, setGrnId] = useState(id || null);
+  const [grnId, setGrnId] = useState(() => (isUuid(routeKey) ? routeKey : null));
   const [grnNumber, setGrnNumber] = useState('Drafting...');
-  const [poId, setPoId] = useState(queryPoId || null);
+  const [poId, setPoId] = useState(() => (isUuid(poKey) ? poKey : null));
   const [poNumber, setPoNumber] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [supplierId, setSupplierId] = useState('');
@@ -76,7 +77,7 @@ export default function NewGRN() {
 
   useEffect(() => {
     fetchData();
-  }, [id, queryPoId]);
+  }, [routeKey, poKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -98,11 +99,13 @@ export default function NewGRN() {
       setWarehouses(whRes.data);
       setCurrencies(curRes.data);
 
-      if (id) {
+      if (routeKey) {
         // Load an existing GRN
         const grnRes = await axios.get('/api/procurement/grn', config);
-        const currentGrn = grnRes.data.find(g => g.id === id);
+        const currentGrn = findByRouteKey(grnRes.data, routeKey, 'grnNumber');
         if (currentGrn) {
+          setGrnId(currentGrn.id);
+          showRecord(navigate, '/procurement/grn', currentGrn, 'grnNumber');
           setGrnNumber(currentGrn.grnNumber);
           setSupplierId(currentGrn.supplierId);
           setSupplierName(currentGrn.supplier?.name || '');
@@ -128,10 +131,11 @@ export default function NewGRN() {
             })));
           }
         }
-      } else if (queryPoId) {
+      } else if (poKey) {
         // Load PO context
-        const order = poRes.data.find(q => q.id === queryPoId);
+        const order = findByRouteKey(poRes.data, poKey, 'poNumber');
         if (order) {
+           setPoId(order.id);
            setSupplierId(order.supplierId);
            setSupplierName(order.supplier?.name || '');
            setPoNumber(order.poNumber || '');
@@ -227,6 +231,7 @@ export default function NewGRN() {
       const res = await axios.post('/api/procurement/grn', payload, config);
       setGrnId(res.data.id);
       setGrnNumber(res.data.grnNumber);
+      showRecord(navigate, '/procurement/grn', res.data, 'grnNumber');
       setStatus('RECEIVED');
       
       setLoading(false);
@@ -254,7 +259,7 @@ export default function NewGRN() {
 
   return (
     <AppLayout title="Goods Receipt Note" icon={Package}>
-      {isInitialLoad && (id || queryPoId) ? (
+      {isInitialLoad && (routeKey || poKey) ? (
         <PageSkeleton type="form" />
       ) : (
         <>
@@ -324,7 +329,10 @@ export default function NewGRN() {
                     value={poId || ''}
                     onChange={(event) => {
                       const next = event.target.value;
-                      if (next) navigate(`/procurement/grn/new?poId=${next}`);
+                      if (next) {
+                        const chosen = purchaseOrders.find((order) => order.id === next);
+                        navigate(`/procurement/grn/new?poId=${queryRef(chosen?.poNumber || next)}`);
+                      }
                     }}
                     style={{ width: '100%', height: '42px', padding: '0 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9rem' }}
                   >

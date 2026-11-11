@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import { 
-  Sliders, Plus, CheckCircle, Trash2, AlertCircle, X, ChevronRight, ChevronLeft, Split, Merge, Check, Table2, GanttChart
+  Sliders, Plus, CheckCircle, Trash2, AlertCircle, X, ChevronRight, ChevronLeft, Split, Merge, Check, Table2, GanttChart, GripVertical
 } from 'lucide-react';
+import { recordPath } from '../../utils/recordPath';
 import { useToast } from '../../context/ToastContext';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import DataTable from '../../components/ui/DataTable';
 import Modal from '../../components/ui/Modal';
+import Section from '../../components/ui/Section';
+import StatusBadge from '../../components/ui/StatusBadge';
 
 const JOB_COLORS = [
   '#c5d4f2', '#b7e0c8', '#f3c7c7', '#f3d7ad', '#d4c6f2',
@@ -47,6 +51,22 @@ const colorForJobs = (list) => {
 
 const DAY_WIDTH = 36;
 const PRODUCT_COL = 200;
+const PLACED_ORDERS_KEY = 'imake.planning.placedWorkOrders';
+
+const planIsOpen = (status, kind) => (
+  kind === 'work-order'
+    ? ['CREATED', 'DRAFT', 'RELEASED'].includes(status)
+    : !['WIP', 'QC', 'COMPLETED', 'CANCELLED'].includes(status)
+);
+
+const readPlacedOrderIds = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PLACED_ORDERS_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter((id) => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
 
 const FIELD_STYLE = {
   width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px',
@@ -61,7 +81,9 @@ const LABEL_STYLE = {
 
 export default function PlanningBoard() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [boms, setBoms] = useState([]);
   const [capacity, setCapacity] = useState(null);
@@ -77,7 +99,10 @@ export default function PlanningBoard() {
   const timelineScrollRef = useRef(null);
   const barDragRef = useRef(null);
   const suppressBarClickRef = useRef(false);
+  const draggingOrderRef = useRef(null);
   const [barPreview, setBarPreview] = useState(null);
+  const [dropDayIndex, setDropDayIndex] = useState(null);
+  const [placedOrderIds, setPlacedOrderIds] = useState(readPlacedOrderIds);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -103,12 +128,14 @@ export default function PlanningBoard() {
     setLoading(true);
     try {
       const config = authConfig();
-      const [jobsRes, productsRes, bomsRes] = await Promise.all([
+      const [jobsRes, productsRes, bomsRes, ordersRes] = await Promise.all([
         axios.get('/api/production-jobs', config),
         axios.get('/api/products', config),
-        axios.get('/api/boms', config)
+        axios.get('/api/boms', config),
+        axios.get('/api/work-orders', config)
       ]);
       setJobs(jobsRes.data);
+      setWorkOrders(ordersRes.data);
       setProducts(productsRes.data.filter(p => p.bomApplicable));
       setBoms(bomsRes.data);
       axios.get('/api/work-orders/capacity', config).then((res) => setCapacity(res.data)).catch(() => setCapacity(null));
@@ -147,8 +174,19 @@ export default function PlanningBoard() {
     setShowModal(true);
   };
 
+  const openPlanItem = (job, e) => {
+    if (e) e.stopPropagation();
+    if (!planIsOpen(job?.status, job?.kind || 'job')) return;
+    if (job?.kind === 'work-order') {
+      navigate(recordPath('/production/work-orders', { id: job.id, orderNumber: job.jobNumber }, 'orderNumber'));
+      return;
+    }
+    openEditModal(job, e);
+  };
+
   const openEditModal = (job, e) => {
     if (e) e.stopPropagation();
+    if (job && !planIsOpen(job.status, 'job')) return;
     setEditingJob(job);
     
     // Load available BOMs for original product
@@ -175,7 +213,8 @@ export default function PlanningBoard() {
       return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
     }
     setFieldErrors({});
-    
+    if (editingJob && !planIsOpen(editingJob.status, 'job')) return;
+
     setSaving(true);
     try {
       const config = authConfig();
@@ -198,6 +237,7 @@ export default function PlanningBoard() {
 
   const handleDelete = async (id, jobNumber, e) => {
     if (e) e.stopPropagation();
+    if (editingJob && !planIsOpen(editingJob.status, 'job')) return;
     if (!window.confirm(`Delete production job "${jobNumber}"?`)) return;
     try {
       await axios.delete(`/api/production-jobs/${id}`, authConfig());
@@ -365,10 +405,12 @@ export default function PlanningBoard() {
 
   const beginBarDrag = (event, job, mode) => {
     if (planTool) return;
+    if (!planIsOpen(job.status, job.kind || 'job')) return;
     event.preventDefault();
     event.stopPropagation();
     barDragRef.current = {
       id: job.id,
+      kind: job.kind || 'job',
       mode,
       originX: event.clientX,
       start: new Date(job.startDate),
@@ -397,15 +439,22 @@ export default function PlanningBoard() {
         return;
       }
       try {
-        await axios.put(`/api/production-jobs/${drag.id}`, {
+        const dates = {
           startDate: drag.nextStart.toISOString(),
           endDate: drag.nextEnd.toISOString()
-        }, authConfig());
-        setJobs((prev) => prev.map((job) => (
-          job.id === drag.id
-            ? { ...job, startDate: drag.nextStart.toISOString(), endDate: drag.nextEnd.toISOString() }
-            : job
-        )));
+        };
+        if (drag.kind === 'work-order') {
+          await axios.put(`/api/work-orders/${drag.id}`, dates, authConfig());
+          rememberPlacedOrder(drag.id);
+          setWorkOrders((prev) => prev.map((order) => (
+            order.id === drag.id ? { ...order, ...dates } : order
+          )));
+        } else {
+          await axios.put(`/api/production-jobs/${drag.id}`, dates, authConfig());
+          setJobs((prev) => prev.map((job) => (
+            job.id === drag.id ? { ...job, ...dates } : job
+          )));
+        }
         setBarPreview(null);
       } catch (err) {
         setBarPreview(null);
@@ -495,12 +544,121 @@ export default function PlanningBoard() {
   });
 
   const unscheduledGanttJobs = jobs.filter(job => !job.startDate || !job.endDate);
-  const jobColors = colorForJobs(jobs);
+
+  const spanDays = (order) => {
+    if (order.startDate && order.endDate) {
+      const days = Math.round((startOfDay(order.endDate) - startOfDay(order.startDate)) / 86400000) + 1;
+      if (days > 0) return days;
+    }
+    return Math.max(1, Number(order.plannedDays) || 1);
+  };
+
+  const scheduledWorkOrders = workOrders.filter((order) => {
+    if (!order.startDate || !order.endDate || order.status === 'CANCELLED' || order.legacyJobId) return false;
+    const orderStart = new Date(order.startDate);
+    const orderEnd = new Date(order.endDate);
+    return orderStart <= timelineEnd && orderEnd >= timelineStart;
+  }).map((order) => ({
+    id: order.id,
+    kind: 'work-order',
+    jobNumber: order.orderNumber,
+    product: order.product,
+    productId: order.productId,
+    bomId: order.bomId,
+    quantity: order.quantity,
+    startDate: order.startDate,
+    endDate: order.endDate,
+    status: order.status,
+    priority: order.priority,
+    plannedDays: order.plannedDays
+  }));
+
+  const rememberPlacedOrder = (orderId) => {
+    setPlacedOrderIds((prev) => {
+      if (prev.includes(orderId)) return prev;
+      const next = [...prev, orderId];
+      localStorage.setItem(PLACED_ORDERS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const forgetPlacedOrder = (orderId) => {
+    setPlacedOrderIds((prev) => {
+      const next = prev.filter((id) => id !== orderId);
+      localStorage.setItem(PLACED_ORDERS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const unschedulePlanItem = async (item) => {
+    if (!planIsOpen(item.status, item.kind)) return;
+    const keptDays = spanDays(item);
+    try {
+      if (item.kind === 'work-order') {
+        await axios.put(`/api/work-orders/${item.id}`, { startDate: null, endDate: null }, authConfig());
+        forgetPlacedOrder(item.id);
+        setWorkOrders((prev) => prev.map((order) => (
+          order.id === item.id ? { ...order, startDate: null, endDate: null, plannedDays: order.plannedDays || keptDays } : order
+        )));
+        return;
+      }
+      await axios.put(`/api/production-jobs/${item.id}`, { startDate: null, endDate: null }, authConfig());
+      setJobs((prev) => prev.map((job) => (
+        job.id === item.id ? { ...job, startDate: null, endDate: null, plannedDays: keptDays } : job
+      )));
+      setWorkOrders((prev) => prev.map((order) => (
+        order.legacyJobId === item.id ? { ...order, startDate: null, endDate: null } : order
+      )));
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to remove the order from the plan', 'error');
+    }
+  };
+
+  const unplannedWorkOrders = workOrders.filter((order) => (
+    ['CREATED', 'DRAFT', 'RELEASED'].includes(order.status)
+    && !order.legacyJobId
+    && (!order.startDate || !order.endDate)
+  ));
+
+  const pendingJobs = jobs.filter((job) => (
+    (!job.startDate || !job.endDate) && planIsOpen(job.status, 'job')
+  ));
+
+  const pendingItems = [
+    ...unplannedWorkOrders.map((order) => ({
+      id: order.id,
+      kind: 'work-order',
+      number: order.orderNumber,
+      name: order.product?.name || '',
+      status: order.status,
+      startDate: order.startDate,
+      endDate: order.endDate,
+      plannedDays: order.plannedDays,
+      quantity: order.quantity
+    })),
+    ...pendingJobs.map((job) => ({
+      id: job.id,
+      kind: 'job',
+      number: job.jobNumber,
+      name: job.product?.name || '',
+      status: job.status,
+      startDate: job.startDate,
+      endDate: job.endDate,
+      plannedDays: job.plannedDays,
+      quantity: job.quantity
+    }))
+  ];
+
+  const boardItems = [
+    ...scheduledGanttJobs.map((job) => ({ ...job, kind: 'job' })),
+    ...scheduledWorkOrders
+  ];
+  const jobColors = colorForJobs([...jobs, ...workOrders]);
 
   const planRows = (() => {
     const groups = [];
     const indexByProduct = new Map();
-    scheduledGanttJobs.forEach((job) => {
+    boardItems.forEach((job) => {
       const productId = job.productId || job.id;
       if (!indexByProduct.has(productId)) {
         indexByProduct.set(productId, groups.length);
@@ -525,6 +683,58 @@ export default function PlanningBoard() {
     });
     return rows;
   })();
+
+  const dayIndexFromClientX = (clientX) => {
+    const scroller = timelineScrollRef.current;
+    if (!scroller) return -1;
+    const rect = scroller.getBoundingClientRect();
+    return Math.floor((clientX - rect.left + scroller.scrollLeft - PRODUCT_COL) / DAY_WIDTH);
+  };
+
+  const placeDroppedItem = async (item, dayIndex) => {
+    setDropDayIndex(null);
+    draggingOrderRef.current = null;
+    if (!item || dayIndex < 0 || dayIndex >= timelineDays.length) return;
+    if (!planIsOpen(item.status, item.kind)) return;
+    const today = startOfDay(new Date());
+    let start = startOfDay(timelineDays[dayIndex].date);
+    if (start < today) start = today;
+    const end = startOfDay(addDays(start, spanDays(item) - 1));
+    const dates = { startDate: start.toISOString(), endDate: end.toISOString() };
+    try {
+      if (item.kind === 'job') {
+        await axios.put(`/api/production-jobs/${item.id}`, dates, authConfig());
+        setJobs((prev) => prev.map((job) => (job.id === item.id ? { ...job, ...dates } : job)));
+        return;
+      }
+      await axios.put(`/api/work-orders/${item.id}`, dates, authConfig());
+      rememberPlacedOrder(item.id);
+      setWorkOrders((prev) => prev.map((row) => (row.id === item.id ? { ...row, ...dates } : row)));
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to plan the order', 'error');
+    }
+  };
+
+  const onTimelineDragOver = (event) => {
+    if (!draggingOrderRef.current) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const index = dayIndexFromClientX(event.clientX);
+    const next = index >= 0 && index < timelineDays.length ? index : null;
+    setDropDayIndex((prev) => (prev === next ? prev : next));
+  };
+
+  const onTimelineDrop = (event) => {
+    if (!draggingOrderRef.current) return;
+    event.preventDefault();
+    const item = draggingOrderRef.current;
+    placeDroppedItem(item, dayIndexFromClientX(event.clientX));
+  };
+
+  const todayIndex = timelineDays.findIndex((day) => startOfDay(day.date).getTime() === startOfDay(new Date()).getTime());
+  const previewIndex = dropDayIndex === null ? null : (todayIndex >= 0 && dropDayIndex < todayIndex ? todayIndex : dropDayIndex);
+  const previewSpan = draggingOrderRef.current ? spanDays(draggingOrderRef.current) : 1;
+  const inDropRange = (index) => previewIndex !== null && index >= previewIndex && index < previewIndex + previewSpan;
 
   const timelineScrollKey = useRef(null);
   const snapPlanToTodayRef = useRef(true);
@@ -590,7 +800,8 @@ export default function PlanningBoard() {
   return (
     <AppLayout title="Production Planning" icon={Sliders}>
       
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', minWidth: 0 }}>
           {viewMode === 'plan' && (<>
           <button
@@ -696,37 +907,88 @@ export default function PlanningBoard() {
           )}
         </div>
       </div>
-
-      {capacity && (capacity.workstations || []).length > 0 && (
-        <div style={{ marginBottom: '1rem', background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '0.9rem 1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.7rem' }}>
-            <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>Workstation load</strong>
-            {capacity.overloads?.length > 0 ? (
-              <span style={{ color: '#b91c1c', fontWeight: 800, fontSize: '0.75rem' }}>
-                Overload on {capacity.overloads.length} {capacity.overloads.length === 1 ? 'day' : 'days'}
-              </span>
-            ) : (
-              <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.75rem' }}>Within available hours</span>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-            {capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).map((row) => {
-              const scale = Math.max(row.availableHours, row.loadHours, 1);
-              return (
-                <div key={row.id || row.code}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700, color: row.overload ? '#b91c1c' : '#334155', marginBottom: '0.25rem' }}>
-                    <span>{row.code} · {row.name}</span>
-                    <span>{row.loadHours}h load / {row.availableHours}h available</span>
-                  </div>
-                  <div style={{ height: '8px', borderRadius: '99px', background: '#e2e8f0', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, (row.loadHours / scale) * 100)}%`, height: '100%', background: row.overload ? '#dc2626' : 'var(--accent)' }} />
-                  </div>
-                </div>
-              );
-            })}
+      {viewMode === 'plan' && pendingItems.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, marginBottom: '1rem' }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+            Pending ({pendingItems.length})
+          </span>
+          <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', minWidth: 0, flex: 1, paddingBottom: '2px' }}>
+            {pendingItems.map((item) => (
+              <div
+                key={`${item.kind}-${item.id}`}
+                draggable
+                onDragStart={(event) => {
+                  draggingOrderRef.current = item;
+                  event.dataTransfer.setData('text/plain', item.id);
+                  event.dataTransfer.setData('application/x-work-order', item.id);
+                  event.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragEnd={() => {
+                  draggingOrderRef.current = null;
+                  setDropDayIndex(null);
+                }}
+                title={`${item.number} · ${item.name}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  height: '34px',
+                  padding: '0 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  cursor: 'grab',
+                  flex: '0 0 auto',
+                  maxWidth: '280px',
+                  userSelect: 'none'
+                }}
+              >
+                <GripVertical size={14} color="#94a3b8" />
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', whiteSpace: 'nowrap' }}>{item.number}</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {item.name}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {capacity && (capacity.workstations || []).length > 0 && (
+        <Section title="Workstation load">
+          <div style={{ padding: '0.75rem 1rem 0', fontSize: '0.75rem', fontWeight: 700, color: capacity.overloads?.length ? '#dc2626' : '#059669' }}>
+            {capacity.overloads?.length > 0
+              ? `Overload on ${capacity.overloads.length} ${capacity.overloads.length === 1 ? 'day' : 'days'}`
+              : 'Within available hours'}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr>
+                  <th>Workstation</th>
+                  <th style={{ textAlign: 'right' }}>Load</th>
+                  <th style={{ textAlign: 'right' }}>Available</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).length === 0 ? (
+                  <tr><td colSpan={4} style={{ color: 'var(--text-muted)' }}>No workstation load in this horizon.</td></tr>
+                ) : capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).map((row) => (
+                  <tr key={row.id || row.code}>
+                    <td style={{ fontWeight: 600 }}>{row.code} · {row.name}</td>
+                    <td style={{ textAlign: 'right' }}>{row.loadHours}h</td>
+                    <td style={{ textAlign: 'right' }}>{row.availableHours}h</td>
+                    <td><StatusBadge status={row.overload ? 'OVERLOAD' : 'WITHIN'} label={row.overload ? 'Overload' : 'Within hours'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+          </div>
+        </Section>
+      )}
+      </div>
 
       {viewMode === 'table' ? (
         <DataTable
@@ -746,11 +1008,13 @@ export default function PlanningBoard() {
           }
         />
       ) : (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', height: 'calc(100vh - 210px)', minHeight: '500px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', height: `calc(100vh - ${pendingItems.length ? 268 : 210}px)`, minHeight: '500px' }}>
           
           {/* Main Gantt Grid Wrapper */}
           <div 
             ref={timelineScrollRef}
+            onDragOver={onTimelineDragOver}
+            onDrop={onTimelineDrop}
             style={{ 
               flexGrow: 1, 
               overflowX: 'auto', 
@@ -873,6 +1137,7 @@ export default function PlanningBoard() {
                     const isWeekend = [0, 6].includes(dayOfWeek);
                     const isToday = new Date().toDateString() === d.date.toDateString();
                     const isWeekStart = dayOfWeek === 1;
+                    const marked = inDropRange(index);
 
                     return (
                       <div 
@@ -885,7 +1150,7 @@ export default function PlanningBoard() {
                           borderRight: '1px solid #e2e8f0', 
                           borderLeft: isWeekStart ? '2px solid #94a3b8' : 'none',
                           flexShrink: 0,
-                          backgroundColor: isToday ? '#fee2e2' : isWeekend ? '#f1f5f9' : 'transparent',
+                          backgroundColor: marked ? '#dbeafe' : isToday ? '#fee2e2' : isWeekend ? '#f1f5f9' : 'transparent',
                           display: 'flex',
                           flexDirection: 'column',
                           justifyContent: 'center',
@@ -905,7 +1170,7 @@ export default function PlanningBoard() {
               </div>
 
               {/* Data Rows */}
-              {scheduledGanttJobs.length === 0 ? (
+              {boardItems.length === 0 ? (
                 <div style={{
                   position: 'sticky',
                   left: 0,
@@ -936,7 +1201,7 @@ export default function PlanningBoard() {
                       }}
                     >
                       <div 
-                        onClick={lead ? (e) => openEditModal(lead, e) : undefined}
+                        onClick={lead && planIsOpen(lead.status, lead.kind || 'job') ? (e) => openPlanItem(lead, e) : undefined}
                         style={{ 
                           width: `${PRODUCT_COL}px`, 
                           minWidth: `${PRODUCT_COL}px`, 
@@ -950,7 +1215,7 @@ export default function PlanningBoard() {
                           flexDirection: 'column',
                           justifyContent: 'center',
                           gap: '2px',
-                          cursor: lead ? 'pointer' : 'default'
+                          cursor: lead && planIsOpen(lead.status, lead.kind || 'job') ? 'pointer' : 'default'
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
@@ -970,6 +1235,7 @@ export default function PlanningBoard() {
                           const dayOfWeek = d.date.getDay();
                           const isWeekend = [0, 6].includes(dayOfWeek);
                           const isWeekStart = dayOfWeek === 1;
+                          const marked = inDropRange(index);
 
                           return (
                             <div 
@@ -980,7 +1246,7 @@ export default function PlanningBoard() {
                                 height: '100%', 
                                 borderRight: '1px solid #f1f5f9', 
                                 borderLeft: isWeekStart ? '2px solid #cbd5e1' : 'none',
-                                backgroundColor: isWeekend ? 'rgba(241, 245, 249, 0.4)' : 'transparent',
+                                backgroundColor: marked ? '#dbeafe' : isWeekend ? 'rgba(241, 245, 249, 0.4)' : 'transparent',
                                 flexShrink: 0 
                               }} 
                             />
@@ -998,6 +1264,8 @@ export default function PlanningBoard() {
                           const barWidth = Math.max(0, rightOffset - leftOffset);
                           const selectedForMerge = planTool === 'merge' && mergeSelection.includes(job.id);
                           const blockedForMerge = planTool === 'merge' && mergeProductId && job.productId !== mergeProductId;
+                          const locked = !planIsOpen(job.status, job.kind || 'job');
+                          const canUnschedule = !locked;
                           const meetsNext = lane.some(({ job: other }) => {
                             if (other.id === job.id) return false;
                             const otherPreview = barPreview?.id === other.id ? barPreview : null;
@@ -1010,12 +1278,16 @@ export default function PlanningBoard() {
                               key={job.id}
                               onPointerDown={(event) => beginBarDrag(event, job, 'move')}
                               onClick={(event) => {
-                                if (planTool === 'split') {
+                                if (!planIsOpen(job.status, job.kind || 'job')) {
+                                  event.stopPropagation();
+                                  return;
+                                }
+                                if (job.kind !== 'work-order' && planTool === 'split') {
                                   event.stopPropagation();
                                   openSplit(job);
                                   return;
                                 }
-                                if (planTool === 'merge') {
+                                if (job.kind !== 'work-order' && planTool === 'merge') {
                                   event.stopPropagation();
                                   toggleMergeJob(job);
                                   return;
@@ -1025,7 +1297,7 @@ export default function PlanningBoard() {
                                   event.stopPropagation();
                                   return;
                                 }
-                                openEditModal(job, event);
+                                openPlanItem(job, event);
                               }}
                               title={`${job.jobNumber}: ${job.product?.name}\nStarts: ${new Date(barStart).toLocaleString()}\nEnds: ${new Date(barEnd).toLocaleString()}`}
                               style={{
@@ -1037,12 +1309,12 @@ export default function PlanningBoard() {
                                 height: '100%',
                                 backgroundColor: jobColors.get(job.id),
                                 borderRadius: 0,
-                                cursor: blockedForMerge ? 'not-allowed' : planTool ? 'pointer' : 'grab',
+                                cursor: locked ? 'default' : blockedForMerge ? 'not-allowed' : planTool ? 'pointer' : 'grab',
                                 opacity: blockedForMerge ? 0.35 : 1,
                                 boxShadow: selectedForMerge ? 'inset 0 0 0 2px #ffffff, inset 0 0 0 4px #0f172a' : 'none',
                                 display: 'flex',
                                 alignItems: 'center',
-                                padding: '0 8px',
+                                padding: canUnschedule ? '0 22px 0 8px' : '0 8px',
                                 boxSizing: 'border-box',
                                 zIndex: preview ? 2 : 1,
                                 overflow: 'hidden',
@@ -1050,10 +1322,12 @@ export default function PlanningBoard() {
                                 userSelect: 'none'
                               }}
                             >
-                              <div
-                                onPointerDown={(event) => beginBarDrag(event, job, 'start')}
-                                style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '8px', cursor: 'ew-resize' }}
-                              />
+                              {!locked && (
+                                <div
+                                  onPointerDown={(event) => beginBarDrag(event, job, 'start')}
+                                  style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '8px', cursor: 'ew-resize' }}
+                                />
+                              )}
                               {selectedForMerge && <Check size={12} color={JOB_TEXT} style={{ flexShrink: 0, marginRight: '4px' }} />}
                               <span style={{ 
                                 fontSize: '0.65rem', 
@@ -1066,10 +1340,41 @@ export default function PlanningBoard() {
                               }}>
                                 {job.jobNumber} ({parseFloat(job.quantity)} {job.product?.stockUom?.name || job.product?.uom?.name || ''})
                               </span>
-                              <div
-                                onPointerDown={(event) => beginBarDrag(event, job, 'end')}
-                                style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '8px', cursor: 'ew-resize' }}
-                              />
+                              {canUnschedule && (
+                                <button
+                                  type="button"
+                                  title="Remove from plan"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    unschedulePlanItem(job);
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    right: '8px',
+                                    top: 0,
+                                    bottom: 0,
+                                    width: '16px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#475569',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    padding: 0,
+                                    zIndex: 3
+                                  }}
+                                >
+                                  <X size={12} />
+                                </button>
+                              )}
+                              {!locked && (
+                                <div
+                                  onPointerDown={(event) => beginBarDrag(event, job, 'end')}
+                                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '8px', cursor: 'ew-resize', zIndex: 2 }}
+                                />
+                              )}
                               {meetsNext && (
                                 <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '2px', backgroundColor: '#94a3b8', pointerEvents: 'none' }} />
                               )}
@@ -1085,16 +1390,16 @@ export default function PlanningBoard() {
           </div>
 
           {/* Unscheduled Backlog Drawer Panel at bottom */}
-          {unscheduledGanttJobs.length > 0 && (
+          {unscheduledGanttJobs.some((job) => !planIsOpen(job.status, 'job')) && (
             <div style={{ border: '1px solid #fee2e2', borderRadius: '12px', padding: '1rem', backgroundColor: '#fef2f2' }}>
               <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: 800, color: '#991b1b', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.025em' }}>
-                <AlertCircle size={16} /> Unscheduled Production Jobs ({unscheduledGanttJobs.length})
+                <AlertCircle size={16} /> Unscheduled Production Jobs ({unscheduledGanttJobs.filter((job) => !planIsOpen(job.status, 'job')).length})
               </h4>
               <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', color: '#7f1d1d' }}>
                 These sheets have been queued but lack start or end dates. Click a sheet to assign date limits and move it onto the visual planner board timeline.
               </p>
               <div style={{ display: 'flex', gap: '0.75rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
-                {unscheduledGanttJobs.map(job => (
+                {unscheduledGanttJobs.filter((job) => !planIsOpen(job.status, 'job')).map(job => (
                   <div 
                     key={job.id}
                     onClick={(e) => openEditModal(job, e)}
@@ -1148,6 +1453,7 @@ export default function PlanningBoard() {
               placeholder="Select Finished / Semi-Finished Product..."
               style={{ input: FIELD_STYLE }}
             />
+            {fieldErrors.productId && <span className="field-error-text">{fieldErrors.productId}</span>}
           </div>
 
           <div>
@@ -1170,6 +1476,7 @@ export default function PlanningBoard() {
               className={fieldErrors.quantity ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
+            {fieldErrors.quantity && <span className="field-error-text">{fieldErrors.quantity}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '1rem' }}>

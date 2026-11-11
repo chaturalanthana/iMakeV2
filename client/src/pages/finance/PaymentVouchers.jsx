@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import { CreditCard, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -96,7 +97,7 @@ export default function PaymentVouchers() {
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
                             {vouch.voucherNumber}
                             {Number(vouch.whtAmount) > 0 && (
-                              <button type="button" onClick={() => navigate(`/finance/vouchers/${vouch.id}/wht`)} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem' }}>WHT</button>
+                              <button type="button" onClick={() => navigate(recordPath('/finance/vouchers/wht', vouch, 'voucherNumber'))} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem' }}>WHT</button>
                             )}
                           </td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-main)' }}>{vouch.supplier?.name || '-'}</td>

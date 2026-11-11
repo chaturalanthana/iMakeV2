@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { queryRef, recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -91,7 +92,7 @@ export default function Deliveries() {
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
           <button 
-            onClick={(e) => { e.stopPropagation(); navigate(`/sales/invoices/new?deliveryId=${row.id}&orderId=${row.orderId || ''}`); }} 
+            onClick={(e) => { e.stopPropagation(); navigate(`/sales/invoices/new?deliveryId=${queryRef(row.deliveryNumber)}${row.order?.orderNumber ? `&orderId=${queryRef(row.order.orderNumber)}` : ''}`); }} 
             style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#e0e7ff', color: '#4338ca', border: 'none', cursor: 'pointer', fontWeight: 600 }}
           >
             Create Invoice
@@ -138,7 +139,7 @@ export default function Deliveries() {
             searchPlaceholder="Search by delivery # or customer..."
             searchKeys={['deliveryNumber', 'customer.name', 'order.orderNumber']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/sales/deliveries/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/sales/deliveries', row, 'deliveryNumber'))}
           />
 
           <ConfirmModal 

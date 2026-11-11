@@ -10,7 +10,7 @@ const TEMPLATES = {
   customers: ['code', 'name', 'email', 'phone', 'address', 'creditLimit'],
   suppliers: ['code', 'name', 'email', 'phone', 'address', 'leadTime', 'taxGroup', 'withholdingTaxGroup'],
   boms: ['productCode', 'version', 'componentCode', 'quantity', 'scrapPercent'],
-  workstations: ['code', 'name', 'hourlyRate', 'capacity', 'efficiency'],
+  workstations: ['code', 'name', 'capacity', 'efficiency'],
   'opening-stock': ['productCode', 'warehouseCode', 'quantity', 'unitCost', 'lotNumber'],
   'opening-ar': ['customerCode', 'amount', 'date', 'reference'],
   'opening-ap': ['supplierCode', 'amount', 'date', 'reference']
@@ -329,14 +329,13 @@ async function importWorkstations(tx, tenantId, userId, records) {
     const row = index + 2;
     const code = requiredText(record, 'code', row, errors);
     const name = requiredText(record, 'name', row, errors);
-    const hourlyRate = optionalNumber(record, 'hourlyRate', row, errors);
     const capacity = optionalNumber(record, 'capacity', row, errors, { integer: true });
     const efficiency = optionalNumber(record, 'efficiency', row, errors);
     if (code) {
       if (seen.has(code.toLowerCase())) errors.push(fieldError(row, 'code', `code ${code} is repeated in this file.`));
       seen.add(code.toLowerCase());
     }
-    return { row, code, name, hourlyRate, capacity: capacity || 1, efficiency: text(record, 'efficiency') ? efficiency : 1 };
+    return { row, code, name, capacity: capacity || 1, efficiency: text(record, 'efficiency') ? efficiency : 1 };
   });
   if (errors.length) return { created: 0, errors };
   let created = 0;
@@ -348,7 +347,7 @@ async function importWorkstations(tx, tenantId, userId, records) {
     }
     await tx.workstation.create({
       data: {
-        tenantId, code: row.code, name: row.name, hourlyRate: dec(row.hourlyRate || 0),
+        tenantId, code: row.code, name: row.name,
         capacity: row.capacity || 1, efficiency: dec(row.efficiency == null ? 1 : row.efficiency), createdBy: userId || null
       }
     });

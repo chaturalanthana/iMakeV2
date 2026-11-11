@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
@@ -29,7 +30,8 @@ const hasFinancePermission = () => {
 export default function NewCustomer() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -83,7 +85,7 @@ export default function NewCustomer() {
 
   useEffect(() => {
     fetchPageData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchPageData = async () => {
     setLoading(true);
@@ -105,11 +107,13 @@ export default function NewCustomer() {
       setDiscountGroups(dgRes.data.filter(dg => dg.status === 'ACTIVE'));
       setTaxGroups(tgRes.data.filter(tg => tg.status === 'ACTIVE'));
 
-      if (id) {
+      if (routeKey) {
         const custRes = await axios.get('/api/customers', config);
-        const customer = custRes.data.find(c => c.id === id);
+        const customer = findByRouteKey(custRes.data, routeKey, 'code');
 
         if (customer) {
+          setId(customer.id);
+          showRecord(navigate, '/sales/customers', customer, 'code');
           setFormData({
             code: customer.code || '',
             name: customer.name || '',
@@ -268,7 +272,7 @@ export default function NewCustomer() {
 
   if (isInitialLoad) {
     return (
-      <AppLayout title={id ? "Edit Customer" : "Create New Customer"} icon={User}>
+      <AppLayout title={routeKey ? "Edit Customer" : "Create New Customer"} icon={User}>
         <PageSkeleton type="form" />
       </AppLayout>
     );
@@ -354,7 +358,7 @@ export default function NewCustomer() {
   ];
 
   return (
-    <AppLayout title={id ? "Edit Customer" : "Create New Customer"}>
+    <AppLayout title={routeKey ? "Edit Customer" : "Create New Customer"}>
       {/* Header Panel */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -379,7 +383,7 @@ export default function NewCustomer() {
           </button>
           <div>
             <h2 style={{ margin: 0, fontWeight: 700, color: 'var(--text-main)', fontSize: '1.25rem' }}>
-              {id ? 'Update Customer' : 'Create New Customer'}
+              {routeKey ? 'Update Customer' : 'Create New Customer'}
             </h2>
             <p style={{ margin: '0.1rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
               Define primary details, financial limits, addresses, sales reps, and classifications.

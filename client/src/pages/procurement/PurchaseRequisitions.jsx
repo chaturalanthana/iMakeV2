@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { queryRef, recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -86,7 +87,7 @@ export default function PurchaseRequisitions() {
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
           {row.status !== 'CONVERTED' && (
             <button 
-              onClick={(e) => { e.stopPropagation(); navigate(`/procurement/purchase-orders/new?prId=${row.id}`); }} 
+              onClick={(e) => { e.stopPropagation(); navigate(`/procurement/purchase-orders/new?prId=${queryRef(row.prNumber)}`); }} 
               style={{ 
                 display: 'flex',
                 alignItems: 'center',
@@ -148,7 +149,7 @@ export default function PurchaseRequisitions() {
             searchPlaceholder="Search by PR number..."
             searchKeys={['prNumber']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/procurement/purchase-requisitions/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/procurement/purchase-requisitions', row, 'prNumber'))}
           />
 
           <ConfirmModal 

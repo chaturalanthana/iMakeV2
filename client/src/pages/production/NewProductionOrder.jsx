@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import { ClipboardList, ArrowLeft, CheckCircle } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -19,7 +20,8 @@ const LABEL_STYLE = {
 
 export default function NewProductionOrder() {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
   const { showToast } = useToast();
   const [products, setProducts] = useState([]);
   const [boms, setBoms] = useState([]);
@@ -49,10 +51,12 @@ export default function NewProductionOrder() {
       setProducts(manufactureable);
       setBoms(bomsRes.data);
 
-      if (id) {
+      if (routeKey) {
         const orderRes = await axios.get('/api/production-orders', config);
-        const order = orderRes.data.find(o => o.id === id);
+        const order = findByRouteKey(orderRes.data, routeKey, 'orderNumber');
         if (order) {
+          setId(order.id);
+          showRecord(navigate, '/production/orders', order, 'orderNumber');
           // Filter BOMs for this product
           const filtered = bomsRes.data.filter(b => b.productId === order.productId);
           setAvailableBoms(filtered.map(b => ({ label: `${b.code} (v${b.version})`, value: b.id })));
@@ -75,7 +79,7 @@ export default function NewProductionOrder() {
     } finally {
       setLoading(false);
     }
-  }, [id, authConfig, showToast]);
+  }, [routeKey, authConfig, showToast, navigate]);
 
   useEffect(() => {
     fetchData();
@@ -123,7 +127,7 @@ export default function NewProductionOrder() {
   };
 
   return (
-    <AppLayout title={id ? "Edit Production Order" : "New Production Order"} icon={ClipboardList}>
+    <AppLayout title={routeKey ? "Edit Production Order" : "New Production Order"} icon={ClipboardList}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
         <button 
           onClick={() => navigate('/production/orders')}
@@ -148,6 +152,7 @@ export default function NewProductionOrder() {
               placeholder="Select finished or semi-finished product..."
               style={{ input: FIELD_STYLE }}
             />
+            {fieldErrors.productId && <span className="field-error-text">{fieldErrors.productId}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '1rem' }}>
@@ -160,6 +165,7 @@ export default function NewProductionOrder() {
                 className={fieldErrors.quantity ? 'field-invalid' : undefined}
                 style={FIELD_STYLE} 
               />
+              {fieldErrors.quantity && <span className="field-error-text">{fieldErrors.quantity}</span>}
             </div>
             <div style={{ flex: 1 }}>
               <label style={LABEL_STYLE}>BOM Version</label>

@@ -4,12 +4,11 @@ import AppLayout from '../../components/layout/AppLayout';
 import { DollarSign } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
+import FilterBar from '../../components/ui/FilterBar';
+import FormField, { TextControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import Section, { EmptyState } from '../../components/ui/Section';
 
-const FIELD = {
-  width: '100%', height: '42px', padding: '0 0.875rem', borderRadius: '8px',
-  border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', outline: 'none',
-  fontWeight: 500, fontSize: '0.9rem', boxSizing: 'border-box', color: '#1e293b'
-};
 const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function ProductionCosting() {
@@ -65,83 +64,93 @@ export default function ProductionCosting() {
 
   return (
     <AppLayout title="Production Costing" icon={DollarSign}>
-      <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1rem' }}>
-        <div style={{ fontWeight: 800, marginBottom: '0.35rem' }}>Quote cost sheet</div>
-        <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.8rem' }}>
-          Rolls the active BOM and routing up for a quantity. Use the unit cost on a quotation.
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 140px auto', gap: '0.6rem', alignItems: 'end' }}>
+      <FilterBar actions={<ActionButton onClick={rollup}>Roll up</ActionButton>}>
+        <FormField label="Product" width="320px" required error={fieldErrors.productId}>
           <LiveSearchDropdown
             options={products.map((product) => ({ label: `${product.code} - ${product.name}`, value: product.id }))}
             value={productId}
             invalid={!!fieldErrors.productId}
             onChange={setProductId}
-            placeholder="Product"
+            placeholder="Search product..."
           />
-          <input type="number" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} className={fieldErrors.quantity ? 'field-invalid' : undefined} style={FIELD} />
-          <button onClick={rollup} style={{ height: '42px', border: 'none', borderRadius: '8px', background: 'var(--accent)', color: '#fff', fontWeight: 800, padding: '0 1rem', cursor: 'pointer' }}>
-            Roll up
-          </button>
-        </div>
-        {sheet && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem', fontSize: '0.85rem' }}>
+        </FormField>
+        <FormField label="Quantity" width="140px" required error={fieldErrors.quantity}>
+          <TextControl type="number" min="0" step="any" value={quantity} invalid={!!fieldErrors.quantity} onChange={(event) => setQuantity(event.target.value)} />
+        </FormField>
+      </FilterBar>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
+        Rolls the active BOM and routing up for a quantity. Use the unit cost on a quotation.
+      </p>
+
+      {sheet && (
+        <Section title="Quote cost sheet">
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr>
+                  <th>Bucket</th>
+                  <th style={{ textAlign: 'right' }}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['Material', sheet.material],
+                  ['Scrap allowance', sheet.scrap],
+                  ['Labour', sheet.labour],
+                  ['Machine', sheet.machine],
+                  ['Subcontract', sheet.subcontract],
+                  ['Overhead', sheet.overhead],
+                  ['Total', sheet.total],
+                  ['Unit cost', sheet.unitCost]
+                ].map(([label, value]) => (
+                  <tr key={label}>
+                    <td style={{ fontWeight: label === 'Total' || label === 'Unit cost' ? 800 : 600 }}>{label}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {sheet.note && <div style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{sheet.note}</div>}
+        </Section>
+      )}
+
+      <Section title="Product cost variance">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '640px' }}>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th style={{ textAlign: 'right' }}>Orders</th>
+                <th style={{ textAlign: 'right' }}>Material</th>
+                <th style={{ textAlign: 'right' }}>Labour</th>
+                <th style={{ textAlign: 'right' }}>Overhead</th>
+                <th style={{ textAlign: 'right' }}>Scrap</th>
+                <th style={{ textAlign: 'right' }}>Total</th>
+              </tr>
+            </thead>
             <tbody>
-              {[
-                ['Material', sheet.material],
-                ['Scrap allowance', sheet.scrap],
-                ['Labour', sheet.labour],
-                ['Machine', sheet.machine],
-                ['Subcontract', sheet.subcontract],
-                ['Overhead', sheet.overhead],
-                ['Total', sheet.total],
-                ['Unit cost', sheet.unitCost]
-              ].map(([label, value]) => (
-                <tr key={label} style={{ borderTop: '1px solid #f1f5f9', height: '36px' }}>
-                  <td style={{ fontWeight: label === 'Total' || label === 'Unit cost' ? 800 : 600 }}>{label}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(value)}</td>
+              {(report.products || []).length === 0 ? (
+                <tr><td colSpan={7}><EmptyState>No released work orders yet.</EmptyState></td></tr>
+              ) : report.products.map((product) => (
+                <tr key={product.productId}>
+                  <td style={{ fontWeight: 600 }}>{product.code} — {product.name}</td>
+                  <td style={{ textAlign: 'right' }}>{product.orderCount}</td>
+                  {['material', 'labour', 'overhead', 'scrap'].map((key) => (
+                    <td key={key} style={{ textAlign: 'right', color: product.variance.buckets[key].variance > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
+                      {money(product.variance.buckets[key].variance)}
+                    </td>
+                  ))}
+                  <td style={{ textAlign: 'right', fontWeight: 800 }}>{money(product.variance.variance)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        )}
-        {sheet?.note && <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#64748b' }}>{sheet.note}</div>}
-      </div>
-
-      <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem 1.25rem', overflow: 'auto' }}>
-        <div style={{ fontWeight: 800, marginBottom: '0.7rem' }}>Product cost variance</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', minWidth: '640px' }}>
-          <thead>
-            <tr style={{ textAlign: 'right', color: '#64748b', height: '36px' }}>
-              <th style={{ textAlign: 'left' }}>Product</th>
-              <th>Orders</th>
-              <th>Material</th>
-              <th>Labour</th>
-              <th>Overhead</th>
-              <th>Scrap</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(report.products || []).length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: '1rem 0', color: '#64748b' }}>No released work orders yet.</td></tr>
-            ) : report.products.map((product) => (
-              <tr key={product.productId} style={{ borderTop: '1px solid #f1f5f9', height: '40px' }}>
-                <td style={{ textAlign: 'left', fontWeight: 700 }}>{product.code} — {product.name}</td>
-                <td style={{ textAlign: 'right' }}>{product.orderCount}</td>
-                {['material', 'labour', 'overhead', 'scrap'].map((key) => (
-                  <td key={key} style={{ textAlign: 'right', color: product.variance.buckets[key].variance > 0 ? '#b91c1c' : '#15803d' }}>
-                    {money(product.variance.buckets[key].variance)}
-                  </td>
-                ))}
-                <td style={{ textAlign: 'right', fontWeight: 800 }}>{money(product.variance.variance)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div style={{ marginTop: '0.55rem', fontSize: '0.75rem', color: '#64748b' }}>
+        </div>
+        <div style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           Planned cost is the full roll-up pro-rated to confirmed quantity (good plus scrap). Labour includes machine time and subcontract.
         </div>
-      </div>
+      </Section>
     </AppLayout>
   );
 }

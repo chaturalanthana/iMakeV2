@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
+import { findByRouteKey, isUuid, recordPath, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import { FileText, Printer, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -8,7 +9,7 @@ import { useToast } from '../../context/ToastContext';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function PaySlips() {
-  const { runId } = useParams();
+  const routeKey = routeKeyOf(useParams());
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [run, setRun] = useState(null);
@@ -19,18 +20,30 @@ export default function PaySlips() {
   const authConfig = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
   useEffect(() => {
-    if (runId) {
+    if (routeKey) {
       fetchRun();
     } else {
       fetchAllRuns();
     }
-  }, [runId]);
+  }, [routeKey]);
 
   const fetchRun = async () => {
     setLoading(true);
     try {
+      let runId = isUuid(routeKey) ? routeKey : '';
+      if (!runId) {
+        const list = await axios.get('/api/hr/salary-runs', authConfig());
+        const hit = findByRouteKey(list.data, routeKey, 'runNumber');
+        if (!hit) {
+          showToast('Payroll run not found', 'error');
+          setLoading(false);
+          return;
+        }
+        runId = hit.id;
+      }
       const res = await axios.get(`/api/hr/salary-runs/${runId}`, authConfig());
       setRun(res.data);
+      showRecord(navigate, '/hr/payslips', res.data, 'runNumber');
     } catch { showToast('Failed to load salary run', 'error'); }
     finally { setLoading(false); }
   };
@@ -77,7 +90,7 @@ export default function PaySlips() {
     w.print();
   };
 
-  if (!runId) {
+  if (!routeKey) {
     return (
       <AppLayout title="Pay Slips" icon={FileText}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -95,7 +108,7 @@ export default function PaySlips() {
               {allRuns.map(r => {
                 const totalNet = r.lines.reduce((s, l) => s + parseFloat(l.netPay || 0), 0);
                 return (
-                  <div key={r.id} onClick={() => navigate(`/hr/payslips/${r.id}`)} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'all 0.2s' }}
+                  <div key={r.id} onClick={() => navigate(recordPath('/hr/payslips', r, 'runNumber'))} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'all 0.2s' }}
                     onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = '#c7d2fe'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = '#e2e8f0'; }}>
                     <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

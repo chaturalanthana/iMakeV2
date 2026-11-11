@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import { DollarSign, Play, ChevronRight, Check, AlertCircle, Pencil } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -130,7 +131,7 @@ export default function SalaryProcess() {
                 {salaryRuns.map(run => {
                   const totalNetRun = run.lines.reduce((s, l) => s + parseFloat(l.netPay || 0), 0);
                   return (
-                    <div key={run.id} onClick={() => navigate(`/hr/payslips/${run.id}`)} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'all 0.2s' }}
+                    <div key={run.id} onClick={() => navigate(recordPath('/hr/payslips', run, 'runNumber'))} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'all 0.2s' }}
                       onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = '#c7d2fe'; }}
                       onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = '#e2e8f0'; }}>
                       <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

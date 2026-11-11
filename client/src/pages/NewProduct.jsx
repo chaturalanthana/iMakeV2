@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, recordPath, routeKeyOf, showRecord } from '../utils/recordPath';
 import AppLayout from '../components/layout/AppLayout';
 import PageSkeleton from '../components/ui/PageSkeleton';
 import LiveSearchDropdown from '../components/ui/LiveSearchDropdown';
@@ -27,7 +28,8 @@ function hierarchyLabel(node, list) {
 export default function NewProduct() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -111,7 +113,7 @@ export default function NewProduct() {
 
   useEffect(() => {
     fetchData();
-  }, [id]);
+  }, [routeKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -122,7 +124,7 @@ export default function NewProduct() {
       const [attrRes, catRes, prodRes, tgRes, pgRes, brandRes] = await Promise.all([
         axios.get('/api/products/attributes', config),
         axios.get('/api/categories', config),
-        id ? axios.get('/api/products', config) : Promise.resolve(null),
+        routeKey ? axios.get('/api/products', config) : Promise.resolve(null),
         axios.get('/api/finance/tax-groups', config),
         axios.get('/api/product-groups', config),
         axios.get('/api/brands', config)
@@ -134,9 +136,11 @@ export default function NewProduct() {
       setRawProductGroups(pgRes.data);
       setTaxGroups(tgRes.data.filter(tg => tg.status === 'ACTIVE'));
 
-      if (id && prodRes) {
-        const product = prodRes.data.find(p => p.id === id);
+      if (routeKey && prodRes) {
+        const product = findByRouteKey(prodRes.data, routeKey, 'code');
         if (product) {
+          setId(product.id);
+          showRecord(navigate, '/products', product, 'code');
           setFormData({
             code: product.code || '',
             name: product.name || '',
@@ -414,7 +418,7 @@ export default function NewProduct() {
       setDuplicateConfig({ isOpen: false, productId: null, sourceCode: '' });
       setNewProductCode('');
       // Navigate to the newly duplicated product details page
-      navigate(`/products/${res.data.id}`);
+      navigate(recordPath('/products', res.data, 'code'));
     } catch (error) {
       console.error('Failed to duplicate product:', error);
       showToast(error.response?.data?.error || 'Failed to duplicate product', 'error');
@@ -423,7 +427,7 @@ export default function NewProduct() {
 
   if (isInitialLoad) {
     return (
-      <AppLayout title={id ? "Edit Item" : "Create New Item"} icon={Box}>
+      <AppLayout title={routeKey ? "Edit Item" : "Create New Item"} icon={Box}>
         <PageSkeleton type="form" />
       </AppLayout>
     );
@@ -486,7 +490,7 @@ export default function NewProduct() {
   };
 
   return (
-    <AppLayout title={id ? "Edit Item" : "Create New Item"}>
+    <AppLayout title={routeKey ? "Edit Item" : "Create New Item"}>
       {/* Header Action Panel */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -511,7 +515,7 @@ export default function NewProduct() {
           </button>
           <div>
             <h2 style={{ margin: 0, fontWeight: 700, color: 'var(--text-main)', fontSize: '1.25rem' }}>
-              {id ? 'Update Product Item' : 'Create New Item'}
+              {routeKey ? 'Update Product Item' : 'Create New Item'}
             </h2>
           </div>
         </div>

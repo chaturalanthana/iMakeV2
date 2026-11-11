@@ -156,7 +156,7 @@ describe('operations, imports, and Sri Lanka compliance', () => {
     expect(madeLow.href).toBe('/production/mrp');
     expect(madeLow.detail).toMatch(/planned in MRP/);
     const boughtLow = pending.body.alerts.find((alert) => alert.type === 'LOW_STOCK' && alert.documentNumber === 'RM-1');
-    expect(boughtLow.href).toBe('/production/replenishment');
+    expect(boughtLow.href).toBe('/production/mrp');
 
     const second = await request(app).post('/api/replenishment/run').set(auth()).send({});
     expect(second.status).toBe(201);
@@ -294,7 +294,7 @@ describe('operations, imports, and Sri Lanka compliance', () => {
     ), 'boms.csv');
     expect(bom.status).toBe(201);
     const station = await request(app).post('/api/imports/workstations').set(auth()).attach('file', Buffer.from(
-      toCsv(['code', 'name', 'hourlyRate', 'capacity', 'efficiency'], [{ code: 'SAW', name: 'Saw', hourlyRate: 30, capacity: 1, efficiency: 1 }])
+      toCsv(['code', 'name', 'capacity', 'efficiency'], [{ code: 'SAW', name: 'Saw', capacity: 1, efficiency: 1 }])
     ), 'stations.csv');
     expect(station.status).toBe(201);
 

@@ -79,12 +79,6 @@ export default function Workstations() {
       render: (row) => row.description || '-'
     },
     {
-      header: 'Hourly Rate',
-      accessor: 'hourlyRate',
-      fontWeight: 600,
-      render: (row) => '$' + parseFloat(row.hourlyRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    },
-    {
       header: 'Status',
       accessor: 'status',
       render: (row) => {
