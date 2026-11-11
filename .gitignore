@@ -1,9 +1,9 @@
 node_modules/
 dist/
 build/
-.env
 *.log
 .DS_Store
 Thumbs.db
 server/uploads/
 server/public/
+config.bat
