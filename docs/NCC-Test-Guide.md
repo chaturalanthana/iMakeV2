@@ -4,7 +4,7 @@ Nawaloka Consumer Care · iMake OS SRS v2.0
 
 This guide is for Chatura and the client testers. The demo company is **Ceylon Woodworks (Pvt) Ltd**. Use it to click through each flow and mark Pass or Fail.
 
-The home screen tiles are sample pictures. The lists, documents, stock, and trial balance are the live records.
+The home screen tiles, the chart, and the audit list are live figures for this company. Payroll is hidden until you turn it on.
 
 ## 1. Start the app and sign in
 
@@ -20,7 +20,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
    - **Nimal Perera** enters documents. He cannot approve his own work.
    - **Kamani Dias** is the approver (Finance).
 
-**Expected.** Both users reach the home screen. The company name is Ceylon Woodworks (Pvt) Ltd.
+**Expected.** Both users reach the home screen. The company name is Ceylon Woodworks (Pvt) Ltd. Revenue, orders, jobs, and shortages match the registers, not a fixed sample. The left menu has no Human resources section.
 
 - [ ] Pass
 - [ ] Fail
@@ -94,24 +94,51 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Sales invoices](test-guide/img/invoices.png)
 
-## 5. Van and cash sale
+## 5. Dispatch: price, pick, pack, gate pass, trip, and proof
 
-**Purpose.** Sell for cash at the counter or from the van.
+**Purpose.** Move a general-trade order from release to the truck and back.
 
-**SRS.** SL-04
+**SRS.** SL-01, SL-02, SL-03, SL-05
 
-1. Open **Sales → Invoices**. Find the invoice for **Factory cash counter**. It is paid.
-2. Open **Finance → Payment Receipts**. The matching cash receipt is there.
-3. To do another one: create an invoice for Factory cash counter, choose the finished-goods warehouse, save it as issued, then take a cash receipt for the full amount.
+1. Open **Sales → Customer prices**. Galle Heritage Hotel has a chair price. A group price and a modern-trade price are there too.
+2. Open **Sales → Dispatch**. Order **SO/DEMO/00001** is pending for two chairs at Elakanda. Press **Release** and choose **Elakanda distribution**.
+3. Open **Route picks**. Press **New pick list**. Choose Elakanda, route **General trade north**, vehicle **WP-LD-2041**, and that order. Create it.
+4. On the new row press **Pick**, then **Pack**, then **Delivery**.
+5. Open **Trips**. Press **New trip**. Tick the new delivery, set the driver to Ranjith, and choose the same vehicle. Create it.
+6. On the trip press **Invoice**, then **Gate pass**. The gate pass waits for Kamani because approvals are on.
+7. Sign in as Kamani, open **Approvals**, and approve the gate pass. Sign back in as Nimal.
+8. Open the trip and press **Depart**, then **POD**. Enter who received the goods. Leave rejected quantity at 0 for a clean delivery. If some goods come back, enter the quantity and a reason, then open **Sales returns** if finance needs the credit note.
+9. A finished example is already on the list: trip **TS/2026/11/00001**, gate pass issued, status departed.
 
-**Expected.** The invoice goes to Paid. Stock of the chair goes down. Cash on Hand goes up. There is no separate van document.
+**Expected.** The vehicle cannot depart until the invoice and an issued gate pass exist. Stock falls when the delivery note is posted. The proof records who signed.
 
 - [ ] Pass
 - [ ] Fail
 
-![Payment receipts](test-guide/img/receipts.png)
+![Dispatch board](test-guide/img/dispatch.png)
 
-## 6. Returns both ways
+![Trips and gate passes](test-guide/img/trips.png)
+
+## 6. Van and factory cash sale
+
+**Purpose.** Sell from the van or the factory counter in one step.
+
+**SRS.** SL-04
+
+1. Open **Sales → Van / factory sales**.
+2. Choose **Van sales** or **Factory cash**.
+3. Customer: Galle Heritage Hotel. Location: **Van 01 stock** or **Factory cash counter**. Product: dining chair or side table. Enter the quantity. The price fills from the price list.
+4. Press **Post sale**.
+5. If approvals are on, the sale waits for Kamani. After approval, stock in that location falls and the invoice is paid in cash.
+
+**Expected.** One action posts the invoice, the stock issue, revenue, and the cash receipt together. You do not create a separate receipt.
+
+- [ ] Pass
+- [ ] Fail
+
+![Van and factory sales](test-guide/img/cash-sales.png)
+
+## 7. Returns both ways
 
 **Purpose.** Take a customer return and send goods back to a supplier.
 
@@ -129,7 +156,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Returns](test-guide/img/returns.png)
 
-## 7. Material request, issue, and transfer
+## 8. Material request, issue, and transfer
 
 **Purpose.** Ask for stock, pick it, issue it, and move some to another store.
 
@@ -148,7 +175,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Transfers](test-guide/img/transfers.png)
 
-## 8. Cycle count
+## 9. Cycle count
 
 **Purpose.** Count the shelf and post the difference only after approval.
 
@@ -166,7 +193,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Cycle counts](test-guide/img/cycle-counts.png)
 
-## 9. Weekly plan and a work order
+## 10. Weekly plan and a work order
 
 **Purpose.** Plan the week, release a work order, confirm the shop floor, and close it.
 
@@ -188,7 +215,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Work orders](test-guide/img/work-orders.png)
 
-## 10. Make-to-order sales order
+## 11. Make-to-order sales order
 
 **Purpose.** A side table is not kept in stock. The sales order should raise a draft work order.
 
@@ -205,7 +232,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Shop floor](test-guide/img/shop-floor.png)
 
-## 11. Contract manufacturing
+## 12. Contract manufacturing
 
 **Purpose.** Send work to Elakanda and receive it back at the virtual floor.
 
@@ -222,22 +249,25 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Contract manufacturing](test-guide/img/contracts.png)
 
-## 12. Abnormal loss
+## 13. Abnormal loss
 
-**Purpose.** A loss above the allowed scrap needs a manager before it hits the loss account.
+**Purpose.** Scrap above the allowed percent waits for finance, then posts to the loss account.
 
 **SRS.** PD-07
 
-1. Open a dining chair product. The abnormal-loss threshold is 2 percent. Scrap standards are on **Product Groups** (Furniture 2 percent, Soya 2, Pasta 3, Sauce 1.5).
-2. On a released work order, confirm a finish step with scrap above that threshold and choose a scrap reason.
-3. Open **Production → Production Reports** and review the variance.
+1. Open **Production → Abnormal losses**. One row is already pending: a power cut on the furniture line.
+2. Sign in as Kamani. Open **Approvals**. Approve **Abnormal production loss**.
+3. Sign back in as Nimal. The loss list now says posted. The trial balance shows the abnormal loss account.
+4. On a new work order, confirm the last step with scrap above 2 percent and a scrap reason. A new row appears in Approvals for Kamani. It does not post until she approves it.
 
-**Expected.** Normal scrap stays in the production variance. There is no separate loss-approval screen in this build. See the limitations at the end.
+**Expected.** Nimal cannot post his own loss. Approval debits the abnormal loss account and credits work in progress.
 
 - [ ] Pass
 - [ ] Fail
 
-## 13. Capex, CWIP, asset, and depreciation
+![Abnormal losses](test-guide/img/losses.png)
+
+## 14. Capex, CWIP, asset, and depreciation
 
 **Purpose.** A packing line is bought as capital, held as work in progress, then turned into an asset and depreciated.
 
@@ -255,7 +285,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Fixed assets](test-guide/img/assets.png)
 
-## 14. Credit notes, debit notes, IOU, and the bank
+## 15. Credit notes, debit notes, IOU, and the bank
 
 **Purpose.** Adjust an invoice, track an employee advance, and match the bank.
 
@@ -276,7 +306,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![IOU and petty cash](test-guide/img/ious.png)
 
-## 15. Month-end and a locked period
+## 16. Month-end and a locked period
 
 **Purpose.** Close the books in order, then prove a closed month cannot be posted to.
 
@@ -287,6 +317,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 3. Open **Finance → Period Close**. Open November if it is not listed. Tick the steps in order: Inventory, Production, Accounts payable, Accounts receivable, Cash and bank, Fixed assets, then General ledger.
 4. Post the closing entries only after those steps are done. The month then rejects every new posting.
 5. Try to issue stock that would go below zero. With the box unticked, the system blocks it.
+6. **Show payroll menu** is off. The left menu has no Human resources group. Tick the box and the page reloads with Employees, salary, and payslips. Tick it off again before you finish. Payroll is not part of the signed NCC scope.
 
 **Expected.** October rejects the journal even though journals need approval. November still accepts a balanced journal, which then waits for Kamani.
 
@@ -297,7 +328,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Period close](test-guide/img/period-close.png)
 
-## 16. Audit history
+## 17. Audit history
 
 **Purpose.** See who did what.
 
@@ -314,7 +345,7 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 
 ![Audit log](test-guide/img/audit.png)
 
-## 17. Reports and the trial balance
+## 18. Reports and the trial balance
 
 **Purpose.** Check that the books balance and that every finance and stock report exports to Excel.
 
@@ -350,14 +381,12 @@ The home screen tiles are sample pictures. The lists, documents, stock, and tria
 | Periods | October 2026 is closed. November 2026 is open. |
 | Yield and scrap | Furniture 98 / 2. Soya 97 / 2. Pasta 96 / 3. Sauce 98 / 1.5. Abnormal loss starts at 2 percent. |
 | Planning | Eight-week horizon. Labour LKR 650 an hour. Overhead 10 percent of conversion. Close grace is 3 days. |
-| Stores | MAIN raw store, FG-01 finished goods, SUB-01 contract floor, VAN-01 van. Bins: BIN-A1, QA-HOLD, DMG-01. |
+| Stores | MAIN raw store, FG-01 finished goods, ELK Elakanda distribution, VAN-01 van, FAC-CASH factory counter, SUB-01 contract floor. Route GT-NORTH. Bins: BIN-A1, QA-HOLD, DMG-01. |
 | Cost centres | Soya, Pasta, Sauce, Turkey Import, Contract Manufacturing, and Administration. Administration is split 20 percent to each operation. |
 
 ## Known limitations
 
-- The iForce SFA link was dropped. There is no gate pass, trip sheet, proof of delivery, or vehicle load list. Dispatch is the delivery note. A cash or van sale is an invoice plus a cash receipt. Pick lists are built from material requests.
-- Abnormal loss has a threshold on the item and a report, but no separate approval screen.
-- The home-screen tiles (revenue, order counts, the chart) are sample figures. Use the trial balance and the registers for real numbers.
-- Human resources screens are in the menu. Payroll is outside the signed SRS.
-- Excel export is on the finance report catalogue, the trial balance, the audit log, and the stock reports. Batch trace is print only.
-- Document deletes ask in the iMake confirm dialog, not a browser popup.
+- The iForce SFA link was dropped. Orders are typed into iMake. Nothing is sent to a field-sales system.
+- Payroll screens stay in the product but stay hidden until **Settings → Fiscal periods → Show payroll menu** is ticked. They are outside the signed NCC scope.
+- Excel export covers the finance report catalogue, the trial balance, the audit log, and the stock reports. Batch trace is print only.
+- A rejected proof of delivery records the quantity. Finance still posts the credit from **Sales returns** or **Credit and debit notes** when the invoice must change.

@@ -20,6 +20,7 @@ import Workstations from './pages/production/Workstations';
 import NewWorkstation from './pages/production/NewWorkstation';
 import MRPPlanner from './pages/production/MRPPlanner';
 import ProductionReports from './pages/production/ProductionReports';
+import Losses from './pages/production/Losses';
 import ContractManufacturing from './pages/production/ContractManufacturing';
 import Alerts from './pages/Alerts';
 import DataImport from './pages/settings/DataImport';
@@ -75,6 +76,10 @@ import NewDelivery from './pages/sales/NewDelivery';
 import Invoices from './pages/sales/Invoices';
 import NewInvoice from './pages/sales/NewInvoice';
 import CustomerOutstanding from './pages/sales/CustomerOutstanding';
+import {
+  PriceRules, DispatchBoard, RoutePicks, Trips, CashSale, SalesReturns,
+  BankFiles, DispatchSettings, NotificationsPage
+} from './pages/sales/phase3/pages';
 
 // Procurement Features
 import Suppliers from './pages/procurement/Suppliers';
@@ -171,6 +176,7 @@ function App() {
               <Route path="/production/workstations/:id" element={<NewWorkstation />} />
               <Route path="/production/mrp" element={<MRPPlanner />} />
               <Route path="/production/reports" element={<ProductionReports />} />
+              <Route path="/production/losses" element={<Losses />} />
               <Route path="/production/contracts" element={<ContractManufacturing />} />
               <Route path="/production/replenishment" element={<Navigate to="/production/mrp" replace />} />
               <Route path="/production/groups" element={<ProductGroups />} />
@@ -205,6 +211,15 @@ function App() {
               <Route path="/sales/invoices/new" element={<NewInvoice />} />
               <Route path="/sales/invoices/*" element={<NewInvoice />} />
               <Route path="/sales/invoices" element={<Invoices />} />
+              <Route path="/sales/prices" element={<PriceRules />} />
+              <Route path="/sales/dispatch" element={<DispatchBoard />} />
+              <Route path="/sales/picks" element={<RoutePicks />} />
+              <Route path="/sales/trips" element={<Trips />} />
+              <Route path="/sales/cash-sales" element={<CashSale />} />
+              <Route path="/sales/returns" element={<SalesReturns />} />
+              <Route path="/sales/bank-file" element={<BankFiles />} />
+              <Route path="/sales/dispatch-settings" element={<DispatchSettings />} />
+              <Route path="/sales/notifications" element={<NotificationsPage />} />
               <Route path="/sales/outstanding" element={<CustomerOutstanding />} />
               <Route path="/sales/customers/:id/statement" element={<PartyStatement kind="customer" />} />
 

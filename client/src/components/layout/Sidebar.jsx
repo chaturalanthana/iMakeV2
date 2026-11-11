@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, ScrollText, Briefcase, Boxes
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, RotateCcw, Bell, ScrollText, Briefcase, Boxes
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -13,6 +13,7 @@ export default function Sidebar() {
   const [expandedMenu, setExpandedMenu] = useState(null);
   const [shouldAnimate, setShouldAnimate] = useState(false);
   const [approvalCount, setApprovalCount] = useState(0);
+  const [hrEnabled, setHrEnabled] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -25,6 +26,10 @@ export default function Sidebar() {
         .catch(() => {});
     };
     load();
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (!stop && data?.tenant) setHrEnabled(Boolean(data.tenant.hrEnabled)); })
+      .catch(() => {});
     const timer = setInterval(load, 30000);
     return () => { stop = true; clearInterval(timer); };
   }, []);
@@ -51,6 +56,7 @@ export default function Sidebar() {
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
         { name: 'Production Reports', icon: BarChart2, path: '/production/reports' },
+        { name: 'Abnormal losses', icon: BarChart2, path: '/production/losses' },
         { name: 'Contract Manufacturing', icon: Truck, path: '/production/contracts' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
         { name: 'Product Types', icon: Layers, path: '/registries/product-types' },
@@ -72,6 +78,15 @@ export default function Sidebar() {
         { name: 'Orders', icon: ShoppingCart, path: '/sales/orders' },
         { name: 'Deliveries', icon: Package, path: '/sales/deliveries' },
         { name: 'Invoices', icon: Receipt, path: '/sales/invoices' },
+        { name: 'Customer prices', icon: DollarSign, path: '/sales/prices' },
+        { name: 'Dispatch', icon: Truck, path: '/sales/dispatch' },
+        { name: 'Route picks', icon: ClipboardList, path: '/sales/picks' },
+        { name: 'Trips', icon: Truck, path: '/sales/trips' },
+        { name: 'Van / factory sales', icon: Receipt, path: '/sales/cash-sales' },
+        { name: 'Sales returns', icon: RotateCcw, path: '/sales/returns' },
+        { name: 'Bank file', icon: Landmark, path: '/sales/bank-file' },
+        { name: 'Notifications', icon: Bell, path: '/sales/notifications' },
+        { name: 'Dispatch settings', icon: Sliders, path: '/sales/dispatch-settings' },
       ]
     },
     { 
@@ -181,6 +196,8 @@ export default function Sidebar() {
     }
   ];
 
+  const visibleMenus = menuItems.filter((item) => item.name !== 'HR' || hrEnabled);
+
   const isMenuPartiallyActive = (item) => {
     if (item.subItems) {
       return item.subItems.some(sub => location.pathname.startsWith(sub.path));
@@ -193,7 +210,7 @@ export default function Sidebar() {
       setExpandedMenu(null);
       return;
     }
-    const currentActive = menuItems.find(m => isMenuPartiallyActive(m)) || systemItems.find(m => isMenuPartiallyActive(m));
+    const currentActive = visibleMenus.find(m => isMenuPartiallyActive(m)) || systemItems.find(m => isMenuPartiallyActive(m));
     if (currentActive && !expandedMenu) {
       setExpandedMenu(currentActive);
     }
@@ -336,7 +353,7 @@ export default function Sidebar() {
 
         {/* Main Modules */}
         <nav className="main-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0px', width: '100%', alignItems: 'center' }}>
-          {menuItems.map((item) => {
+          {visibleMenus.map((item) => {
             const isActive = isMenuPartiallyActive(item);
             const isExpandedLocal = expandedMenu?.name === item.name;
 

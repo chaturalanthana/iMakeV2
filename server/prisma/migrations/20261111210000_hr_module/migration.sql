@@ -1,0 +1,1 @@
+ALTER TABLE "tenants" ADD COLUMN "hr_enabled" BOOLEAN NOT NULL DEFAULT false;

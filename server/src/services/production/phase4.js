@@ -454,7 +454,7 @@ async function recordGenealogy(db, wo, { fgLot, confirmationId }) {
   }
 }
 
-async function flagAbnormalLoss(db, workOrderId) {
+async function flagAbnormalLoss(db, workOrderId, userId) {
   const fresh = await db.workOrder.findFirst({
     where: { id: workOrderId },
     include: { product: { include: { productGroupRel: true } } }
@@ -478,16 +478,30 @@ async function flagAbnormalLoss(db, workOrderId) {
   const amount = round4(loss.excessQty * unit);
   if (existing?.status === 'POSTED') return existing;
   const data = { ...loss, amount, productLine: fresh.product.productGroupRel?.name || fresh.product.code };
-  if (existing) return db.abnormalLoss.update({ where: { id: existing.id }, data });
-  return db.abnormalLoss.create({
-    data: {
+  const saved = existing
+    ? await db.abnormalLoss.update({ where: { id: existing.id }, data })
+    : await db.abnormalLoss.create({
+      data: {
+        tenantId: fresh.tenantId,
+        workOrderId,
+        status: 'PENDING',
+        reason: 'Scrap above the product-line tolerance',
+        ...data
+      }
+    });
+  const { loadRule, levelsForAmount, submitForApproval } = require('../approvalService');
+  const rule = await loadRule(db, fresh.tenantId, 'ABNORMAL_LOSS');
+  if (saved.status === 'PENDING' && rule?.enabled && levelsForAmount(rule, num(saved.amount)).length) {
+    await submitForApproval(db, {
       tenantId: fresh.tenantId,
-      workOrderId,
-      status: 'PENDING',
-      reason: 'Scrap above the product-line tolerance',
-      ...data
-    }
-  });
+      documentType: 'ABNORMAL_LOSS',
+      documentId: saved.id,
+      documentNumber: fresh.orderNumber,
+      amount: num(saved.amount),
+      userId: userId || null
+    });
+  }
+  return saved;
 }
 
 async function listLosses(tenantId) {
@@ -498,10 +512,10 @@ async function listLosses(tenantId) {
   });
 }
 
-async function approveLoss(tenantId, userId, id, body) {
+async function approveLoss(tenantId, userId, id, body, db) {
   const reason = String(body.reason || '').trim();
   if (!reason) throw new ProductionError('A reason is required to approve an abnormal loss');
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx) => {
     const loss = await tx.abnormalLoss.findFirst({
       where: { id, tenantId },
       include: { workOrder: true }
@@ -540,7 +554,9 @@ async function approveLoss(tenantId, userId, id, body) {
       before: { status: 'PENDING' }, after: { status: 'POSTED', reason, amount }
     });
     return posted;
-  });
+  };
+  if (db) return run(db);
+  return prisma.$transaction(run);
 }
 
 async function captureMachine(tenantId, userId, body) {
