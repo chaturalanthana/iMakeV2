@@ -42,6 +42,7 @@ import CashBook from './pages/finance/CashBook';
 import BankBook from './pages/finance/BankBook';
 import VATReport from './pages/finance/VATReport';
 import BankReconciliation from './pages/finance/BankReconciliation';
+import TrialBalance from './pages/finance/TrialBalance';
 import JournalEntries from './pages/finance/JournalEntries';
 import NewJournalEntry from './pages/finance/NewJournalEntry';
 import PaymentReceipts from './pages/finance/PaymentReceipts';
@@ -249,6 +250,7 @@ function App() {
               
               <Route path="/finance/accounts" element={<ChartOfAccounts />} />
               <Route path="/finance/ledger" element={<GeneralLedger />} />
+              <Route path="/finance/trial-balance" element={<TrialBalance />} />
               <Route path="/finance/ledger/:accountId" element={<LedgerDetails />} />
               <Route path="/finance/pnl" element={<ProfitAndLoss />} />
               <Route path="/finance/cashflow" element={<CashFlow />} />

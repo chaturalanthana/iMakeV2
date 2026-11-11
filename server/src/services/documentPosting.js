@@ -237,6 +237,11 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
   for (const item of items) {
     const qty = money(item.quantityReceived);
     const unitPrice = await grnUnitPrice(tx, { poId: grn.poId, productId: item.productId, item });
+    if (!(unitPrice > 0)) {
+      throw new DocumentError('Enter the receipt price. Stock is not received at zero cost.', {
+        unitPrice: 'Enter the receipt price. Stock is not received at zero cost.'
+      });
+    }
     const baseUnitCost = money(unitPrice * rate);
     await tx.gRNItem.update({
       where: { id: item.id },
@@ -553,11 +558,12 @@ async function createSupplierInvoice(tx, input) {
     if (qty <= 0) {
       throw new DocumentError('Quantity must be greater than zero.', { quantity: 'Quantity must be greater than zero.' });
     }
-    const expected = poPrice[item.productId] != null ? poPrice[item.productId] : (grnCost[item.productId] != null ? money(grnCost[item.productId] / rate) : num(item.unitPrice));
+    const receiptUnit = grnCost[item.productId] > 0 ? money(grnCost[item.productId] / rate) : null;
+    const expected = poPrice[item.productId] != null ? poPrice[item.productId] : (receiptUnit != null ? receiptUnit : num(item.unitPrice));
     const unitPrice = item.unitPrice != null && item.unitPrice !== '' ? money(item.unitPrice) : money(expected);
     if (!withinPrice(unitPrice, expected, priceTolerance)) {
-      throw new DocumentError('Invoice price is outside the match tolerance.', {
-        unitPrice: `Invoice price ${unitPrice} differs from ${money(expected)} by more than the allowed tolerance.`
+      throw new DocumentError(`Invoice price ${unitPrice} differs from ${money(expected)}.`, {
+        unitPrice: `Invoice price ${unitPrice} differs from ${money(expected)}.`
       });
     }
     await assertWithinOrdered('Invoice', received[item.productId] || 0, invoiced[item.productId] || 0, qty, qtyTolerance, 'quantity');

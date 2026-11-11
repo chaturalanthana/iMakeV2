@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Boxes, Upload
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Boxes, Upload, Scale
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -89,6 +89,7 @@ export default function Sidebar() {
       subItems: [
         { name: 'Chart of Accounts', icon: Network, path: '/finance/accounts' },
         { name: 'General Ledger', icon: Landmark, path: '/finance/ledger' },
+        { name: 'Trial Balance', icon: Scale, path: '/finance/trial-balance' },
         { name: 'Profit & Loss', icon: TrendingUp, path: '/finance/pnl' },
         { name: 'Cash Flow', icon: Landmark, path: '/finance/cashflow' },
         { name: 'Balance Sheet', icon: Landmark, path: '/finance/balancesheet' },

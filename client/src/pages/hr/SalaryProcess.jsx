@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import { DollarSign, Play, ChevronRight, Check, AlertCircle, Pencil } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -16,6 +17,7 @@ export default function SalaryProcess() {
   const [loading, setLoading] = useState(true);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -57,7 +59,7 @@ export default function SalaryProcess() {
   };
 
   const handleProcess = async () => {
-    if (!window.confirm(`Process payroll for ${MONTHS[selectedMonth - 1]} ${selectedYear}? This action cannot be undone.`)) return;
+    setConfirmOpen(false);
     setProcessing(true);
     try {
       await axios.post('/api/hr/salary-runs', {
@@ -165,7 +167,7 @@ export default function SalaryProcess() {
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button onClick={() => setStep('list')} style={{ padding: '0.55rem 1.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#64748b' }}>← Back</button>
-              <button onClick={handleProcess} disabled={processing || preview.length === 0} style={{ padding: '0.55rem 1.5rem', borderRadius: '8px', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button onClick={() => setConfirmOpen(true)} disabled={processing || preview.length === 0} style={{ padding: '0.55rem 1.5rem', borderRadius: '8px', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Check size={16} /> {processing ? 'Processing...' : 'Confirm & Process'}
               </button>
             </div>
@@ -241,6 +243,15 @@ export default function SalaryProcess() {
           })}
         </>
       )}
+      <ConfirmModal
+        isOpen={confirmOpen}
+        type="primary"
+        title="Process payroll"
+        message={`Post ${MONTHS[selectedMonth - 1]} ${selectedYear} for ${preview.length} employees, including EPF and ETF. This cannot be undone.`}
+        confirmText="Process"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleProcess}
+      />
     </AppLayout>
   );
 }

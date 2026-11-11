@@ -313,20 +313,27 @@ export default function WorkOrderDetail() {
                 </thead>
                 <tbody>
                   {['material', 'labour', 'overhead', 'scrap'].map((key) => {
+                    const started = (cost.confirmedQuantity || 0) > 0;
                     const row = cost.variance.buckets[key];
+                    const planned = started ? row.planned : (cost.fullPlan?.[key] || 0);
+                    const actual = started ? row.actual : 0;
+                    const variance = started ? row.variance : null;
                     return (
                       <tr key={key} style={{ height: '36px', borderTop: '1px solid #f1f5f9' }}>
                         <td style={{ textTransform: 'capitalize', fontWeight: 700 }}>{key}</td>
-                        <td style={{ textAlign: 'right' }}>{money(row.planned)}</td>
-                        <td style={{ textAlign: 'right' }}>{money(row.actual)}</td>
-                        <td style={{ textAlign: 'right', color: row.variance > 0 ? '#b91c1c' : '#15803d', fontWeight: 700 }}>{money(row.variance)}</td>
+                        <td style={{ textAlign: 'right' }}>{money(planned)}</td>
+                        <td style={{ textAlign: 'right' }}>{money(actual)}</td>
+                        <td style={{ textAlign: 'right', color: variance > 0 ? '#b91c1c' : '#15803d', fontWeight: 700 }}>{variance == null ? '—' : money(variance)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#64748b' }}>
-                Plan is pro-rated to confirmed quantity ({cost.confirmedQuantity || 0}). Labour includes machine time and subcontract. Unit cost of the full order {money(cost.fullPlan?.unitCost || cost.planned.unitCost)}.
+                {(cost.confirmedQuantity || 0) > 0
+                  ? `Plan is scaled to the confirmed quantity (${cost.confirmedQuantity}). `
+                  : 'This is the plan for the full order. Variance appears after the last operation is confirmed. '}
+                Labour includes machine time and subcontract. Unit cost of the full order {money(cost.fullPlan?.unitCost || cost.planned.unitCost)}.
               </div>
             </div>
           )}

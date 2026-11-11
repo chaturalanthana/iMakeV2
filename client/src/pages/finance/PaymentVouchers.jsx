@@ -101,7 +101,7 @@ export default function PaymentVouchers() {
                           </td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-main)' }}>{vouch.supplier?.name || '-'}</td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{vouch.method}</td>
-                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--error)', textAlign: 'right' }}>-${vouch.amount.toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--error)', textAlign: 'right' }}>Rs {Number(vouch.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                       <tr>

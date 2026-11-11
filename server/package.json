@@ -8,7 +8,8 @@
     "dev": "node --watch src/server.js",
     "test": "prisma generate && jest --detectOpenHandles",
     "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev"
+    "db:migrate:dev": "prisma migrate dev",
+    "seed:demo": "node scripts/seedDemo.js"
   },
   "keywords": [],
   "author": "",
