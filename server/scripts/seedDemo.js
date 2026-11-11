@@ -75,6 +75,19 @@ async function wipe(tenantId) {
   await prisma.periodCloseStep.deleteMany({ where });
   await prisma.periodClose.deleteMany({ where });
   await prisma.recurringJournal.deleteMany({ where });
+  await prisma.qaRetest.deleteMany({ where });
+  await prisma.cycleCountLine.deleteMany({ where });
+  await prisma.cycleCount.deleteMany({ where });
+  await prisma.stockReturnItem.deleteMany({ where });
+  await prisma.stockReturn.deleteMany({ where });
+  await prisma.inventoryTransferLeg.deleteMany({ where });
+  await prisma.inventoryTransferItem.deleteMany({ where });
+  await prisma.inventoryTransfer.deleteMany({ where });
+  await prisma.pickListLine.deleteMany({ where });
+  await prisma.pickList.deleteMany({ where });
+  await prisma.materialRequestItem.deleteMany({ where });
+  await prisma.materialRequest.deleteMany({ where });
+  await prisma.stockAllocation.deleteMany({ where });
   await prisma.replenishmentLine.deleteMany({ where });
   await prisma.replenishmentRun.deleteMany({ where });
   await prisma.itemWarehousePolicy.deleteMany({ where });
@@ -122,6 +135,8 @@ async function wipe(tenantId) {
   await prisma.productionSetting.deleteMany({ where });
   await prisma.costLayer.deleteMany({ where });
   await prisma.stockMovement.deleteMany({ where });
+  await prisma.stockBatch.deleteMany({ where });
+  await prisma.pallet.deleteMany({ where });
   await prisma.supplierPaymentAllocation.deleteMany({ where });
   await prisma.supplierInvoiceItem.deleteMany({ where: { supplierInvoice: where } });
   await prisma.supplierInvoice.deleteMany({ where });
@@ -158,12 +173,17 @@ async function wipe(tenantId) {
   await prisma.taxSlab.deleteMany({ where });
   await prisma.taxGroup.deleteMany({ where });
   await prisma.account.deleteMany({ where });
+  await prisma.itemSupplier.deleteMany({ where });
   await prisma.product.deleteMany({ where });
+  await prisma.bin.deleteMany({ where });
   await prisma.workstation.deleteMany({ where });
   await prisma.machine.deleteMany({ where });
   await prisma.customer.deleteMany({ where });
   await prisma.supplier.deleteMany({ where });
   await prisma.warehouse.deleteMany({ where });
+  await prisma.branch.deleteMany({ where });
+  await prisma.uomTemplateLine.deleteMany({ where });
+  await prisma.uomTemplate.deleteMany({ where });
   await prisma.unitOfMeasure.deleteMany({ where });
   await prisma.productType.deleteMany({ where });
   await prisma.currency.deleteMany({ where });
@@ -295,7 +315,10 @@ async function main() {
       standardCost: data.costPrice
     }
   });
-  const teak = await material({ code: 'TEAK', name: 'Teak plank', costPrice: 4500, supplierId: timber.id, reorderLevel: 15 });
+  const teak = await material({
+    code: 'TEAK', name: 'Teak plank', costPrice: 4500, supplierId: timber.id, reorderLevel: 15,
+    batchTracked: true, expiryTracked: false, pickRule: 'FIFO', leadTimeDays: 7, dailyDemand: 1, safetyStock: 8
+  });
   const screw = await material({ code: 'SCREW', name: 'Wood screw', costPrice: 12, supplierId: hardware.id, reorderLevel: 200 });
   const varnish = await material({ code: 'VARN', name: 'Varnish, 1L', costPrice: 1800, supplierId: hardware.id, reorderLevel: 5 });
   const fabric = await material({ code: 'FAB', name: 'Upholstery fabric', costPrice: 950, supplierId: hardware.id, reorderLevel: 8 });
@@ -386,6 +409,46 @@ async function main() {
       data: { tenantId, warehouseId: warehouse.id, ...policy }
     });
   }
+
+  const bins = {};
+  for (const bin of [
+    { code: 'BIN-A1', name: 'Bulk rack', binType: 'STORAGE' },
+    { code: 'QA-HOLD', name: 'Quarantine', binType: 'QUARANTINE' },
+    { code: 'DMG-01', name: 'Damaged', binType: 'DAMAGED' }
+  ]) {
+    bins[bin.code] = await prisma.bin.create({ data: { tenantId, warehouseId: warehouse.id, ...bin } });
+  }
+  const pallet = await prisma.pallet.create({
+    data: { tenantId, warehouseId: warehouse.id, code: 'PLT-TEAK-1', status: 'ACTIVE' }
+  });
+  const teakBatch = await prisma.stockBatch.create({
+    data: {
+      tenantId, productId: teak.id, lotNumber: 'TEAK-OPEN', status: 'UNRESTRICTED',
+      supplierId: timber.id, receiptDate: new Date()
+    }
+  });
+  const screwBatch = await prisma.stockBatch.create({
+    data: {
+      tenantId, productId: screw.id, lotNumber: 'SCREW-OPEN', status: 'UNRESTRICTED',
+      supplierId: hardware.id, receiptDate: new Date()
+    }
+  });
+  await prisma.costLayer.updateMany({
+    where: { tenantId, lotNumber: 'TEAK-OPEN' },
+    data: { batchId: teakBatch.id, binId: bins['BIN-A1'].id, palletId: pallet.id, stockStatus: 'UNRESTRICTED' }
+  });
+  await prisma.costLayer.updateMany({
+    where: { tenantId, lotNumber: 'SCREW-OPEN' },
+    data: { batchId: screwBatch.id, binId: bins['BIN-A1'].id, stockStatus: 'UNRESTRICTED' }
+  });
+  await prisma.stockMovement.updateMany({
+    where: { tenantId, lotNumber: 'TEAK-OPEN' },
+    data: { batchId: teakBatch.id, binId: bins['BIN-A1'].id, palletId: pallet.id, stockStatus: 'UNRESTRICTED' }
+  });
+  await prisma.stockMovement.updateMany({
+    where: { tenantId, lotNumber: 'SCREW-OPEN' },
+    data: { batchId: screwBatch.id, binId: bins['BIN-A1'].id, stockStatus: 'UNRESTRICTED' }
+  });
 
   await prisma.employee.create({
     data: {

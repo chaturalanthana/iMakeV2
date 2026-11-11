@@ -72,13 +72,13 @@ async function postLandedCost(tx, input) {
     const fx = fxShares[index];
     let invPart = share;
     let cogsPart = 0;
+    let batchId = null;
     if (treatment !== 'CWIP') {
-      const layers = await tx.costLayer.findMany({
-        where: { tenantId: input.tenantId, productId: line.item.productId, sourceType: 'GRN', sourceId: grn.id }
-      });
+      const layers = await grnBatchLayers(tx, input.tenantId, grn.id, line.item);
       if (!layers.length) {
         throw new DocumentError('Receipt has no FIFO cost layer to update.', { grnId: 'Receipt has no FIFO cost layer to update.' });
       }
+      batchId = layers.find((layer) => layer.batchId)?.batchId || null;
       const received = layers.reduce((sum, layer) => sum + num(layer.quantityReceived), 0);
       const remaining = layers.reduce((sum, layer) => sum + num(layer.quantityRemaining), 0);
       invPart = received > 0 ? money(share * (remaining / received)) : 0;
@@ -102,6 +102,7 @@ async function postLandedCost(tx, input) {
       tenantId: input.tenantId,
       productId: line.item.productId,
       grnItemId: line.item.id,
+      batchId,
       quantity: dec(line.qty),
       weight: dec(line.weight),
       valueBase: dec(line.valueBase),
@@ -158,6 +159,19 @@ async function postLandedCost(tx, input) {
     }
   }
   return created;
+}
+
+async function grnBatchLayers(tx, tenantId, grnId, item) {
+  const layers = await tx.costLayer.findMany({
+    where: { tenantId, productId: item.productId, sourceType: 'GRN', sourceId: grnId },
+    orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }]
+  });
+  if (!item.lotNumber) return layers;
+  const batch = await tx.stockBatch.findFirst({
+    where: { tenantId, productId: item.productId, lotNumber: item.lotNumber }
+  });
+  const matched = layers.filter((layer) => layer.lotNumber === item.lotNumber || (batch && layer.batchId === batch.id));
+  return matched.length ? matched : layers;
 }
 
 module.exports = { postLandedCost };

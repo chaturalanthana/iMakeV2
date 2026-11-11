@@ -30,7 +30,12 @@ async function receive(tx, {
   movementType = 'GR',
   createdBy,
   receivedAt,
-  lotNumber = null
+  lotNumber = null,
+  batchId = null,
+  binId = null,
+  palletId = null,
+  stockStatus = null,
+  expiryDate = null
 }) {
   const qty = money(quantity);
   if (qty <= 0) {
@@ -54,7 +59,11 @@ async function receive(tx, {
       referenceId: referenceId || null,
       warehouseId: warehouseId || null,
       createdBy: createdBy || null,
-      lotNumber: lotNumber || null
+      lotNumber: lotNumber || null,
+      batchId: batchId || null,
+      binId: binId || null,
+      palletId: palletId || null,
+      stockStatus: stockStatus || 'UNRESTRICTED'
     }
   });
   const layer = await receiveLayer(tx, {
@@ -66,7 +75,12 @@ async function receive(tx, {
     sourceType: referenceType,
     sourceId: referenceId || null,
     lotNumber: lotNumber || null,
-    receivedAt: when
+    receivedAt: when,
+    batchId,
+    binId,
+    palletId,
+    stockStatus,
+    expiryDate
   });
   return { layer, movement, unitCost: cost, value, quantity: qty };
 }
@@ -80,7 +94,11 @@ async function issue(tx, {
   referenceId,
   movementType = 'GI',
   quantitySign = 1,
-  createdBy
+  createdBy,
+  batchId = null,
+  eligibleOnly = false,
+  lotNumber = null,
+  palletId = null
 }) {
   const qty = money(Math.abs(num(quantity)));
   if (qty <= 0) {
@@ -94,7 +112,9 @@ async function issue(tx, {
     productId,
     warehouseId: warehouseId || null,
     quantity: qty,
-    strictWarehouse: true
+    strictWarehouse: true,
+    batchId,
+    eligibleOnly
   });
   // A shortfall is returned as an unlayered slice at standard or cost price.
   // Callers that must not go short (transfers) check `consumptions`.
@@ -111,7 +131,10 @@ async function issue(tx, {
       referenceType,
       referenceId: referenceId || null,
       warehouseId: warehouseId || null,
-      createdBy: createdBy || null
+      createdBy: createdBy || null,
+      lotNumber: lotNumber || null,
+      batchId: batchId || null,
+      palletId: palletId || null
     }
   });
 

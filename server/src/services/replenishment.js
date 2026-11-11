@@ -2,6 +2,7 @@ const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { movementEffect } = require('./stockService');
 const { num, money, dec } = require('./money');
+const { reorderPointOf } = require('./inventory/itemMaster');
 
 const round = (value) => money(value);
 
@@ -196,11 +197,22 @@ async function buildSuggestions(db, tenantId) {
   const suggestions = [];
   productById.forEach((product) => {
     // Made items are planned from sales orders and MRP. Reorder point only buys.
-    if (product.type === 'SERVICE' || product.activeStatus === 'INACTIVE' || product.bomApplicable) return;
+    if (product.type === 'SERVICE' || product.nonStock || product.activeStatus === 'INACTIVE' || product.bomApplicable) return;
     const rows = byProduct.get(product.id) || [];
     let raw = 0;
     let warehouseId = rows[0]?.warehouseId || null;
     let best = -1;
+    if (!rows.length) {
+      const rop = reorderPointOf(product);
+      if (rop > 0) {
+        let have = 0;
+        onHand.forEach((qty, key) => {
+          if (key.startsWith(`${product.id}|`)) have += qty;
+        });
+        const gap = have <= rop + 0.00005 ? Math.max(0, rop - have) : 0;
+        raw = round(gap);
+      }
+    }
     rows.forEach((policy) => {
       const have = onHand.get(`${product.id}|${policy.warehouseId}`) || 0;
       const { trigger, target } = levels(policy);
@@ -217,7 +229,7 @@ async function buildSuggestions(db, tenantId) {
     const mrpNet = round(Math.max(0, mrpQty - (firm.po[product.id] || 0) - (firm.pr[product.id] || 0)));
     const quantity = round(Math.max(minMaxQty, mrpNet));
     if (quantity <= 0.00005) return;
-    let reason = 'MINMAX';
+    let reason = rows.length ? 'MINMAX' : 'ROP';
     if (minMaxQty > 0.00005 && mrpNet > 0.00005) reason = 'BOTH';
     else if (mrpNet > 0.00005) reason = 'MRP';
     suggestions.push({

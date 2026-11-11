@@ -38,6 +38,7 @@ export default function Sidebar() {
         { name: 'Brands', icon: Tag, path: '/registries/brands' },
         { name: 'Categories', icon: Layers, path: '/registries/categories' },
         { name: 'UOMs', icon: RefreshCw, path: '/registries/uoms' },
+        { name: 'UOM Templates', icon: RefreshCw, path: '/registries/uom-templates' },
       ]
     },
     { 
@@ -77,6 +78,16 @@ export default function Sidebar() {
       icon: Archive, 
       subItems: [
         { name: 'Warehouses', icon: Layers, path: '/registries/warehouses' },
+        { name: 'Bins', icon: Layers, path: '/warehouse/bins' },
+        { name: 'Batches', icon: Package, path: '/warehouse/batches' },
+        { name: 'Pallets', icon: Boxes, path: '/warehouse/pallets' },
+        { name: 'Material Requests', icon: ClipboardList, path: '/warehouse/material-requests' },
+        { name: 'Batch Receipts', icon: ArrowDownLeft, path: '/warehouse/batch-receipts/new' },
+        { name: 'Goods Transfers', icon: RefreshCw, path: '/warehouse/goods-transfers' },
+        { name: 'Returns', icon: ArrowUpRight, path: '/warehouse/returns' },
+        { name: 'Cycle Counts', icon: BarChart2, path: '/warehouse/cycle-counts' },
+        { name: 'Allocations', icon: ClipboardList, path: '/warehouse/allocations' },
+        { name: 'Stock Reports', icon: FileText, path: '/warehouse/stock-reports' },
         { name: 'Stock Receipts', icon: ArrowDownLeft, path: '/warehouse/receipts' },
         { name: 'Stock Issues', icon: ArrowUpRight, path: '/warehouse/issues' },
         { name: 'Stock Transfers', icon: RefreshCw, path: '/warehouse/transfers' },

@@ -1,4 +1,5 @@
 const { receive, issue, transfer, reverseReceipt, reverseIssue } = require('./stockService');
+const { recordBatch } = require('./inventory/batches');
 const { ensureGlMap, postJournal, reverseJournal } = require('./glService');
 const { slabsFor, applySlabs, sumBucket } = require('./taxService');
 const { DocumentError } = require('./errors');
@@ -73,7 +74,10 @@ async function postIssueDocument(tx, { tenantId, warehouseId, items, referenceTy
       referenceId,
       movementType: 'GI',
       quantitySign,
-      createdBy
+      createdBy,
+      batchId: item.batchId || null,
+      eligibleOnly: !!item.eligibleOnly,
+      lotNumber: item.lotNumber || null
     });
     value = money(value + result.value);
     results.push({ ...result, productId: item.productId, itemId: item.id });
@@ -251,18 +255,47 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
     });
     if (debitKey === 'CWIP') {
       inventoryValue = money(inventoryValue + money(qty * baseUnitCost));
-    } else {
+      continue;
+    }
+    const damaged = money(item.damagedQty || 0);
+    const rejected = money(item.rejectedQty || 0);
+    if (damaged + rejected - qty > 0.0001) {
+      throw new DocumentError('Damaged and rejected quantities cannot exceed the receipt.', {
+        damagedQty: 'Damaged and rejected quantities cannot exceed the receipt.'
+      });
+    }
+    const batch = item.lotNumber ? await recordBatch(tx, {
+      tenantId,
+      productId: item.productId,
+      lotNumber: item.lotNumber,
+      expiryDate: item.expiryDate,
+      supplierId: grn.supplierId,
+      receiptDate: grn.date
+    }) : null;
+    const usable = money(qty - damaged - rejected);
+    const slices = [];
+    if (damaged <= 0 && rejected <= 0) slices.push({ quantity: qty, stockStatus: item.stockStatus || 'UNRESTRICTED' });
+    else {
+      if (usable > 0) slices.push({ quantity: usable, stockStatus: 'UNRESTRICTED' });
+      if (damaged > 0) slices.push({ quantity: damaged, stockStatus: 'QUARANTINE' });
+      if (rejected > 0) slices.push({ quantity: rejected, stockStatus: 'BLOCKED' });
+    }
+    for (const slice of slices) {
       const result = await receive(tx, {
         tenantId,
         productId: item.productId,
         warehouseId: grn.warehouseId,
-        quantity: qty,
+        quantity: slice.quantity,
         unitCost: baseUnitCost,
         referenceType: 'GRN',
         referenceId: grn.id,
         movementType: 'GR',
         createdBy,
-        receivedAt: grn.date
+        receivedAt: grn.date,
+        lotNumber: item.lotNumber || null,
+        batchId: batch?.id || null,
+        stockStatus: slice.stockStatus,
+        expiryDate: item.expiryDate || null
       });
       inventoryValue = money(inventoryValue + result.value);
     }

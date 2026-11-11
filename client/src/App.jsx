@@ -22,6 +22,11 @@ import MRPPlanner from './pages/production/MRPPlanner';
 import Alerts from './pages/Alerts';
 import DataImport from './pages/settings/DataImport';
 import Labels from './pages/warehouse/Labels';
+import InventoryList from './pages/warehouse/InventoryList';
+import InventoryDocument from './pages/warehouse/InventoryDocument';
+import InventoryMaster from './pages/warehouse/InventoryMaster';
+import StockReports from './pages/warehouse/StockReports';
+import Allocations from './pages/warehouse/Allocations';
 import WhtCertificate from './pages/finance/WhtCertificate';
 import StatutoryReport from './pages/hr/StatutoryReport';
 import ProductGroups from './pages/production/ProductGroups';
@@ -242,6 +247,25 @@ function App() {
               <Route path="/warehouse/adjustments/*" element={<NewStockAdjustment />} />
               <Route path="/warehouse/adjustments" element={<StockAdjustments />} />
               <Route path="/warehouse/inventory-report" element={<InventoryReport />} />
+              <Route path="/warehouse/material-requests/new" element={<InventoryDocument kind="mr" />} />
+              <Route path="/warehouse/material-requests/:id" element={<InventoryDocument kind="mr" />} />
+              <Route path="/warehouse/material-requests" element={<InventoryList kind="mr" />} />
+              <Route path="/warehouse/goods-transfers/new" element={<InventoryDocument kind="transfer" />} />
+              <Route path="/warehouse/goods-transfers/:id" element={<InventoryDocument kind="transfer" />} />
+              <Route path="/warehouse/goods-transfers" element={<InventoryList kind="transfer" />} />
+              <Route path="/warehouse/returns/new" element={<InventoryDocument kind="return" />} />
+              <Route path="/warehouse/returns/:id" element={<InventoryDocument kind="return" />} />
+              <Route path="/warehouse/returns" element={<InventoryList kind="return" />} />
+              <Route path="/warehouse/cycle-counts/new" element={<InventoryDocument kind="count" />} />
+              <Route path="/warehouse/cycle-counts/:id" element={<InventoryDocument kind="count" />} />
+              <Route path="/warehouse/cycle-counts" element={<InventoryList kind="count" />} />
+              <Route path="/warehouse/batch-receipts/new" element={<InventoryDocument kind="receipt" />} />
+              <Route path="/warehouse/bins" element={<InventoryMaster kind="bins" />} />
+              <Route path="/warehouse/batches" element={<InventoryMaster kind="batches" />} />
+              <Route path="/warehouse/pallets" element={<InventoryMaster kind="pallets" />} />
+              <Route path="/warehouse/allocations" element={<Allocations />} />
+              <Route path="/warehouse/stock-reports" element={<StockReports />} />
+              <Route path="/registries/uom-templates" element={<InventoryMaster kind="templates" />} />
               <Route path="/warehouse/labels" element={<Labels />} />
               <Route path="/warehouse/movements/new" element={<NewStockMovement />} />
               <Route path="/warehouse/movements" element={<StockMovements />} />

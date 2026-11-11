@@ -86,6 +86,7 @@ describe('phase 2 procurement, landed cost and finance', () => {
     await prisma.recurringJournal.deleteMany({ where });
     await prisma.costLayer.deleteMany({ where });
     await prisma.stockMovement.deleteMany({ where });
+    await prisma.stockBatch.deleteMany({ where });
     await prisma.journalLine.deleteMany({ where: { journalEntry: where } });
     await prisma.journalEntry.deleteMany({ where });
     await prisma.glAccountMap.deleteMany({ where });
@@ -172,7 +173,7 @@ describe('phase 2 procurement, landed cost and finance', () => {
 
     const grn = await request(app).post('/api/procurement/grn').set(auth()).send({
       supplierId: supplier.id, poId: po.body.id, warehouseId: warehouse.id, date: day, exchangeRate: 300,
-      items: [{ productId: material.id, quantityReceived: 10, quantityOrdered: 10, unitPrice: 100 }]
+      items: [{ productId: material.id, quantityReceived: 10, quantityOrdered: 10, unitPrice: 100, lotNumber: 'TEAK-IMP-1' }]
     });
     expectStatus(grn, 201);
     expect(grn.body.grnNumber.startsWith('IGRN/')).toBe(true);
@@ -188,8 +189,10 @@ describe('phase 2 procurement, landed cost and finance', () => {
     });
     expectStatus(landed, 201);
     const layer = await prisma.costLayer.findFirst({ where: { tenantId: tenant.id, sourceId: grn.body.id, quantityRemaining: { gt: 0 } } });
+    expect(layer.batchId).toBeTruthy();
     expect(Number(layer.quantityRemaining)).toBeCloseTo(6, 4);
     expect(Number(layer.unitCost)).toBeCloseTo(30600, 2);
+    expect(landed.body.allocations[0].batchId).toBe(layer.batchId);
     await balanced();
   });
 
