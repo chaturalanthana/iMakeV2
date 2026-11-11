@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, ScrollText, Briefcase
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, RotateCcw, Bell, ScrollText, Briefcase, Boxes
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -72,6 +72,15 @@ export default function Sidebar() {
         { name: 'Orders', icon: ShoppingCart, path: '/sales/orders' },
         { name: 'Deliveries', icon: Package, path: '/sales/deliveries' },
         { name: 'Invoices', icon: Receipt, path: '/sales/invoices' },
+        { name: 'Customer prices', icon: DollarSign, path: '/sales/prices' },
+        { name: 'Dispatch', icon: Truck, path: '/sales/dispatch' },
+        { name: 'Route picks', icon: ClipboardList, path: '/sales/picks' },
+        { name: 'Trips', icon: Truck, path: '/sales/trips' },
+        { name: 'Van / factory sales', icon: Receipt, path: '/sales/cash-sales' },
+        { name: 'Sales returns', icon: RotateCcw, path: '/sales/returns' },
+        { name: 'Bank file', icon: Landmark, path: '/sales/bank-file' },
+        { name: 'Notifications', icon: Bell, path: '/sales/notifications' },
+        { name: 'Dispatch settings', icon: Sliders, path: '/sales/dispatch-settings' },
       ]
     },
     { 

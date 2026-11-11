@@ -14,7 +14,10 @@ const DOCUMENT_TYPES = [
   { type: 'CYCLE_COUNT', label: 'Cycle count variance', roleName: 'Finance', thresholds: [0] },
   { type: 'MATERIAL_REQUEST', label: 'Material request', roleName: 'Procurement', thresholds: [0] },
   { type: 'PRICE_OVERRIDE', label: 'Price override', roleName: 'Sales', thresholds: [0] },
-  { type: 'SALES_ORDER_CREDIT', label: 'Sales order credit release', roleName: 'Finance', thresholds: [0] }
+  { type: 'SALES_ORDER_CREDIT', label: 'Sales order credit release', roleName: 'Finance', thresholds: [0] },
+  { type: 'CASH_SALE', label: 'Van or factory cash sale', roleName: 'Sales', thresholds: [0] },
+  { type: 'SALES_RETURN', label: 'Sales return', roleName: 'Finance', thresholds: [0] },
+  { type: 'GATE_PASS', label: 'Gate pass', roleName: 'Warehouse', thresholds: [0] }
 ];
 
 const LINKS = {
@@ -28,7 +31,10 @@ const LINKS = {
   CYCLE_COUNT: (row) => `/warehouse/cycle-counts/${row.documentId}`,
   MATERIAL_REQUEST: (row) => `/warehouse/material-requests/${row.documentId}`,
   PRICE_OVERRIDE: (row) => `/sales/orders/${encodeURIComponent(row.documentNumber)}`,
-  SALES_ORDER_CREDIT: (row) => `/sales/orders/${encodeURIComponent(row.documentNumber)}`
+  SALES_ORDER_CREDIT: (row) => `/sales/orders/${encodeURIComponent(row.documentNumber)}`,
+  CASH_SALE: (row) => `/sales/cash-sales`,
+  SALES_RETURN: (row) => `/sales/returns`,
+  GATE_PASS: (row) => `/sales/trips`
 };
 
 function levelsForAmount(rule, amount) {

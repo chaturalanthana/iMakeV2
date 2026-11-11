@@ -106,6 +106,26 @@ model Tenant {
   operationsSetting            OperationsSetting?
   statutorySetting             StatutorySetting?
   whtCertificates              WhtCertificate[]
+  dispatchSetting              DispatchSetting?
+  shipTos                      ShipTo[]
+  deliveryRoutes               DeliveryRoute[]
+  vehicles                     Vehicle[]
+  customerPrices               CustomerPrice[]
+  salesReservations            SalesReservation[]
+  routePicks                   RoutePick[]
+  routePickLines               RoutePickLine[]
+  routePickOrders              RoutePickOrder[]
+  tripSheets                   TripSheet[]
+  tripDeliveries               TripDelivery[]
+  gatePasses                   GatePass[]
+  proofsOfDelivery             ProofOfDelivery[]
+  proofLines                   ProofLine[]
+  salesReturns                 SalesReturn[]
+  salesReturnLines             SalesReturnLine[]
+  orderCancellations           OrderCancellation[]
+  bankFileTemplate             BankFileTemplate?
+  bankFileExports              BankFileExport[]
+  appNotifications             AppNotification[]
   approvalRules                ApprovalRule[]
   approvalRequests             ApprovalRequest[]
   approvalActions              ApprovalAction[]
@@ -254,6 +274,7 @@ model Customer {
   revenueAccountId     String?           @map("revenue_account_id")
   salesTerritory       String?           @map("sales_territory")
   taxGroup             String?           @map("tax_group")
+  channel              String?           @default("GENERAL_TRADE")
   accountsReceivable   Account?          @relation("CustomerARAccount", fields: [accountsReceivableId], references: [id])
   customerCategoryRel  CustomerCategory? @relation(fields: [customerCategoryId], references: [id])
   revenueAccount       Account?          @relation("CustomerRevenueAccount", fields: [revenueAccountId], references: [id])
@@ -263,6 +284,9 @@ model Customer {
   salesInvoices        SalesInvoice[]
   salesOrders          SalesOrder[]
   salesQuotations      SalesQuotation[]
+  shipTos              ShipTo[]
+  customerPrices       CustomerPrice[]
+  salesReturns         SalesReturn[]
   stockReturns         StockReturn[]
 
   @@index([tenantId])
@@ -493,6 +517,10 @@ model Product {
   stockReturnItems      StockReturnItem[]
   cycleCountLines       CycleCountLine[]
   machineThroughputs    MachineThroughput[]
+  customerPrices        CustomerPrice[]
+  routePickLines        RoutePickLine[]
+  salesReturnLines      SalesReturnLine[]
+  proofLines            ProofLine[]
   demandForecasts       DemandForecast[]
   mpsBuckets            MpsBucket[]
   plannedOrders         PlannedProductionOrder[]
@@ -503,7 +531,6 @@ model Product {
   contractOrders        ContractOrder[]
   contractIssues        ContractIssue[]
   issuedSubstitutes     WorkOrderIssue[]       @relation("IssuedSubstitute")
-
   @@index([tenantId])
   @@index([tenantId, barcode])
   @@index([tenantId, sku])
@@ -665,30 +692,51 @@ model SalesOrder {
   updatedAt     DateTime         @updatedAt @map("updated_at")
   createdBy     String?          @map("created_by")
   currencyId    String?          @map("currency_id")
-  exchangeRate  Decimal          @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
-  deliveries    SalesDelivery[]
-  salesInvoices SalesInvoice[]
-  items         SalesOrderItem[]
-  currency      Currency?        @relation(fields: [currencyId], references: [id])
-  customer      Customer         @relation(fields: [customerId], references: [id])
-  quotation     SalesQuotation?  @relation(fields: [quotationId], references: [id])
-  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workOrders    WorkOrder[]
+  exchangeRate    Decimal          @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
+  channel         String           @default("GENERAL_TRADE")
+  shipToId        String?          @map("ship_to_id")
+  routeId         String?          @map("route_id")
+  vehicleId       String?          @map("vehicle_id")
+  warehouseId     String?          @map("warehouse_id")
+  discountPercent Decimal          @default(0) @map("discount_percent") @db.Decimal(9, 4)
+  releasedAt      DateTime?        @map("released_at")
+  releasedBy      String?          @map("released_by")
+  deliveries      SalesDelivery[]
+  salesInvoices   SalesInvoice[]
+  items           SalesOrderItem[]
+  currency        Currency?        @relation(fields: [currencyId], references: [id])
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  quotation       SalesQuotation?  @relation(fields: [quotationId], references: [id])
+  shipTo          ShipTo?          @relation(fields: [shipToId], references: [id])
+  route           DeliveryRoute?   @relation(fields: [routeId], references: [id])
+  vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id])
+  warehouse       Warehouse?       @relation("OrderWarehouse", fields: [warehouseId], references: [id])
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrders      WorkOrder[]
+  reservations    SalesReservation[]
+  cancellations   OrderCancellation[]
+  routePickOrders RoutePickOrder[]
 
   @@index([tenantId])
   @@map("sales_orders")
 }
 
 model SalesOrderItem {
-  id        String     @id @default(uuid())
-  orderId   String     @map("order_id")
-  productId String     @map("product_id")
-  quantity  Decimal    @db.Decimal(19, 4)
-  unitPrice Decimal    @map("unit_price") @db.Decimal(19, 4)
-  total     Decimal    @db.Decimal(19, 4)
-  order      SalesOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product    Product     @relation(fields: [productId], references: [id])
-  workOrders WorkOrder[] @relation("WorkOrderSalesItem")
+  id              String     @id @default(uuid())
+  orderId         String     @map("order_id")
+  productId       String     @map("product_id")
+  quantity        Decimal    @db.Decimal(19, 4)
+  unitPrice       Decimal    @map("unit_price") @db.Decimal(19, 4)
+  total           Decimal    @db.Decimal(19, 4)
+  cancelledQty    Decimal    @default(0) @map("cancelled_qty") @db.Decimal(19, 4)
+  discountPercent Decimal    @default(0) @map("discount_percent") @db.Decimal(9, 4)
+  listPrice       Decimal    @default(0) @map("list_price") @db.Decimal(19, 4)
+  order           SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         Product    @relation(fields: [productId], references: [id])
+  workOrders      WorkOrder[] @relation("WorkOrderSalesItem")
+  reservations    SalesReservation[]
+  cancellations   OrderCancellation[]
+  routePickLines  RoutePickLine[]
 
   @@index([orderId])
   @@index([productId])
@@ -713,6 +761,8 @@ model SalesDelivery {
   warehouse      Warehouse?          @relation(fields: [warehouseId], references: [id])
   items          SalesDeliveryItem[]
   invoices       SalesInvoice[]
+  tripLinks      TripDelivery[]
+  proofs         ProofOfDelivery[]
 
   @@index([tenantId])
   @@map("sales_deliveries")
@@ -752,6 +802,10 @@ model SalesInvoice {
   subtotal            Decimal              @default(0) @db.Decimal(19, 4)
   taxAmount           Decimal              @default(0) @map("tax_amount") @db.Decimal(19, 4)
   dueDate             DateTime?            @map("due_date")
+  channel             String?
+  saleKind            String?              @default("CREDIT") @map("sale_kind")
+  warehouseId         String?              @map("warehouse_id")
+  stockPosted         Boolean              @default(false) @map("stock_posted")
   paymentReceiptLines PaymentReceiptLine[]
   paymentReceipts     PaymentReceipt[]
   items               SalesInvoiceItem[]
@@ -759,7 +813,9 @@ model SalesInvoice {
   customer            Customer             @relation(fields: [customerId], references: [id])
   delivery            SalesDelivery?       @relation(fields: [deliveryId], references: [id])
   order               SalesOrder?          @relation(fields: [orderId], references: [id])
+  cashWarehouse       Warehouse?           @relation("InvoiceWarehouse", fields: [warehouseId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesReturns        SalesReturn[]
 
   @@index([tenantId])
   @@map("sales_invoices")
@@ -1067,6 +1123,10 @@ model Warehouse {
   workOrders       WorkOrder[]
   itemWarehousePolicies ItemWarehousePolicy[]
   replenishmentLines ReplenishmentLine[]
+  vehicles         Vehicle[]
+  deliveryRoutes   DeliveryRoute[]
+  dispatchOrders   SalesOrder[]      @relation("OrderWarehouse")
+  cashInvoices     SalesInvoice[]    @relation("InvoiceWarehouse")
   supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   contractVirtual  ContractOrder[]   @relation("ContractVirtual")
   contractFinished ContractOrder[]   @relation("ContractFinished")
@@ -1352,6 +1412,7 @@ model CustomerCategory {
   revenueAccount       Account?   @relation("CategoryRevenueAccount", fields: [revenueAccountId], references: [id])
   tenant               Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customers            Customer[]
+  customerPrices       CustomerPrice[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2555,6 +2616,390 @@ model OperationTimeLog {
   @@index([tenantId])
   @@index([operationId])
   @@map("operation_time_logs")
+}
+
+model DispatchSetting {
+  id                    String   @id @default(uuid())
+  tenantId              String   @unique @map("tenant_id")
+  maxDiscountPercent    Decimal  @default(10) @map("max_discount_percent") @db.Decimal(9, 4)
+  blockCreditOverLimit  Boolean  @default(true) @map("block_credit_over_limit")
+  blockOverdue          Boolean  @default(true) @map("block_overdue")
+  shortagePolicy        String   @default("ALLOW_PARTIAL") @map("shortage_policy")
+  gatePassRequired      Boolean  @default(true) @map("gate_pass_required")
+  invoiceBeforeDispatch Boolean  @default(true) @map("invoice_before_dispatch")
+  emailHookEnabled      Boolean  @default(false) @map("email_hook_enabled")
+  emailHookUrl          String?  @map("email_hook_url")
+  bankColumns           Json?
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("dispatch_settings")
+}
+
+model ShipTo {
+  id         String       @id @default(uuid())
+  tenantId   String       @map("tenant_id")
+  customerId String       @map("customer_id")
+  code       String
+  name       String
+  address    String?
+  isDefault  Boolean      @default(false) @map("is_default")
+  customer   Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders     SalesOrder[]
+
+  @@unique([tenantId, customerId, code])
+  @@index([tenantId])
+  @@map("ship_tos")
+}
+
+model DeliveryRoute {
+  id          String      @id @default(uuid())
+  tenantId    String      @map("tenant_id")
+  code        String
+  name        String
+  warehouseId String?     @map("warehouse_id")
+  active      Boolean     @default(true)
+  warehouse   Warehouse?  @relation(fields: [warehouseId], references: [id])
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicles    Vehicle[]
+  orders      SalesOrder[]
+  picks       RoutePick[]
+  trips       TripSheet[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("delivery_routes")
+}
+
+model Vehicle {
+  id           String         @id @default(uuid())
+  tenantId     String         @map("tenant_id")
+  code         String
+  registration String
+  driverName   String?        @map("driver_name")
+  kind         String         @default("TRUCK")
+  warehouseId  String?        @map("warehouse_id")
+  routeId      String?        @map("route_id")
+  active       Boolean        @default(true)
+  warehouse    Warehouse?     @relation(fields: [warehouseId], references: [id])
+  route        DeliveryRoute? @relation(fields: [routeId], references: [id])
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders       SalesOrder[]
+  picks        RoutePick[]
+  trips        TripSheet[]
+  gatePasses   GatePass[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("vehicles")
+}
+
+model CustomerPrice {
+  id                 String            @id @default(uuid())
+  tenantId           String            @map("tenant_id")
+  scope              String
+  customerId         String?           @map("customer_id")
+  customerCategoryId String?           @map("customer_category_id")
+  channel            String?
+  productId          String            @map("product_id")
+  currency           String            @default("LKR")
+  uom                String?
+  minQty             Decimal           @default(1) @map("min_qty") @db.Decimal(19, 4)
+  price              Decimal           @db.Decimal(19, 4)
+  validFrom          DateTime?         @map("valid_from")
+  validTo            DateTime?         @map("valid_to")
+  status             String            @default("ACTIVE")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  createdBy          String?           @map("created_by")
+  customer           Customer?         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  category           CustomerCategory? @relation(fields: [customerCategoryId], references: [id], onDelete: Cascade)
+  product            Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, productId, scope])
+  @@map("customer_prices")
+}
+
+model SalesReservation {
+  id          String         @id @default(uuid())
+  tenantId    String         @map("tenant_id")
+  orderId     String         @map("order_id")
+  orderItemId String         @map("order_item_id")
+  productId   String         @map("product_id")
+  warehouseId String?        @map("warehouse_id")
+  quantity    Decimal        @db.Decimal(19, 4)
+  status      String         @default("OPEN")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  order       SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem   SalesOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, productId, status])
+  @@index([orderId])
+  @@map("sales_reservations")
+}
+
+model RoutePick {
+  id          String           @id @default(uuid())
+  tenantId    String           @map("tenant_id")
+  number      String
+  routeId     String?          @map("route_id")
+  vehicleId   String?          @map("vehicle_id")
+  warehouseId String           @map("warehouse_id")
+  date        DateTime
+  status      String           @default("OPEN")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  createdBy   String?          @map("created_by")
+  route       DeliveryRoute?   @relation(fields: [routeId], references: [id])
+  vehicle     Vehicle?         @relation(fields: [vehicleId], references: [id])
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines       RoutePickLine[]
+  orders      RoutePickOrder[]
+  trips       TripSheet[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@map("route_picks")
+}
+
+model RoutePickLine {
+  id          String         @id @default(uuid())
+  tenantId    String         @map("tenant_id")
+  pickId      String         @map("pick_id")
+  orderItemId String         @map("order_item_id")
+  productId   String         @map("product_id")
+  quantity    Decimal        @db.Decimal(19, 4)
+  pickedQty   Decimal        @default(0) @map("picked_qty") @db.Decimal(19, 4)
+  packedQty   Decimal        @default(0) @map("packed_qty") @db.Decimal(19, 4)
+  pick        RoutePick      @relation(fields: [pickId], references: [id], onDelete: Cascade)
+  orderItem   SalesOrderItem @relation(fields: [orderItemId], references: [id])
+  product     Product        @relation(fields: [productId], references: [id])
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([pickId])
+  @@map("route_pick_lines")
+}
+
+model RoutePickOrder {
+  id      String     @id @default(uuid())
+  tenantId String    @map("tenant_id")
+  pickId  String     @map("pick_id")
+  orderId String     @map("order_id")
+  pick    RoutePick  @relation(fields: [pickId], references: [id], onDelete: Cascade)
+  order   SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([pickId, orderId])
+  @@index([tenantId])
+  @@map("route_pick_orders")
+}
+
+model TripSheet {
+  id         String         @id @default(uuid())
+  tenantId   String         @map("tenant_id")
+  number     String
+  routeId    String?        @map("route_id")
+  vehicleId  String?        @map("vehicle_id")
+  pickId     String?        @map("pick_id")
+  driverName String?        @map("driver_name")
+  date       DateTime
+  status     String         @default("PLANNED")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  createdBy  String?        @map("created_by")
+  route      DeliveryRoute? @relation(fields: [routeId], references: [id])
+  vehicle    Vehicle?       @relation(fields: [vehicleId], references: [id])
+  pick       RoutePick?     @relation(fields: [pickId], references: [id])
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries TripDelivery[]
+  gatePass   GatePass?
+  proofs     ProofOfDelivery[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@map("trip_sheets")
+}
+
+model TripDelivery {
+  id         String        @id @default(uuid())
+  tenantId   String        @map("tenant_id")
+  tripId     String        @map("trip_id")
+  deliveryId String        @map("delivery_id")
+  trip       TripSheet     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  delivery   SalesDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, deliveryId])
+  @@index([tenantId])
+  @@map("trip_deliveries")
+}
+
+model GatePass {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  number       String
+  tripId       String    @unique @map("trip_id")
+  vehicleId    String?   @map("vehicle_id")
+  driverName   String?   @map("driver_name")
+  securityName String?   @map("security_name")
+  loadNote     String?   @map("load_note")
+  status       String    @default("DRAFT")
+  issuedAt     DateTime? @map("issued_at")
+  issuedBy     String?   @map("issued_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  trip         TripSheet @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle?  @relation(fields: [vehicleId], references: [id])
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@map("gate_passes")
+}
+
+model ProofOfDelivery {
+  id         String    @id @default(uuid())
+  tenantId   String    @map("tenant_id")
+  deliveryId String    @unique @map("delivery_id")
+  tripId     String?   @map("trip_id")
+  receivedBy String    @map("received_by")
+  receivedAt DateTime  @map("received_at")
+  note       String?
+  status     String    @default("DELIVERED")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  createdBy  String?   @map("created_by")
+  delivery   SalesDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  trip       TripSheet?    @relation(fields: [tripId], references: [id])
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines      ProofLine[]
+
+  @@index([tenantId])
+  @@map("proofs_of_delivery")
+}
+
+model ProofLine {
+  id          String          @id @default(uuid())
+  tenantId    String          @map("tenant_id")
+  proofId     String          @map("proof_id")
+  productId   String          @map("product_id")
+  deliveredQty Decimal        @map("delivered_qty") @db.Decimal(19, 4)
+  rejectedQty Decimal         @default(0) @map("rejected_qty") @db.Decimal(19, 4)
+  reason      String?
+  proof       ProofOfDelivery @relation(fields: [proofId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id])
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([proofId])
+  @@map("proof_lines")
+}
+
+model SalesReturn {
+  id            String            @id @default(uuid())
+  tenantId      String            @map("tenant_id")
+  number        String
+  customerId    String            @map("customer_id")
+  invoiceId     String            @map("invoice_id")
+  deliveryId    String?           @map("delivery_id")
+  date          DateTime
+  kind          String
+  reason        String
+  status        String            @default("POSTED")
+  stockReturnId String?           @map("stock_return_id")
+  partyNoteId   String?           @map("party_note_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  createdBy     String?           @map("created_by")
+  customer      Customer          @relation(fields: [customerId], references: [id])
+  invoice       SalesInvoice      @relation(fields: [invoiceId], references: [id])
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines         SalesReturnLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@map("sales_returns")
+}
+
+model SalesReturnLine {
+  id        String      @id @default(uuid())
+  tenantId  String      @map("tenant_id")
+  returnId  String      @map("return_id")
+  productId String      @map("product_id")
+  quantity  Decimal     @db.Decimal(19, 4)
+  unitPrice Decimal     @map("unit_price") @db.Decimal(19, 4)
+  unitCost  Decimal     @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  reason    String?
+  salesReturn SalesReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product   Product     @relation(fields: [productId], references: [id])
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([returnId])
+  @@map("sales_return_lines")
+}
+
+model OrderCancellation {
+  id          String          @id @default(uuid())
+  tenantId    String          @map("tenant_id")
+  orderId     String          @map("order_id")
+  orderItemId String?         @map("order_item_id")
+  quantity    Decimal         @db.Decimal(19, 4)
+  reason      String
+  actorId     String?         @map("actor_id")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  order       SalesOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem   SalesOrderItem? @relation(fields: [orderItemId], references: [id])
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@map("order_cancellations")
+}
+
+model BankFileTemplate {
+  id        String           @id @default(uuid())
+  tenantId  String           @unique @map("tenant_id")
+  name      String           @default("Collection file")
+  columns   Json
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exports   BankFileExport[]
+
+  @@map("bank_file_templates")
+}
+
+model BankFileExport {
+  id         String            @id @default(uuid())
+  tenantId   String            @map("tenant_id")
+  number     String
+  body       String
+  rowCount   Int               @default(0) @map("row_count")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  createdBy  String?           @map("created_by")
+  templateId String?           @map("template_id")
+  template   BankFileTemplate? @relation(fields: [templateId], references: [id])
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@map("bank_file_exports")
+}
+
+model AppNotification {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  userId      String?   @map("user_id")
+  kind        String
+  title       String
+  body        String
+  entityType  String?   @map("entity_type")
+  entityId    String?   @map("entity_id")
+  readAt      DateTime? @map("read_at")
+  emailStatus String    @default("SKIPPED") @map("email_status")
+  emailError  String?   @map("email_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("app_notifications")
 }
 
 model DemandForecast {
