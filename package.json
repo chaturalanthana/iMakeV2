@@ -4,10 +4,10 @@
   "description": "Root configuration for iMake",
   "private": true,
   "scripts": {
-    "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev",
-    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
-    "start": "concurrently \"npm --prefix server start\" \"npm --prefix client run dev\"",
+    "dev:server": "node init && npm --prefix server run dev",
+    "dev:client": "node init && npm --prefix client run dev",
+    "dev": "node init && concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "start": "node init && concurrently \"npm --prefix server start\" \"npm --prefix client run dev\"",
     "seed:demo": "npm --prefix server run seed:demo"
   },
   "devDependencies": {
