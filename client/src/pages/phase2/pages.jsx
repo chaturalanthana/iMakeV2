@@ -1,234 +1,60 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useMatch, useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import FilterBar from '../../components/ui/FilterBar';
+import FormModal from '../../components/ui/FormModal';
+import FormField, { SelectControl, TextControl } from '../../components/ui/FormField';
+import ActionButton from '../../components/ui/ActionButton';
+import StatusBadge from '../../components/ui/StatusBadge';
+import PageHeader from '../../components/ui/PageHeader';
 import {
-  FileText, Briefcase, ClipboardList, Landmark, Scale, Wallet, Receipt, CreditCard, Calendar
+  Briefcase, Calendar, ClipboardList, CreditCard, FileText, Landmark, Plus, Printer, Receipt, Scale, Wallet
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {
-  OriginalList, MasterForm, Field, LineTable, ReportFilter, authConfig, inputStyle,
-  sectionHeaderStyle, applyServerErrors, useApiList
+  LineTable, applyServerErrors, authConfig, namedOptions, useApiList, useLookups, validateFields
 } from './ui';
 
-function options(rows, label) {
-  return (rows || []).map((row) => ({ value: row.id, label: label(row) }));
+function Fields({ defs, values, setValues, errors }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem' }}>
+      {defs.map((field) => (
+        <FormField key={field.name} label={field.label} required={field.required} error={errors[field.name]} width={field.width || '240px'}>
+          {field.type === 'select' ? (
+            <SelectControl value={values[field.name] || ''} invalid={!!errors[field.name]} onChange={(event) => setValues((prev) => ({ ...prev, [field.name]: event.target.value }))}>
+              <option value="">Select</option>
+              {(field.options || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </SelectControl>
+          ) : (
+            <TextControl
+              type={field.type || 'text'}
+              value={values[field.name] || ''}
+              invalid={!!errors[field.name]}
+              onChange={(event) => setValues((prev) => ({ ...prev, [field.name]: event.target.value }))}
+            />
+          )}
+        </FormField>
+      ))}
+    </div>
+  );
 }
 
-function useLookups() {
-  const [data, setData] = useState({ suppliers: [], products: [], customers: [], accounts: [], projects: [], grns: [], classes: [], centers: [], funds: [], assets: [], employees: [] });
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const config = authConfig();
-    Promise.all([
-      axios.get('/api/suppliers', config),
-      axios.get('/api/products', config),
-      axios.get('/api/customers', config),
-      axios.get('/api/finance/accounts', config),
-      axios.get('/api/phase2/projects', config),
-      axios.get('/api/procurement/grn', config),
-      axios.get('/api/phase2/asset-classes', config),
-      axios.get('/api/phase2/centers', config),
-      axios.get('/api/phase2/petty-cash', config),
-      axios.get('/api/phase2/assets', config),
-      axios.get('/api/hr/employees', config).catch(() => ({ data: [] }))
-    ]).then(([suppliers, products, customers, accounts, projects, grns, classes, centers, funds, assets, employees]) => {
-      setData({
-        suppliers: suppliers.data || [], products: products.data || [], customers: customers.data || [],
-        accounts: accounts.data || [], projects: projects.data || [], grns: grns.data || [],
-        classes: classes.data || [], centers: centers.data || [], funds: funds.data || [],
-        assets: assets.data || [], employees: employees.data || []
-      });
-    }).finally(() => setReady(true));
-  }, []);
-  return { ...data, ready };
-}
-
-function statusText(status) {
-  const color = status === 'CLOSED' || status === 'ACTIVE' || status === 'POSTED' || status === 'REALISED' || status === 'HARD' ? '#059669' : status === 'BOUNCED' || status === 'CANCELLED' ? '#dc2626' : '#d97706';
-  return <span style={{ fontSize: '0.75rem', fontWeight: 700, color }}>{status}</span>;
-}
-
-function SimpleList({ title, icon, endpoint, columns, searchKeys, searchPlaceholder, newTo, newLabel, rowTo }) {
+function Register({ title, icon, endpoint, columns, searchKeys, searchPlaceholder, newPath, newLabel, formTitle, formSubtitle, formIcon, fields, buildBody, rowTo, actions }) {
   const navigate = useNavigate();
-  const { rows, loading, initial } = useApiList(endpoint);
-  return (
-    <OriginalList title={title} icon={icon} columns={columns} rows={rows} loading={loading} initial={initial} searchKeys={searchKeys} searchPlaceholder={searchPlaceholder} newLabel={newLabel} onNew={() => navigate(newTo)} onRowClick={rowTo ? (row) => navigate(rowTo(row)) : undefined} />
-  );
-}
-
-export function Centers() {
-  return (
-    <SimpleList title="Cost and profit centers" icon={Landmark} endpoint="/api/phase2/centers" newTo="/finance/centers/new" newLabel="New Center" searchKeys={['code', 'name']} searchPlaceholder="Search by code or name..." columns={[
-      { header: 'Code', accessor: 'code', fontWeight: 600 },
-      { header: 'Name', accessor: 'name', fontWeight: 500 },
-      { header: 'Kind', accessor: 'kind' },
-      { header: 'Status', accessor: 'active', render: (row) => statusText(row.active ? 'ACTIVE' : 'INACTIVE') }
-    ]} />
-  );
-}
-
-export function Projects() {
-  return (
-    <SimpleList title="Capital projects" icon={Briefcase} endpoint="/api/phase2/projects" newTo="/finance/projects/new" newLabel="New Project" searchKeys={['code', 'name']} searchPlaceholder="Search by project code..." columns={[
-      { header: 'Code', accessor: 'code', fontWeight: 600 },
-      { header: 'Name', accessor: 'name' },
-      { header: 'Budget', accessor: 'budgetAmount', fontWeight: 600 },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) }
-    ]} />
-  );
-}
-
-export function Budgets() {
-  return (
-    <SimpleList title="Budgets" icon={Scale} endpoint="/api/phase2/budgets" newTo="/finance/budgets/new" newLabel="New Budget" searchKeys={['kind']} searchPlaceholder="Search by kind..." columns={[
-      { header: 'Kind', accessor: 'kind', fontWeight: 600 },
-      { header: 'Year', accessor: 'year' },
-      { header: 'Month', accessor: 'month', render: (row) => row.month || 'Year' },
-      { header: 'Amount', accessor: 'amount', fontWeight: 600 }
-    ]} />
-  );
-}
-
-export function Contracts() {
+  const { showToast } = useToast();
+  const creating = useMatch(newPath || '/__never__');
   const lookups = useLookups();
-  const names = {
-    supplier: Object.fromEntries(lookups.suppliers.map((row) => [row.id, row.name])),
-    product: Object.fromEntries(lookups.products.map((row) => [row.id, row.name]))
-  };
-  return (
-    <SimpleList title="Contract prices" icon={ClipboardList} endpoint="/api/phase2/contracts" newTo="/procurement/contracts/new" newLabel="New Price" searchKeys={['currencyCode']} searchPlaceholder="Search by currency..." columns={[
-      { header: 'Supplier', accessor: 'supplierId', render: (row) => names.supplier[row.supplierId] || row.supplierId },
-      { header: 'Product', accessor: 'productId', render: (row) => names.product[row.productId] || row.productId },
-      { header: 'Price', accessor: 'unitPrice', fontWeight: 600 },
-      { header: 'Currency', accessor: 'currencyCode' },
-      { header: 'From', accessor: 'validFrom', render: (row) => new Date(row.validFrom).toLocaleDateString() }
-    ]} />
-  );
-}
-
-export function Rfqs() {
-  return (
-    <SimpleList title="Requests for quotation" icon={ClipboardList} endpoint="/api/phase2/rfqs" newTo="/procurement/rfqs/new" newLabel="New RFQ" searchKeys={['rfqNumber']} searchPlaceholder="Search by RFQ number..." rowTo={(row) => `/procurement/rfqs/${row.id}`} columns={[
-      { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
-      { header: 'RFQ #', accessor: 'rfqNumber', fontWeight: 600 },
-      { header: 'Quotes', accessor: 'quotations', render: (row) => row.quotations?.length || 0 },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) }
-    ]} />
-  );
-}
-
-export function LandedCosts() {
-  return (
-    <SimpleList title="Landed cost" icon={Receipt} endpoint="/api/phase2/landed-costs" newTo="/procurement/landed-costs/new" newLabel="New Allocation" searchKeys={['number', 'basis']} searchPlaceholder="Search by document number..." columns={[
-      { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
-      { header: 'Number', accessor: 'number', fontWeight: 600 },
-      { header: 'Basis', accessor: 'basis' },
-      { header: 'GRN rate', accessor: 'grnExchangeRate' },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) }
-    ]} />
-  );
-}
-
-export function Assets() {
-  return (
-    <SimpleList title="Fixed assets" icon={Landmark} endpoint="/api/phase2/assets" newTo="/finance/depreciation" newLabel="Run Depreciation" searchKeys={['code', 'name', 'status']} searchPlaceholder="Search by asset code..." rowTo={(row) => `/finance/assets/${row.id}`} columns={[
-      { header: 'Code', accessor: 'code', fontWeight: 600 },
-      { header: 'Name', accessor: 'name' },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) },
-      { header: 'Cost', accessor: 'cost', fontWeight: 600 },
-      { header: 'NBV', accessor: 'accountingNbv' }
-    ]} />
-  );
-}
-
-export function Notes() {
-  return (
-    <SimpleList title="Credit and debit notes" icon={Receipt} endpoint="/api/phase2/notes" newTo="/finance/notes/new" newLabel="New Note" searchKeys={['noteNumber', 'reasonCode', 'partyType']} searchPlaceholder="Search by note number..." columns={[
-      { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
-      { header: 'Number', accessor: 'noteNumber', fontWeight: 600 },
-      { header: 'Party', accessor: 'partyType' },
-      { header: 'Kind', accessor: 'kind' },
-      { header: 'Reason', accessor: 'reasonCode' },
-      { header: 'Amount', accessor: 'total', fontWeight: 600 }
-    ]} />
-  );
-}
-
-export function Cheques() {
-  const navigate = useNavigate();
-  const { showToast } = useToast();
-  const { rows, loading, initial, reload } = useApiList('/api/phase2/cheques');
-  const act = async (event, id, action) => {
-    event.stopPropagation();
-    try {
-      await axios.post(`/api/phase2/cheques/${id}/${action}`, { date: new Date().toISOString().slice(0, 10) }, authConfig());
-      showToast('Cheque updated', 'success');
-      reload();
-    } catch (error) {
-      showToast(error.response?.data?.error || 'Could not update the cheque', 'error');
-    }
-  };
-  return (
-    <OriginalList title="Cheque register" icon={CreditCard} columns={[
-      { header: 'Date', accessor: 'chequeDate', render: (row) => new Date(row.chequeDate).toLocaleDateString() },
-      { header: 'Number', accessor: 'chequeNumber', fontWeight: 600 },
-      { header: 'Payee', accessor: 'payee' },
-      { header: 'Amount', accessor: 'amount', fontWeight: 600 },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) },
-      { header: 'Actions', align: 'right', sortable: false, render: (row) => (
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-          {row.direction === 'IN' && row.status === 'UNREALISED' ? <button type="button" onClick={(event) => act(event, row.id, 'deposit')} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Deposit</button> : null}
-          {['UNREALISED', 'DEPOSITED', 'PRINTED', 'RELEASED'].includes(row.status) ? <button type="button" onClick={(event) => act(event, row.id, 'realise')} style={{ background: 'transparent', border: 'none', color: '#059669', fontWeight: 700, cursor: 'pointer' }}>Realise</button> : null}
-          {!['BOUNCED', 'CANCELLED'].includes(row.status) ? <button type="button" onClick={(event) => act(event, row.id, 'bounce')} style={{ background: 'transparent', border: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer' }}>Bounce</button> : null}
-        </div>
-      ) }
-    ]} rows={rows} loading={loading} initial={initial} searchKeys={['chequeNumber', 'payee', 'status']} searchPlaceholder="Search by cheque number..." newLabel="New Cheque" onNew={() => navigate('/finance/cheques/new')} />
-  );
-}
-
-export function Ious() {
-  return (
-    <SimpleList title="IOU and petty cash" icon={Wallet} endpoint="/api/phase2/ious" newTo="/finance/ious/new" newLabel="New IOU" searchKeys={['reference', 'employeeName', 'status']} searchPlaceholder="Search by employee or reference..." rowTo={(row) => `/finance/ious/${row.id}`} columns={[
-      { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
-      { header: 'Reference', accessor: 'reference', fontWeight: 600 },
-      { header: 'Employee', accessor: 'employeeName' },
-      { header: 'Department', accessor: 'department' },
-      { header: 'Advance', accessor: 'amount', fontWeight: 600 },
-      { header: 'Outstanding', accessor: 'settled', render: (row) => (Number(row.amount) - Number(row.settled)).toFixed(2) },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) }
-    ]} />
-  );
-}
-
-export function Closes() {
-  return (
-    <SimpleList title="Period close" icon={Calendar} endpoint="/api/phase2/period-closes" newTo="/finance/period-close/new" newLabel="Open Period" searchKeys={['status']} searchPlaceholder="Search by status..." rowTo={(row) => `/finance/period-close/${row.id}`} columns={[
-      { header: 'Year', accessor: 'year', fontWeight: 600 },
-      { header: 'Month', accessor: 'month' },
-      { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) }
-    ]} />
-  );
-}
-
-function FormShell({ title, subtitle, backTo, saveLabel, tabs, onSave, childrenBuilder }) {
-  const { showToast } = useToast();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState(tabs[0].id);
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [activeStatus, setActiveStatus] = useState('ACTIVE');
+  const { rows, loading, initial, reload } = useApiList(endpoint);
   const [values, setValues] = useState({});
-  const [lines, setLines] = useState([{ id: 1 }]);
-  const set = (name, value) => setValues((prev) => ({ ...prev, [name]: value }));
-  const submit = async () => {
-    const next = {};
-    tabs.flatMap((tab) => tab.fields || []).forEach((field) => {
-      if (field.required && !String(values[field.name] || '').trim()) next[field.name] = `${field.label} is required.`;
-      if (field.positive && values[field.name] !== undefined && values[field.name] !== '' && !(Number(values[field.name]) > 0)) next[field.name] = `${field.label} must be greater than zero.`;
-    });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const defs = typeof fields === 'function' ? fields(lookups) : (fields || []);
+
+  const save = async () => {
+    const next = validateFields(defs, values);
     if (Object.keys(next).length) {
       setErrors(next);
       showToast(Object.values(next)[0], 'error');
@@ -236,130 +62,274 @@ function FormShell({ title, subtitle, backTo, saveLabel, tabs, onSave, childrenB
     }
     setSaving(true);
     try {
-      const created = await onSave(values, lines, activeStatus);
+      await axios.post(endpoint, buildBody ? buildBody(values) : values, authConfig());
       showToast('Saved', 'success');
-      navigate(created || backTo);
+      setValues({});
+      setErrors({});
+      reload();
+      if (newPath) navigate(newPath.replace('/new', ''));
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <AppLayout title={title} icon={icon}>
+      {initial ? <PageSkeleton type="table" /> : (
+        <DataTable
+          columns={columns}
+          data={rows}
+          loading={loading}
+          searchPlaceholder={searchPlaceholder}
+          searchKeys={searchKeys}
+          noDataMessage="No records found."
+          onRowClick={rowTo ? (row) => navigate(rowTo(row)) : undefined}
+          extraActions={newPath ? <ActionButton icon={Plus} onClick={() => navigate(newPath)}>{newLabel}</ActionButton> : null}
+        />
+      )}
+      {actions}
+      {newPath && (
+        <FormModal
+          isOpen={!!creating}
+          onClose={() => navigate(newPath.replace('/new', ''))}
+          title={formTitle}
+          subtitle={formSubtitle}
+          icon={formIcon || icon}
+          onSubmit={save}
+          submitLabel={saving ? 'Saving...' : 'Save'}
+          busy={saving}
+          maxWidth="760px"
+          overflow="visible"
+        >
+          <Fields defs={defs} values={values} setValues={setValues} errors={errors} />
+        </FormModal>
+      )}
+    </AppLayout>
+  );
+}
+
+const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export function Centers() {
+  return (
+    <Register
+      title="Cost and profit centers"
+      icon={Landmark}
+      endpoint="/api/phase2/centers"
+      newPath="/finance/centers/new"
+      newLabel="New Center"
+      formTitle="Create center"
+      formSubtitle="Cost center, profit center, or both"
+      searchKeys={['code', 'name']}
+      searchPlaceholder="Search by code or name..."
+      fields={[
+        { name: 'code', label: 'Code', required: true, width: '180px' },
+        { name: 'name', label: 'Name', required: true, width: '280px' },
+        { name: 'kind', label: 'Kind', type: 'select', width: '200px', options: [
+          { value: 'BOTH', label: 'Cost and profit' },
+          { value: 'COST', label: 'Cost' },
+          { value: 'PROFIT', label: 'Profit' }
+        ] }
+      ]}
+      buildBody={(values) => ({ ...values, kind: values.kind || 'BOTH' })}
+      columns={[
+        { header: 'Code', accessor: 'code', fontWeight: 600 },
+        { header: 'Name', accessor: 'name' },
+        { header: 'Kind', accessor: 'kind' },
+        { header: 'Status', accessor: 'active', render: (row) => <StatusBadge status={row.active ? 'ACTIVE' : 'INACTIVE'} /> }
+      ]}
+    />
+  );
+}
+
+export function Projects() {
+  return (
+    <Register
+      title="Capital projects"
+      icon={Briefcase}
+      endpoint="/api/phase2/projects"
+      newPath="/finance/projects/new"
+      newLabel="New Project"
+      formTitle="Create capital project"
+      formSubtitle="Capex requests are checked against this budget"
+      searchKeys={['code', 'name']}
+      searchPlaceholder="Search by project code..."
+      fields={[
+        { name: 'code', label: 'Project code', required: true, width: '180px' },
+        { name: 'name', label: 'Name', required: true, width: '280px' },
+        { name: 'budgetAmount', label: 'Budget (LKR)', type: 'number', required: true, positive: true, width: '180px' }
+      ]}
+      columns={[
+        { header: 'Code', accessor: 'code', fontWeight: 600 },
+        { header: 'Name', accessor: 'name' },
+        { header: 'Budget', accessor: 'budgetAmount', render: (row) => money(row.budgetAmount) },
+        { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+      ]}
+    />
+  );
+}
+
+export function Budgets() {
+  const lookups = useLookups();
+  return (
+    <Register
+      title="Budgets"
+      icon={Scale}
+      endpoint="/api/phase2/budgets"
+      newPath="/finance/budgets/new"
+      newLabel="New Budget"
+      formTitle="Create budget"
+      formSubtitle="Opex is checked by account and cost center"
+      searchKeys={['kind']}
+      searchPlaceholder="Search by kind..."
+      fields={() => [
+        { name: 'kind', label: 'Kind', type: 'select', required: true, width: '160px', options: [{ value: 'OPEX', label: 'Opex' }, { value: 'CAPEX', label: 'Capex' }] },
+        { name: 'year', label: 'Year', type: 'number', required: true, positive: true, width: '120px' },
+        { name: 'month', label: 'Month', type: 'number', width: '120px' },
+        { name: 'amount', label: 'Amount', type: 'number', required: true, positive: true, width: '160px' },
+        { name: 'accountId', label: 'Account', type: 'select', width: '280px', options: namedOptions(lookups.accounts, (row) => `${row.code} ${row.name}`) },
+        { name: 'costCenterId', label: 'Cost center', type: 'select', width: '220px', options: namedOptions(lookups.centers, (row) => row.name) },
+        { name: 'capitalProjectId', label: 'Project', type: 'select', width: '220px', options: namedOptions(lookups.projects, (row) => row.code) }
+      ]}
+      columns={[
+        { header: 'Kind', accessor: 'kind', fontWeight: 600 },
+        { header: 'Year', accessor: 'year' },
+        { header: 'Month', accessor: 'month', render: (row) => row.month || 'Year' },
+        { header: 'Amount', accessor: 'amount', render: (row) => money(row.amount) }
+      ]}
+    />
+  );
+}
+
+export function Contracts() {
+  const lookups = useLookups();
+  const supplierName = Object.fromEntries(lookups.suppliers.map((row) => [row.id, row.name]));
+  const productName = Object.fromEntries(lookups.products.map((row) => [row.id, row.name]));
+  return (
+    <Register
+      title="Contract prices"
+      icon={ClipboardList}
+      endpoint="/api/phase2/contracts"
+      newPath="/procurement/contracts/new"
+      newLabel="New Price"
+      formTitle="Agreed supplier price"
+      formSubtitle="Prices outside the tolerance need a reason on the purchase order"
+      searchKeys={['currencyCode']}
+      searchPlaceholder="Search by currency..."
+      fields={() => [
+        { name: 'supplierId', label: 'Supplier', type: 'select', required: true, width: '240px', options: namedOptions(lookups.suppliers, (row) => row.name) },
+        { name: 'productId', label: 'Product', type: 'select', required: true, width: '280px', options: namedOptions(lookups.products, (row) => `${row.code} ${row.name}`) },
+        { name: 'unitPrice', label: 'Agreed price', type: 'number', required: true, positive: true, width: '160px' },
+        { name: 'validFrom', label: 'Valid from', type: 'date', required: true, width: '180px' },
+        { name: 'validTo', label: 'Valid to', type: 'date', width: '180px' },
+        { name: 'currencyCode', label: 'Currency', type: 'select', width: '140px', options: [{ value: 'LKR', label: 'LKR' }, { value: 'USD', label: 'USD' }] },
+        { name: 'tolerancePercent', label: 'Tolerance %', type: 'number', width: '140px' },
+        { name: 'minimumOrderQty', label: 'Minimum qty', type: 'number', width: '140px' }
+      ]}
+      buildBody={(values) => ({ ...values, currencyCode: values.currencyCode || 'LKR' })}
+      columns={[
+        { header: 'Supplier', accessor: 'supplierId', render: (row) => supplierName[row.supplierId] || '' },
+        { header: 'Product', accessor: 'productId', render: (row) => productName[row.productId] || '' },
+        { header: 'Price', accessor: 'unitPrice', fontWeight: 600, render: (row) => money(row.unitPrice) },
+        { header: 'Currency', accessor: 'currencyCode' },
+        { header: 'From', accessor: 'validFrom', render: (row) => new Date(row.validFrom).toLocaleDateString() }
+      ]}
+    />
+  );
+}
+
+export function Rfqs() {
+  return (
+    <Register
+      title="Requests for quotation"
+      icon={ClipboardList}
+      endpoint="/api/phase2/rfqs"
+      newPath="/procurement/rfqs/new"
+      newLabel="New RFQ"
+      searchKeys={['rfqNumber']}
+      searchPlaceholder="Search by RFQ number..."
+      rowTo={(row) => `/procurement/rfqs/${row.id}`}
+      columns={[
+        { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
+        { header: 'RFQ #', accessor: 'rfqNumber', fontWeight: 600 },
+        { header: 'Quotes', accessor: 'quotations', render: (row) => row.quotations?.length || 0 },
+        { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+      ]}
+    />
+  );
+}
+
+export function NewRfq() {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const lookups = useLookups();
+  const [values, setValues] = useState({ date: new Date().toISOString().slice(0, 10) });
+  const [lines, setLines] = useState([{ id: 1 }]);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const products = namedOptions(lookups.products, (row) => `${row.code} ${row.name}`);
+  const save = async () => {
+    const next = validateFields([{ name: 'date', label: 'Date', required: true }], values);
+    if (!lines.some((line) => line.productId && Number(line.quantity) > 0)) next.lines = 'Add at least one product.';
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await axios.post('/api/phase2/rfqs', {
+        date: values.date,
+        notes: values.notes,
+        supplierIds: values.supplierId ? [values.supplierId] : [],
+        lines: lines.filter((line) => line.productId).map((line) => ({ productId: line.productId, quantity: Number(line.quantity) }))
+      }, authConfig());
+      showToast('RFQ saved', 'success');
+      navigate(`/procurement/rfqs/${res.data.id}`);
     } catch (error) {
       applyServerErrors(error, showToast, setErrors);
       setSaving(false);
     }
   };
   return (
-    <MasterForm title={title} subtitle={subtitle} backTo={backTo} tabs={tabs} activeTab={activeTab} setActiveTab={setActiveTab} onSubmit={submit} saving={saving} saveLabel={saveLabel} activeStatus={activeStatus} setActiveStatus={tabs.some((tab) => tab.status) ? setActiveStatus : null}>
-      {tabs.filter((tab) => tab.id === activeTab).map((tab) => (
-        <div key={tab.id}>
-          <h3 style={{ ...sectionHeaderStyle, marginTop: 0 }}>{tab.label}</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: tab.lines ? '100%' : '550px' }}>
-            {(tab.fields || []).map((field) => (
-              <Field key={field.name} label={field.label} required={field.required} error={errors[field.name]}>
-                {field.type === 'select' ? (
-                  <select value={values[field.name] || ''} onChange={(event) => set(field.name, event.target.value)} style={inputStyle} className={errors[field.name] ? 'field-invalid' : undefined}>
-                    <option value="">Select</option>
-                    {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                ) : (
-                  <input type={field.type || 'text'} value={values[field.name] || ''} onChange={(event) => set(field.name, event.target.value)} style={inputStyle} className={errors[field.name] ? 'field-invalid' : undefined} />
-                )}
-              </Field>
-            ))}
-            {tab.lines ? (
-              <LineTable columns={tab.lines} rows={lines} onAdd={() => setLines((prev) => [...prev, { id: Date.now() }])} onRemove={(id) => setLines((prev) => prev.filter((row) => row.id !== id))} onChange={(id, key, value) => setLines((prev) => prev.map((row) => row.id === id ? { ...row, [key]: value } : row))} />
-            ) : null}
-          </div>
-        </div>
-      ))}
-      {childrenBuilder ? childrenBuilder({ values, lines, set }) : null}
-    </MasterForm>
-  );
-}
-
-export function NewCenter() {
-  return (
-    <FormShell title="Create center" subtitle="Cost center, profit center, or both." backTo="/finance/centers" saveLabel="Save Center" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, status: true, fields: [
-        { name: 'code', label: 'Code', required: true },
-        { name: 'name', label: 'Name', required: true }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'kind', label: 'Kind', type: 'select', options: [{ value: 'BOTH', label: 'Cost and profit' }, { value: 'COST', label: 'Cost' }, { value: 'PROFIT', label: 'Profit' }] }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/centers', { ...values, kind: values.kind || 'BOTH' }, authConfig()).then(() => '/finance/centers')} />
-  );
-}
-
-export function NewProject() {
-  return (
-    <FormShell title="Create capital project" subtitle="Budget checked when a capex request is saved." backTo="/finance/projects" saveLabel="Save Project" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'code', label: 'Project code', required: true },
-        { name: 'name', label: 'Name', required: true },
-        { name: 'budgetAmount', label: 'Budget (LKR)', type: 'number', required: true, positive: true }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/projects', values, authConfig()).then(() => '/finance/projects')} />
-  );
-}
-
-export function NewBudget() {
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="New budget" icon={Scale}><PageSkeleton type="form" /></AppLayout>;
-  return (
-    <FormShell title="Create budget" subtitle="Opex is checked by account and cost center. Capex uses the project budget." backTo="/finance/budgets" saveLabel="Save Budget" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'kind', label: 'Kind', type: 'select', required: true, options: [{ value: 'OPEX', label: 'Opex' }, { value: 'CAPEX', label: 'Capex' }] },
-        { name: 'year', label: 'Year', type: 'number', required: true, positive: true },
-        { name: 'amount', label: 'Amount', type: 'number', required: true, positive: true }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'month', label: 'Month (0 = year)', type: 'number' },
-        { name: 'accountId', label: 'Account', type: 'select', options: options(lookups.accounts, (row) => `${row.code} ${row.name}`) },
-        { name: 'costCenterId', label: 'Cost center', type: 'select', options: options(lookups.centers, (row) => row.name) },
-        { name: 'capitalProjectId', label: 'Project', type: 'select', options: options(lookups.projects, (row) => row.code) }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/budgets', values, authConfig()).then(() => '/finance/budgets')} />
-  );
-}
-
-export function NewContract() {
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="New contract price" icon={ClipboardList}><PageSkeleton type="form" /></AppLayout>;
-  return (
-    <FormShell title="Agreed supplier price" subtitle="Purchase orders outside the tolerance need a reason." backTo="/procurement/contracts" saveLabel="Save Price" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'supplierId', label: 'Supplier', type: 'select', required: true, options: options(lookups.suppliers, (row) => row.name) },
-        { name: 'productId', label: 'Product', type: 'select', required: true, options: options(lookups.products, (row) => `${row.code} ${row.name}`) },
-        { name: 'unitPrice', label: 'Agreed price', type: 'number', required: true, positive: true },
-        { name: 'validFrom', label: 'Valid from', type: 'date', required: true }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'validTo', label: 'Valid to', type: 'date' },
-        { name: 'currencyCode', label: 'Currency', type: 'select', options: [{ value: 'LKR', label: 'LKR' }, { value: 'USD', label: 'USD' }] },
-        { name: 'tolerancePercent', label: 'Tolerance %', type: 'number' },
-        { name: 'minimumOrderQty', label: 'Minimum order qty', type: 'number' }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/contracts', { ...values, currencyCode: values.currencyCode || 'LKR' }, authConfig()).then(() => '/procurement/contracts')} />
-  );
-}
-
-export function NewRfq() {
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="New RFQ" icon={ClipboardList}><PageSkeleton type="form" /></AppLayout>;
-  const productOptions = options(lookups.products, (row) => `${row.code} ${row.name}`);
-  return (
-    <FormShell title="New request for quotation" subtitle="Record supplier prices and keep the reason for the selection." backTo="/procurement/rfqs" saveLabel="Save RFQ" tabs={[
-      { id: 'lines', label: 'Lines', icon: FileText, fields: [{ name: 'date', label: 'Date', type: 'date', required: true }], lines: [
-        { key: 'productId', label: 'Product', options: productOptions },
-        { key: 'quantity', label: 'Quantity', type: 'number', placeholder: '0' }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'supplierId', label: 'Invite supplier', type: 'select', options: options(lookups.suppliers, (row) => row.name) },
-        { name: 'notes', label: 'Notes' }
-      ] }
-    ]} onSave={(values, lines) => axios.post('/api/phase2/rfqs', {
-      date: values.date,
-      notes: values.notes,
-      supplierIds: values.supplierId ? [values.supplierId] : [],
-      lines: lines.filter((line) => line.productId).map((line) => ({ productId: line.productId, quantity: Number(line.quantity) }))
-    }, authConfig()).then((res) => `/procurement/rfqs/${res.data.id}`)} />
+    <AppLayout title="New RFQ" icon={ClipboardList}>
+      <PageHeader
+        onBack={() => navigate('/procurement/rfqs')}
+        title="New request for quotation"
+        subtitle="Invite a supplier and record the quantities to price"
+        actions={(
+          <>
+            <ActionButton variant="discard" onClick={() => navigate('/procurement/rfqs')}>Discard</ActionButton>
+            <ActionButton variant="submit" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save RFQ'}</ActionButton>
+          </>
+        )}
+      />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', margin: '1.5rem 0' }}>
+        <Fields
+          defs={[
+            { name: 'date', label: 'Date', type: 'date', required: true, width: '180px' },
+            { name: 'supplierId', label: 'Invite supplier', type: 'select', width: '280px', options: namedOptions(lookups.suppliers, (row) => row.name) },
+            { name: 'notes', label: 'Notes', width: '320px' }
+          ]}
+          values={values}
+          setValues={setValues}
+          errors={errors}
+        />
+      </div>
+      {errors.lines && <span className="field-error-text">{errors.lines}</span>}
+      <LineTable
+        columns={[
+          { key: 'productId', label: 'Product', options: products },
+          { key: 'quantity', label: 'Quantity', type: 'number', placeholder: '0' }
+        ]}
+        rows={lines}
+        onAdd={() => setLines((prev) => [...prev, { id: Date.now() }])}
+        onRemove={(id) => setLines((prev) => prev.filter((row) => row.id !== id))}
+        onChange={(id, key, value) => setLines((prev) => prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)))}
+      />
+    </AppLayout>
   );
 }
 
@@ -368,21 +338,41 @@ export function RfqDetail() {
   const { showToast } = useToast();
   const lookups = useLookups();
   const [board, setBoard] = useState(null);
-  const [quote, setQuote] = useState({ supplierId: '', unitPrice: '', leadTimeDays: '7' });
-  const load = () => axios.get(`/api/phase2/rfqs/${id}`, authConfig()).then((res) => setBoard(res.data));
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState({ leadTimeDays: '7' });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const load = () => axios.get(`/api/phase2/rfqs/${id}`, authConfig()).then((res) => setBoard(res.data)).catch(() => setBoard(null));
   useEffect(() => { load(); }, [id]);
   if (!board) return <AppLayout title="Quotation comparison" icon={ClipboardList}><PageSkeleton type="table" /></AppLayout>;
   const product = board.rfq.lines[0];
   const saveQuote = async () => {
+    const next = validateFields([
+      { name: 'supplierId', label: 'Supplier', required: true },
+      { name: 'unitPrice', label: 'Unit price', required: true, positive: true }
+    ], values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
     try {
       await axios.post(`/api/phase2/rfqs/${id}/quotes`, {
-        supplierId: quote.supplierId, date: new Date().toISOString().slice(0, 10), leadTimeDays: Number(quote.leadTimeDays || 0), currencyCode: 'LKR', exchangeRate: 1,
-        lines: [{ productId: product.productId, quantity: Number(product.quantity), unitPrice: Number(quote.unitPrice) }]
+        supplierId: values.supplierId,
+        date: new Date().toISOString().slice(0, 10),
+        leadTimeDays: Number(values.leadTimeDays || 0),
+        currencyCode: 'LKR',
+        exchangeRate: 1,
+        lines: [{ productId: product.productId, quantity: Number(product.quantity), unitPrice: Number(values.unitPrice) }]
       }, authConfig());
-      setQuote({ supplierId: '', unitPrice: '', leadTimeDays: '7' });
+      setOpen(false);
+      setValues({ leadTimeDays: '7' });
       load();
     } catch (error) {
-      showToast(error.response?.data?.error || 'Could not save the quotation', 'error');
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
     }
   };
   const select = async (quotationId) => {
@@ -398,249 +388,553 @@ export function RfqDetail() {
   };
   return (
     <AppLayout title="Quotation comparison" icon={ClipboardList}>
-      <div style={{ marginBottom: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{board.rfq.rfqNumber} · {board.rfq.status}</div>
-      <DataTable columns={[
-        { header: 'Rank', accessor: 'rank' },
-        { header: 'Supplier', accessor: 'supplierName', fontWeight: 600 },
-        { header: 'Lead time', accessor: 'leadTimeDays' },
-        { header: 'Total LKR', accessor: 'totalBase', fontWeight: 600 },
-        { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) },
-        { header: 'Actions', align: 'right', render: (row) => board.rfq.status === 'OPEN' ? <button type="button" onClick={(event) => { event.stopPropagation(); select(row.id); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Select</button> : null }
-      ]} data={board.quotes} searchKeys={['supplierName']} searchPlaceholder="Search quotations..." />
-      {board.rfq.status === 'OPEN' ? (
-        <div style={{ marginTop: '1.5rem', background: '#fff', padding: '1.5rem', borderRadius: '12px', maxWidth: '720px' }}>
-          <h3 style={sectionHeaderStyle}>Record a quotation</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <Field label="Supplier" required>
-              <select value={quote.supplierId} onChange={(event) => setQuote({ ...quote, supplierId: event.target.value })} style={inputStyle}>
-                <option value="">Select</option>
-                {lookups.suppliers.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Unit price" required>
-              <input type="number" value={quote.unitPrice} onChange={(event) => setQuote({ ...quote, unitPrice: event.target.value })} style={inputStyle} />
-            </Field>
-            <button type="button" onClick={saveQuote} style={{ alignSelf: 'flex-start', padding: '0.55rem 1.25rem', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Save quotation</button>
-          </div>
-        </div>
-      ) : null}
+      <DataTable
+        columns={[
+          { header: 'Rank', accessor: 'rank' },
+          { header: 'Supplier', accessor: 'supplierName', fontWeight: 600 },
+          { header: 'Lead time', accessor: 'leadTimeDays' },
+          { header: 'Total LKR', accessor: 'totalBase', render: (row) => money(row.totalBase) },
+          { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+          { header: 'Actions', align: 'right', sortable: false, render: (row) => board.rfq.status === 'OPEN' ? (
+            <button type="button" onClick={(event) => { event.stopPropagation(); select(row.id); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Select</button>
+          ) : null }
+        ]}
+        data={board.quotes}
+        searchKeys={['supplierName', 'status']}
+        searchPlaceholder="Search quotations..."
+        noDataMessage="No quotations recorded."
+        extraActions={board.rfq.status === 'OPEN' ? <ActionButton icon={Plus} onClick={() => setOpen(true)}>Record quotation</ActionButton> : null}
+      />
+      <FormModal isOpen={open} onClose={() => setOpen(false)} title="Record a quotation" subtitle={board.rfq.rfqNumber} icon={ClipboardList} onSubmit={saveQuote} submitLabel={saving ? 'Saving...' : 'Save'} busy={saving}>
+        <Fields
+          defs={[
+            { name: 'supplierId', label: 'Supplier', type: 'select', required: true, width: '100%', options: namedOptions(lookups.suppliers, (row) => row.name) },
+            { name: 'unitPrice', label: 'Unit price', type: 'number', required: true, positive: true, width: '180px' },
+            { name: 'leadTimeDays', label: 'Lead time (days)', type: 'number', width: '180px' }
+          ]}
+          values={values}
+          setValues={setValues}
+          errors={errors}
+        />
+      </FormModal>
     </AppLayout>
   );
 }
 
-export function NewLandedCost() {
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="Landed cost" icon={Receipt}><PageSkeleton type="form" /></AppLayout>;
+export function LandedCosts() {
   return (
-    <FormShell title="Allocate landed cost" subtitle="Freight, duty, clearing and insurance update the FIFO layer at the GRN rate." backTo="/procurement/landed-costs" saveLabel="Post Allocation" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'grnId', label: 'Goods receipt', type: 'select', required: true, options: options(lookups.grns, (row) => row.grnNumber) },
-        { name: 'date', label: 'Date', type: 'date', required: true },
-        { name: 'basis', label: 'Basis', type: 'select', options: [{ value: 'VALUE', label: 'Value' }, { value: 'QTY', label: 'Quantity' }, { value: 'WEIGHT', label: 'Weight' }] }
-      ], lines: [
-        { key: 'kind', label: 'Charge', options: ['FREIGHT', 'DUTY', 'CLEARING', 'INSURANCE'].map((value) => ({ value, label: value })) },
-        { key: 'amount', label: 'Amount', type: 'number' },
-        { key: 'exchangeRate', label: 'Invoice rate', type: 'number' }
-      ] }
-    ]} onSave={(values, lines) => axios.post('/api/phase2/landed-costs', {
-      grnId: values.grnId, date: values.date, basis: values.basis || 'VALUE',
-      charges: lines.filter((line) => line.kind && Number(line.amount) > 0).map((line) => ({ kind: line.kind, amount: Number(line.amount), exchangeRate: line.exchangeRate ? Number(line.exchangeRate) : undefined }))
-    }, authConfig()).then(() => '/procurement/landed-costs')} />
+    <Register
+      title="Landed cost"
+      icon={Receipt}
+      endpoint="/api/phase2/landed-costs"
+      newPath="/procurement/landed-costs/new"
+      newLabel="New Allocation"
+      searchKeys={['number', 'basis']}
+      searchPlaceholder="Search by document number..."
+      columns={[
+        { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
+        { header: 'Number', accessor: 'number', fontWeight: 600 },
+        { header: 'Basis', accessor: 'basis' },
+        { header: 'GRN rate', accessor: 'grnExchangeRate' },
+        { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+      ]}
+    />
+  );
+}
+
+export function NewLandedCost() {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const lookups = useLookups();
+  const [values, setValues] = useState({ date: new Date().toISOString().slice(0, 10), basis: 'VALUE' });
+  const [lines, setLines] = useState([{ id: 1, kind: 'FREIGHT' }]);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    const next = validateFields([
+      { name: 'grnId', label: 'Goods receipt', required: true },
+      { name: 'date', label: 'Date', required: true }
+    ], values);
+    if (!lines.some((line) => line.kind && Number(line.amount) > 0)) next.charges = 'Add freight, duty, clearing, or insurance.';
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/api/phase2/landed-costs', {
+        grnId: values.grnId,
+        date: values.date,
+        basis: values.basis || 'VALUE',
+        charges: lines.filter((line) => line.kind && Number(line.amount) > 0).map((line) => ({
+          kind: line.kind,
+          amount: Number(line.amount),
+          exchangeRate: line.exchangeRate ? Number(line.exchangeRate) : undefined
+        }))
+      }, authConfig());
+      showToast('Landed cost posted', 'success');
+      navigate('/procurement/landed-costs');
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+      setSaving(false);
+    }
+  };
+  return (
+    <AppLayout title="Landed cost" icon={Receipt}>
+      <PageHeader
+        onBack={() => navigate('/procurement/landed-costs')}
+        title="Allocate landed cost"
+        subtitle="Freight, duty, clearing and insurance update the FIFO layer at the GRN rate"
+        actions={(
+          <>
+            <ActionButton variant="discard" onClick={() => navigate('/procurement/landed-costs')}>Discard</ActionButton>
+            <ActionButton variant="submit" disabled={saving} onClick={save}>{saving ? 'Posting...' : 'Post Allocation'}</ActionButton>
+          </>
+        )}
+      />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', margin: '1.5rem 0' }}>
+        <Fields
+          defs={[
+            { name: 'grnId', label: 'Goods receipt', type: 'select', required: true, width: '240px', options: namedOptions(lookups.grns, (row) => row.grnNumber) },
+            { name: 'date', label: 'Date', type: 'date', required: true, width: '180px' },
+            { name: 'basis', label: 'Basis', type: 'select', width: '180px', options: [
+              { value: 'VALUE', label: 'Value' },
+              { value: 'QTY', label: 'Quantity' },
+              { value: 'WEIGHT', label: 'Weight' }
+            ] }
+          ]}
+          values={values}
+          setValues={setValues}
+          errors={errors}
+        />
+      </div>
+      {errors.charges && <span className="field-error-text">{errors.charges}</span>}
+      <LineTable
+        columns={[
+          { key: 'kind', label: 'Charge', options: ['FREIGHT', 'DUTY', 'CLEARING', 'INSURANCE'].map((value) => ({ value, label: value })) },
+          { key: 'amount', label: 'Amount', type: 'number' },
+          { key: 'exchangeRate', label: 'Invoice rate', type: 'number' }
+        ]}
+        rows={lines}
+        onAdd={() => setLines((prev) => [...prev, { id: Date.now() }])}
+        onRemove={(id) => setLines((prev) => prev.filter((row) => row.id !== id))}
+        onChange={(id, key, value) => setLines((prev) => prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)))}
+      />
+    </AppLayout>
   );
 }
 
 export function NewCapex() {
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="Capex request" icon={Briefcase}><PageSkeleton type="form" /></AppLayout>;
-  return (
-    <FormShell title="Capex purchase request" subtitle="Checked against the project budget. Amounts at or above the threshold go to CWIP." backTo="/finance/projects" saveLabel="Save Request" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'date', label: 'Date', type: 'date', required: true },
-        { name: 'capitalProjectId', label: 'Project', type: 'select', required: true, options: options(lookups.projects, (row) => `${row.code} ${row.name}`) },
-        { name: 'productId', label: 'Item', type: 'select', required: true, options: options(lookups.products, (row) => `${row.code} ${row.name}`) },
-        { name: 'quantity', label: 'Quantity', type: 'number', required: true, positive: true },
-        { name: 'unitPrice', label: 'Price', type: 'number', required: true, positive: true }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'overrideReason', label: 'Override reason' }
-      ] }
-    ]} onSave={(values) => axios.post('/api/procurement/purchase-requisitions', {
-      date: values.date, spendClass: 'CAPEX', capitalProjectId: values.capitalProjectId,
-      executiveOverride: Boolean(values.overrideReason), overrideReason: values.overrideReason,
-      items: [{ productId: values.productId, quantity: Number(values.quantity), unitPrice: Number(values.unitPrice), total: Number(values.quantity) * Number(values.unitPrice) }]
-    }, authConfig()).then(() => '/procurement/purchase-requisitions')} />
-  );
-}
-
-export function AssetDetail() {
-  const { id } = useParams();
-  const lookups = useLookups();
-  const asset = lookups.assets.find((row) => row.id === id);
-  if (!lookups.ready) return <AppLayout title="Asset" icon={Landmark}><PageSkeleton type="form" /></AppLayout>;
-  if (!asset) return <AppLayout title="Asset" icon={Landmark}><PageSkeleton type="form" /></AppLayout>;
-  if (asset.status !== 'CWIP') {
-    return (
-      <FormShell title={asset.name} subtitle={`${asset.code} · ${asset.status}`} backTo="/finance/assets" saveLabel="Transfer" tabs={[
-        { id: 'mandatory', label: 'Transfer', icon: FileText, fields: [
-          { name: 'date', label: 'Date', type: 'date', required: true },
-          { name: 'costCenterId', label: 'Cost center', type: 'select', options: options(lookups.centers, (row) => row.name) }
-        ] }
-      ]} onSave={(values) => axios.post(`/api/phase2/assets/${id}/transfer`, values, authConfig()).then(() => '/finance/assets')} />
-    );
-  }
-  return (
-    <FormShell title="Capitalize CWIP" subtitle={asset.name} backTo="/finance/assets" saveLabel="Capitalize" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'date', label: 'Commissioning date', type: 'date', required: true },
-        { name: 'classId', label: 'Asset class', type: 'select', required: true, options: options(lookups.classes, (row) => row.name) },
-        { name: 'name', label: 'Asset name' }
-      ] }
-    ]} onSave={(values) => axios.post(`/api/phase2/assets/${id}/capitalize`, values, authConfig()).then(() => '/finance/assets')} />
-  );
-}
-
-export function DepreciationRun() {
-  return (
-    <FormShell title="Monthly depreciation" subtitle="Accounting book posts to the ledger. The tax book is kept separately." backTo="/finance/assets" saveLabel="Run Depreciation" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'year', label: 'Year', type: 'number', required: true, positive: true },
-        { name: 'month', label: 'Month', type: 'number', required: true, positive: true }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/depreciation-runs', { year: Number(values.year), month: Number(values.month) }, authConfig()).then(() => '/finance/assets')} />
-  );
-}
-
-export function NewNote() {
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="New note" icon={Receipt}><PageSkeleton type="form" /></AppLayout>;
-  return (
-    <FormShell title="Credit or debit note" subtitle="Posted to receivables or payables and to tax." backTo="/finance/notes" saveLabel="Post Note" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'date', label: 'Date', type: 'date', required: true },
-        { name: 'partyType', label: 'Party', type: 'select', required: true, options: [{ value: 'CUSTOMER', label: 'Customer' }, { value: 'SUPPLIER', label: 'Supplier' }] },
-        { name: 'partyId', label: 'Customer or supplier', type: 'select', required: true, options: options([...lookups.customers, ...lookups.suppliers], (row) => row.name) },
-        { name: 'kind', label: 'Kind', type: 'select', required: true, options: [{ value: 'CREDIT', label: 'Credit' }, { value: 'DEBIT', label: 'Debit' }] },
-        { name: 'reasonCode', label: 'Reason', required: true },
-        { name: 'subtotal', label: 'Amount', type: 'number', required: true, positive: true }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'taxAmount', label: 'Tax', type: 'number' },
-        { name: 'invoiceId', label: 'Invoice id' }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/notes', { ...values, taxAmount: Number(values.taxAmount || 0), subtotal: Number(values.subtotal) }, authConfig()).then(() => '/finance/notes')} />
-  );
-}
-
-export function Collections() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState([]);
-  const [initial, setInitial] = useState(true);
-  useEffect(() => {
-    const config = authConfig();
-    Promise.all([
-      axios.get('/api/customers', config),
-      axios.get('/api/phase2/collections', config)
-    ]).then(([customers, collections]) => {
-      const byCustomer = Object.fromEntries((collections.data.cases || []).map((row) => [row.customerId, row]));
-      setRows(customers.data.map((customer) => ({
-        id: customer.id,
-        name: customer.name,
-        dispute: byCustomer[customer.id]?.disputeStatus || 'NONE',
-        promised: byCustomer[customer.id]?.promisedDate ? new Date(byCustomer[customer.id].promisedDate).toLocaleDateString() : '',
-        notes: byCustomer[customer.id]?.notes || ''
-      })));
-    }).finally(() => setInitial(false));
-  }, []);
+  const { showToast } = useToast();
+  const lookups = useLookups();
+  const [values, setValues] = useState({ date: new Date().toISOString().slice(0, 10) });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const defs = [
+    { name: 'date', label: 'Date', type: 'date', required: true, width: '180px' },
+    { name: 'capitalProjectId', label: 'Project', type: 'select', required: true, width: '280px', options: namedOptions(lookups.projects, (row) => `${row.code} ${row.name}`) },
+    { name: 'productId', label: 'Item', type: 'select', required: true, width: '280px', options: namedOptions(lookups.products, (row) => `${row.code} ${row.name}`) },
+    { name: 'quantity', label: 'Quantity', type: 'number', required: true, positive: true, width: '140px' },
+    { name: 'unitPrice', label: 'Price', type: 'number', required: true, positive: true, width: '160px' },
+    { name: 'overrideReason', label: 'Override reason', width: '320px' }
+  ];
+  const save = async () => {
+    const next = validateFields(defs, values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/api/procurement/purchase-requisitions', {
+        date: values.date,
+        spendClass: 'CAPEX',
+        capitalProjectId: values.capitalProjectId,
+        executiveOverride: Boolean(values.overrideReason),
+        overrideReason: values.overrideReason,
+        items: [{
+          productId: values.productId,
+          quantity: Number(values.quantity),
+          unitPrice: Number(values.unitPrice),
+          total: Number(values.quantity) * Number(values.unitPrice)
+        }]
+      }, authConfig());
+      showToast('Capex request saved', 'success');
+      navigate('/procurement/purchase-requisitions');
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+      setSaving(false);
+    }
+  };
   return (
-    <OriginalList title="Collections" icon={Wallet} columns={[
-      { header: 'Customer', accessor: 'name', fontWeight: 600 },
-      { header: 'Dispute', accessor: 'dispute' },
-      { header: 'Promised', accessor: 'promised' },
-      { header: 'Notes', accessor: 'notes' }
-    ]} rows={rows} initial={initial} searchKeys={['name', 'dispute']} searchPlaceholder="Search by customer..." onRowClick={(row) => navigate(`/finance/collections/${row.id}`)} />
+    <AppLayout title="Capex request" icon={Briefcase}>
+      <PageHeader
+        onBack={() => navigate('/finance/projects')}
+        title="Capex purchase request"
+        subtitle="Checked against the project budget. Amounts at or above the threshold go to CWIP"
+        actions={(
+          <>
+            <ActionButton variant="discard" onClick={() => navigate('/finance/projects')}>Discard</ActionButton>
+            <ActionButton variant="submit" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Request'}</ActionButton>
+          </>
+        )}
+      />
+      <div style={{ marginTop: '1.5rem' }}>
+        <Fields defs={defs} values={values} setValues={setValues} errors={errors} />
+      </div>
+    </AppLayout>
   );
 }
 
-export function CollectionDetail() {
+export function Assets() {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
   const { id } = useParams();
+  const depreciating = useMatch('/finance/depreciation');
+  const lookups = useLookups();
+  const { rows, loading, initial, reload } = useApiList('/api/phase2/assets');
+  const asset = rows.find((row) => row.id === id) || lookups.assets.find((row) => row.id === id);
+  const [values, setValues] = useState({});
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const close = () => navigate('/finance/assets');
+  const saveDepreciation = async () => {
+    const defs = [
+      { name: 'year', label: 'Year', required: true, positive: true },
+      { name: 'month', label: 'Month', required: true, positive: true }
+    ];
+    const next = validateFields(defs, values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/api/phase2/depreciation-runs', { year: Number(values.year), month: Number(values.month) }, authConfig());
+      showToast('Depreciation posted', 'success');
+      close();
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const saveAsset = async () => {
+    if (!asset) return;
+    const endpoint = asset.status === 'CWIP' ? 'capitalize' : 'transfer';
+    const defs = asset.status === 'CWIP'
+      ? [{ name: 'date', label: 'Commissioning date', required: true }, { name: 'classId', label: 'Asset class', required: true }]
+      : [{ name: 'date', label: 'Date', required: true }];
+    const next = validateFields(defs, values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post(`/api/phase2/assets/${asset.id}/${endpoint}`, values, authConfig());
+      showToast('Asset updated', 'success');
+      reload();
+      close();
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <FormShell title="Collection follow-up" subtitle="Promised date, dispute and the note from the debtor meeting." backTo="/finance/collections" saveLabel="Save Follow-up" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'disputeStatus', label: 'Dispute', type: 'select', options: [{ value: 'NONE', label: 'None' }, { value: 'DISPUTED', label: 'Disputed' }, { value: 'RESOLVED', label: 'Resolved' }] },
-        { name: 'promisedDate', label: 'Promised date', type: 'date' },
-        { name: 'body', label: 'Note', required: true }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/collections', { ...values, customerId: id }, authConfig()).then(() => '/finance/collections')} />
+    <AppLayout title="Fixed assets" icon={Landmark}>
+      {initial ? <PageSkeleton type="table" /> : (
+        <DataTable
+          columns={[
+            { header: 'Code', accessor: 'code', fontWeight: 600 },
+            { header: 'Name', accessor: 'name' },
+            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+            { header: 'Cost', accessor: 'cost', render: (row) => money(row.cost) },
+            { header: 'NBV', accessor: 'accountingNbv', render: (row) => money(row.accountingNbv) }
+          ]}
+          data={rows}
+          loading={loading}
+          searchKeys={['code', 'name', 'status']}
+          searchPlaceholder="Search by asset code..."
+          noDataMessage="No assets yet."
+          onRowClick={(row) => navigate(`/finance/assets/${row.id}`)}
+          extraActions={<ActionButton icon={Calendar} onClick={() => navigate('/finance/depreciation')}>Run Depreciation</ActionButton>}
+        />
+      )}
+      <FormModal isOpen={!!depreciating} onClose={close} title="Monthly depreciation" subtitle="The accounting book posts to the ledger. The tax book is kept separately." icon={Landmark} onSubmit={saveDepreciation} submitLabel={saving ? 'Posting...' : 'Run'} busy={saving}>
+        <Fields defs={[
+          { name: 'year', label: 'Year', type: 'number', required: true, positive: true, width: '140px' },
+          { name: 'month', label: 'Month', type: 'number', required: true, positive: true, width: '140px' }
+        ]} values={values} setValues={setValues} errors={errors} />
+      </FormModal>
+      <FormModal isOpen={!!asset} onClose={close} title={asset?.status === 'CWIP' ? 'Capitalize CWIP' : 'Transfer asset'} subtitle={asset?.name} icon={Landmark} onSubmit={saveAsset} submitLabel={saving ? 'Saving...' : 'Save'} busy={saving}>
+        <Fields defs={asset?.status === 'CWIP' ? [
+          { name: 'date', label: 'Commissioning date', type: 'date', required: true, width: '220px' },
+          { name: 'classId', label: 'Asset class', type: 'select', required: true, width: '240px', options: namedOptions(lookups.classes, (row) => row.name) },
+          { name: 'name', label: 'Asset name', width: '240px' }
+        ] : [
+          { name: 'date', label: 'Date', type: 'date', required: true, width: '180px' },
+          { name: 'costCenterId', label: 'Cost center', type: 'select', width: '240px', options: namedOptions(lookups.centers, (row) => row.name) }
+        ]} values={values} setValues={setValues} errors={errors} />
+      </FormModal>
+    </AppLayout>
   );
 }
 
-export function NewCheque() {
+export function Notes() {
   const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="New cheque" icon={CreditCard}><PageSkeleton type="form" /></AppLayout>;
+  const parties = [...lookups.customers, ...lookups.suppliers];
+  const names = Object.fromEntries(parties.map((row) => [row.id, row.name]));
   return (
-    <FormShell title="Cheque" subtitle="Post-dated cheques stay in Cheques in Hand until they are realised." backTo="/finance/cheques" saveLabel="Save Cheque" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'chequeNumber', label: 'Cheque number', required: true },
-        { name: 'chequeDate', label: 'Cheque date', type: 'date', required: true },
-        { name: 'payee', label: 'Payee', required: true },
-        { name: 'direction', label: 'Direction', type: 'select', required: true, options: [{ value: 'IN', label: 'Incoming' }, { value: 'OUT', label: 'Outgoing' }] },
-        { name: 'amount', label: 'Amount', type: 'number', required: true, positive: true }
-      ] },
-      { id: 'more', label: 'More', icon: Briefcase, fields: [
-        { name: 'partyId', label: 'Customer or supplier', type: 'select', options: options([...lookups.customers, ...lookups.suppliers], (row) => row.name) },
-        { name: 'invoiceId', label: 'Invoice id' }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/cheques', { ...values, amount: Number(values.amount), isPdc: true }, authConfig()).then(() => '/finance/cheques')} />
+    <Register
+      title="Credit and debit notes"
+      icon={Receipt}
+      endpoint="/api/phase2/notes"
+      newPath="/finance/notes/new"
+      newLabel="New Note"
+      formTitle="Credit or debit note"
+      formSubtitle="Posted to receivables or payables and to tax"
+      searchKeys={['noteNumber', 'reasonCode', 'partyType']}
+      searchPlaceholder="Search by note number..."
+      fields={() => [
+        { name: 'date', label: 'Date', type: 'date', required: true, width: '160px' },
+        { name: 'partyType', label: 'Party', type: 'select', required: true, width: '160px', options: [{ value: 'CUSTOMER', label: 'Customer' }, { value: 'SUPPLIER', label: 'Supplier' }] },
+        { name: 'partyId', label: 'Name', type: 'select', required: true, width: '240px', options: namedOptions(parties, (row) => row.name) },
+        { name: 'kind', label: 'Kind', type: 'select', required: true, width: '140px', options: [{ value: 'CREDIT', label: 'Credit' }, { value: 'DEBIT', label: 'Debit' }] },
+        { name: 'reasonCode', label: 'Reason', required: true, width: '180px' },
+        { name: 'subtotal', label: 'Amount', type: 'number', required: true, positive: true, width: '160px' },
+        { name: 'taxAmount', label: 'Tax', type: 'number', width: '140px' },
+        { name: 'invoiceId', label: 'Invoice id', width: '240px' }
+      ]}
+      buildBody={(values) => ({ ...values, subtotal: Number(values.subtotal), taxAmount: Number(values.taxAmount || 0) })}
+      columns={[
+        { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
+        { header: 'Number', accessor: 'noteNumber', fontWeight: 600 },
+        { header: 'Party', accessor: 'partyId', render: (row) => names[row.partyId] || row.partyType },
+        { header: 'Kind', accessor: 'kind', render: (row) => <StatusBadge status={row.kind === 'CREDIT' ? 'CLOSED' : 'PENDING'} label={row.kind} /> },
+        { header: 'Reason', accessor: 'reasonCode' },
+        { header: 'Amount', accessor: 'total', render: (row) => money(row.total) }
+      ]}
+    />
   );
 }
 
-export function NewIou() {
+export function Cheques() {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const creating = useMatch('/finance/cheques/new');
   const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="New IOU" icon={Wallet}><PageSkeleton type="form" /></AppLayout>;
+  const { rows, loading, initial, reload } = useApiList('/api/phase2/cheques');
+  const [values, setValues] = useState({});
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const defs = [
+    { name: 'chequeNumber', label: 'Cheque number', required: true, width: '180px' },
+    { name: 'chequeDate', label: 'Cheque date', type: 'date', required: true, width: '180px' },
+    { name: 'payee', label: 'Payee', required: true, width: '240px' },
+    { name: 'direction', label: 'Direction', type: 'select', required: true, width: '160px', options: [{ value: 'IN', label: 'Incoming' }, { value: 'OUT', label: 'Outgoing' }] },
+    { name: 'amount', label: 'Amount', type: 'number', required: true, positive: true, width: '160px' },
+    { name: 'partyId', label: 'Customer or supplier', type: 'select', width: '240px', options: namedOptions([...lookups.customers, ...lookups.suppliers], (row) => row.name) }
+  ];
+  const act = async (event, id, action) => {
+    event.stopPropagation();
+    try {
+      await axios.post(`/api/phase2/cheques/${id}/${action}`, { date: new Date().toISOString().slice(0, 10) }, authConfig());
+      showToast('Cheque updated', 'success');
+      reload();
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Could not update the cheque', 'error');
+    }
+  };
+  const save = async () => {
+    const next = validateFields(defs, values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/api/phase2/cheques', { ...values, amount: Number(values.amount), isPdc: true }, authConfig());
+      showToast('Cheque recorded', 'success');
+      reload();
+      navigate('/finance/cheques');
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <FormShell title="Employee IOU" subtitle="Issued from petty cash. Settle it from the claim when Finance posts the bills." backTo="/finance/ious" saveLabel="Issue IOU" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'date', label: 'Date', type: 'date', required: true },
-        { name: 'employeeName', label: 'Employee', required: true },
-        { name: 'department', label: 'Department' },
-        { name: 'amount', label: 'Advance', type: 'number', required: true, positive: true },
-        { name: 'fundId', label: 'Petty cash fund', type: 'select', options: options(lookups.funds, (row) => row.name) }
-      ] }
-    ]} onSave={async (values) => {
-      if (!lookups.funds.length) {
-        const fund = await axios.post('/api/phase2/petty-cash', { name: 'Main tin', amount: 20000, date: values.date }, authConfig());
-        values.fundId = fund.data.id;
+    <AppLayout title="Cheque register" icon={CreditCard}>
+      {initial ? <PageSkeleton type="table" /> : (
+        <DataTable
+          columns={[
+            { header: 'Date', accessor: 'chequeDate', render: (row) => new Date(row.chequeDate).toLocaleDateString() },
+            { header: 'Number', accessor: 'chequeNumber', fontWeight: 600 },
+            { header: 'Payee', accessor: 'payee' },
+            { header: 'Amount', accessor: 'amount', render: (row) => money(row.amount) },
+            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+            { header: 'Actions', align: 'right', sortable: false, render: (row) => (
+              <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                {row.direction === 'IN' && row.status === 'UNREALISED' ? <button type="button" onClick={(event) => act(event, row.id, 'deposit')} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Deposit</button> : null}
+                {['UNREALISED', 'DEPOSITED', 'PRINTED', 'RELEASED'].includes(row.status) ? <button type="button" onClick={(event) => act(event, row.id, 'realise')} style={{ background: 'transparent', border: 'none', color: '#059669', fontWeight: 700, cursor: 'pointer' }}>Realise</button> : null}
+                {!['BOUNCED', 'CANCELLED'].includes(row.status) ? <button type="button" onClick={(event) => act(event, row.id, 'bounce')} style={{ background: 'transparent', border: 'none', color: 'var(--error)', fontWeight: 700, cursor: 'pointer' }}>Bounce</button> : null}
+              </div>
+            ) }
+          ]}
+          data={rows}
+          loading={loading}
+          searchKeys={['chequeNumber', 'payee', 'status']}
+          searchPlaceholder="Search by cheque number..."
+          noDataMessage="No cheques recorded."
+          extraActions={<ActionButton icon={Plus} onClick={() => navigate('/finance/cheques/new')}>New Cheque</ActionButton>}
+        />
+      )}
+      <FormModal isOpen={!!creating} onClose={() => navigate('/finance/cheques')} title="Cheque" subtitle="Post-dated cheques stay in Cheques in Hand until they are realised" icon={CreditCard} onSubmit={save} submitLabel={saving ? 'Saving...' : 'Save'} busy={saving} maxWidth="760px" overflow="visible">
+        <Fields defs={defs} values={values} setValues={setValues} errors={errors} />
+      </FormModal>
+    </AppLayout>
+  );
+}
+
+export function Ious() {
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const creating = useMatch('/finance/ious/new');
+  const { showToast } = useToast();
+  const lookups = useLookups();
+  const { rows, loading, initial, reload } = useApiList('/api/phase2/ious');
+  const [values, setValues] = useState({ date: new Date().toISOString().slice(0, 10), kind: 'EXPENSE' });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const close = () => navigate('/finance/ious');
+  const issue = async () => {
+    const defs = [
+      { name: 'date', label: 'Date', required: true },
+      { name: 'employeeName', label: 'Employee', required: true },
+      { name: 'amount', label: 'Advance', required: true, positive: true }
+    ];
+    const next = validateFields(defs, values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      let fundId = values.fundId;
+      if (!fundId) {
+        const fund = lookups.funds[0] || (await axios.post('/api/phase2/petty-cash', { name: 'Main tin', amount: 20000, date: values.date }, authConfig())).data;
+        fundId = fund.id;
       }
-      await axios.post('/api/phase2/ious', { ...values, amount: Number(values.amount), source: 'PETTY_CASH' }, authConfig());
-      return '/finance/ious';
-    }} />
+      await axios.post('/api/phase2/ious', { ...values, amount: Number(values.amount), fundId, source: 'PETTY_CASH' }, authConfig());
+      showToast('IOU issued', 'success');
+      reload();
+      close();
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const settle = async () => {
+    const defs = [
+      { name: 'date', label: 'Date', required: true },
+      { name: 'amount', label: 'Amount', required: true, positive: true }
+    ];
+    const next = validateFields(defs, values);
+    if ((values.kind || 'EXPENSE') === 'EXPENSE' && !values.expenseAccountId) next.expenseAccountId = 'Expense account is required.';
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post(`/api/phase2/ious/${id}/settle`, { ...values, amount: Number(values.amount), kind: values.kind || 'EXPENSE' }, authConfig());
+      showToast('Settlement posted', 'success');
+      reload();
+      close();
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <AppLayout title="IOU and petty cash" icon={Wallet}>
+      {initial ? <PageSkeleton type="table" /> : (
+        <DataTable
+          columns={[
+            { header: 'Date', accessor: 'date', render: (row) => new Date(row.date).toLocaleDateString() },
+            { header: 'Reference', accessor: 'reference', fontWeight: 600 },
+            { header: 'Employee', accessor: 'employeeName' },
+            { header: 'Department', accessor: 'department' },
+            { header: 'Advance', accessor: 'amount', render: (row) => money(row.amount) },
+            { header: 'Outstanding', accessor: 'settled', render: (row) => money(Number(row.amount) - Number(row.settled)) },
+            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+          ]}
+          data={rows}
+          loading={loading}
+          searchKeys={['reference', 'employeeName', 'status']}
+          searchPlaceholder="Search by employee or reference..."
+          noDataMessage="No IOUs recorded."
+          onRowClick={(row) => navigate(`/finance/ious/${row.id}`)}
+          extraActions={<ActionButton icon={Plus} onClick={() => navigate('/finance/ious/new')}>New IOU</ActionButton>}
+        />
+      )}
+      <FormModal isOpen={!!creating} onClose={close} title="Employee IOU" subtitle="Issued from petty cash" icon={Wallet} onSubmit={issue} submitLabel={saving ? 'Saving...' : 'Issue'} busy={saving} maxWidth="720px" overflow="visible">
+        <Fields defs={[
+          { name: 'date', label: 'Date', type: 'date', required: true, width: '160px' },
+          { name: 'employeeName', label: 'Employee', required: true, width: '220px' },
+          { name: 'department', label: 'Department', width: '180px' },
+          { name: 'amount', label: 'Advance', type: 'number', required: true, positive: true, width: '140px' },
+          { name: 'fundId', label: 'Petty cash fund', type: 'select', width: '220px', options: namedOptions(lookups.funds, (row) => row.name) }
+        ]} values={values} setValues={setValues} errors={errors} />
+      </FormModal>
+      <FormModal isOpen={!!id && !creating} onClose={close} title="Settle IOU" subtitle="Post the expense or the cash returned" icon={Wallet} onSubmit={settle} submitLabel={saving ? 'Posting...' : 'Post'} busy={saving} maxWidth="720px" overflow="visible">
+        <Fields defs={[
+          { name: 'date', label: 'Date', type: 'date', required: true, width: '160px' },
+          { name: 'amount', label: 'Amount', type: 'number', required: true, positive: true, width: '140px' },
+          { name: 'kind', label: 'Settlement', type: 'select', width: '180px', options: [{ value: 'EXPENSE', label: 'Expense claim' }, { value: 'RETURN', label: 'Cash returned' }] },
+          { name: 'expenseAccountId', label: 'Expense account', type: 'select', width: '280px', options: namedOptions(lookups.accounts.filter((row) => row.type === 'EXPENSE'), (row) => `${row.code} ${row.name}`) }
+        ]} values={values} setValues={setValues} errors={errors} />
+      </FormModal>
+    </AppLayout>
   );
 }
 
-export function IouDetail() {
-  const { id } = useParams();
-  const lookups = useLookups();
-  if (!lookups.ready) return <AppLayout title="Settle IOU" icon={Wallet}><PageSkeleton type="form" /></AppLayout>;
+export function Closes() {
   return (
-    <FormShell title="Settle IOU" subtitle="Post the expense or the cash returned." backTo="/finance/ious" saveLabel="Post Settlement" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'date', label: 'Date', type: 'date', required: true },
-        { name: 'amount', label: 'Amount', type: 'number', required: true, positive: true },
-        { name: 'kind', label: 'Settlement', type: 'select', options: [{ value: 'EXPENSE', label: 'Expense claim' }, { value: 'RETURN', label: 'Cash returned' }] },
-        { name: 'expenseAccountId', label: 'Expense account', type: 'select', options: options(lookups.accounts.filter((row) => row.type === 'EXPENSE'), (row) => `${row.code} ${row.name}`) }
-      ] }
-    ]} onSave={(values) => axios.post(`/api/phase2/ious/${id}/settle`, { ...values, amount: Number(values.amount), kind: values.kind || 'EXPENSE' }, authConfig()).then(() => '/finance/ious')} />
-  );
-}
-
-export function NewClose() {
-  return (
-    <FormShell title="Open period close" subtitle="Inventory, production, payables, receivables, cash, assets, then the ledger." backTo="/finance/period-close" saveLabel="Open Checklist" tabs={[
-      { id: 'mandatory', label: 'Mandatory', icon: FileText, fields: [
-        { name: 'year', label: 'Year', type: 'number', required: true, positive: true },
-        { name: 'month', label: 'Month', type: 'number', required: true, positive: true }
-      ] }
-    ]} onSave={(values) => axios.post('/api/phase2/period-closes', { year: Number(values.year), month: Number(values.month) }, authConfig()).then((res) => `/finance/period-close/${res.data.id}`)} />
+    <Register
+      title="Period close"
+      icon={Calendar}
+      endpoint="/api/phase2/period-closes"
+      newPath="/finance/period-close/new"
+      newLabel="Open Period"
+      formTitle="Open period close"
+      formSubtitle="Inventory, production, payables, receivables, cash, assets, then the ledger"
+      searchKeys={['status']}
+      searchPlaceholder="Search by status..."
+      rowTo={(row) => `/finance/period-close/${row.id}`}
+      fields={[
+        { name: 'year', label: 'Year', type: 'number', required: true, positive: true, width: '140px' },
+        { name: 'month', label: 'Month', type: 'number', required: true, positive: true, width: '140px' }
+      ]}
+      buildBody={(values) => ({ year: Number(values.year), month: Number(values.month) })}
+      columns={[
+        { header: 'Year', accessor: 'year', fontWeight: 600 },
+        { header: 'Month', accessor: 'month' },
+        { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> }
+      ]}
+    />
   );
 }
 
@@ -648,10 +942,11 @@ export function CloseDetail() {
   const { id } = useParams();
   const { showToast } = useToast();
   const [close, setClose] = useState(null);
-  const load = () => axios.get('/api/phase2/period-closes', authConfig()).then((res) => setClose(res.data.find((row) => row.id === id)));
+  const load = () => axios.get('/api/phase2/period-closes', authConfig()).then((res) => setClose((res.data || []).find((row) => row.id === id) || null));
   useEffect(() => { load(); }, [id]);
   if (!close) return <AppLayout title="Period close" icon={Calendar}><PageSkeleton type="table" /></AppLayout>;
-  const mark = async (code) => {
+  const mark = async (event, code) => {
+    event.stopPropagation();
     try {
       await axios.post(`/api/phase2/period-closes/${id}/steps/${code}`, { status: 'DONE' }, authConfig());
       load();
@@ -669,13 +964,95 @@ export function CloseDetail() {
     }
   };
   return (
-    <AppLayout title={`Close ${close.year}-${close.month}`} icon={Calendar}>
-      <DataTable columns={[
-        { header: 'Step', accessor: 'sequence' },
-        { header: 'Name', accessor: 'name', fontWeight: 600 },
-        { header: 'Status', accessor: 'status', render: (row) => statusText(row.status) },
-        { header: 'Actions', align: 'right', render: (row) => row.status === 'PENDING' ? <button type="button" onClick={(event) => { event.stopPropagation(); mark(row.code); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Mark done</button> : null }
-      ]} data={close.steps || []} searchKeys={['name']} searchPlaceholder="Search steps..." extraActions={close.status !== 'HARD' ? <button type="button" onClick={post} style={{ padding: '0.55rem 1.25rem', border: 'none', borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Post closing entries</button> : null} />
+    <AppLayout title={`Close ${close.year}-${String(close.month).padStart(2, '0')}`} icon={Calendar}>
+      <DataTable
+        columns={[
+          { header: 'Step', accessor: 'sequence' },
+          { header: 'Name', accessor: 'name', fontWeight: 600 },
+          { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
+          { header: 'Actions', align: 'right', sortable: false, render: (row) => row.status === 'PENDING' ? (
+            <button type="button" onClick={(event) => mark(event, row.code)} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Mark done</button>
+          ) : null }
+        ]}
+        data={close.steps || []}
+        searchKeys={['name', 'status']}
+        searchPlaceholder="Search steps..."
+        noDataMessage="No close steps."
+        extraActions={close.status !== 'HARD' ? <ActionButton onClick={post}>Post closing entries</ActionButton> : null}
+      />
+    </AppLayout>
+  );
+}
+
+export function Collections() {
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const { showToast } = useToast();
+  const [rows, setRows] = useState([]);
+  const [initial, setInitial] = useState(true);
+  const [values, setValues] = useState({ disputeStatus: 'NONE' });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const load = () => {
+    const config = authConfig();
+    Promise.all([
+      axios.get('/api/customers', config),
+      axios.get('/api/phase2/collections', config)
+    ]).then(([customers, collections]) => {
+      const byCustomer = Object.fromEntries((collections.data.cases || []).map((row) => [row.customerId, row]));
+      setRows(customers.data.map((customer) => ({
+        id: customer.id,
+        name: customer.name,
+        dispute: byCustomer[customer.id]?.disputeStatus || 'NONE',
+        promised: byCustomer[customer.id]?.promisedDate ? String(byCustomer[customer.id].promisedDate).slice(0, 10) : '',
+        notes: byCustomer[customer.id]?.notes || ''
+      })));
+    }).finally(() => setInitial(false));
+  };
+  useEffect(() => { load(); }, []);
+  const save = async () => {
+    const next = validateFields([{ name: 'body', label: 'Note', required: true }], values);
+    if (Object.keys(next).length) {
+      setErrors(next);
+      showToast(Object.values(next)[0], 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/api/phase2/collections', { ...values, customerId: id }, authConfig());
+      showToast('Follow-up saved', 'success');
+      load();
+      navigate('/finance/collections');
+    } catch (error) {
+      applyServerErrors(error, showToast, setErrors);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <AppLayout title="Collections" icon={Wallet}>
+      {initial ? <PageSkeleton type="table" /> : (
+        <DataTable
+          columns={[
+            { header: 'Customer', accessor: 'name', fontWeight: 600 },
+            { header: 'Dispute', accessor: 'dispute', render: (row) => <StatusBadge status={row.dispute === 'DISPUTED' ? 'PENDING' : row.dispute === 'RESOLVED' ? 'CLOSED' : 'OPEN'} label={row.dispute} /> },
+            { header: 'Promised', accessor: 'promised' },
+            { header: 'Notes', accessor: 'notes' }
+          ]}
+          data={rows}
+          searchKeys={['name', 'dispute']}
+          searchPlaceholder="Search by customer..."
+          noDataMessage="No customers found."
+          onRowClick={(row) => navigate(`/finance/collections/${row.id}`)}
+        />
+      )}
+      <FormModal isOpen={!!id} onClose={() => navigate('/finance/collections')} title="Collection follow-up" subtitle="Promised date, dispute and the note from the debtor meeting" icon={Wallet} onSubmit={save} submitLabel={saving ? 'Saving...' : 'Save'} busy={saving}>
+        <Fields defs={[
+          { name: 'disputeStatus', label: 'Dispute', type: 'select', width: '180px', options: [{ value: 'NONE', label: 'None' }, { value: 'DISPUTED', label: 'Disputed' }, { value: 'RESOLVED', label: 'Resolved' }] },
+          { name: 'promisedDate', label: 'Promised date', type: 'date', width: '180px' },
+          { name: 'body', label: 'Note', required: true, width: '100%' }
+        ]} values={values} setValues={setValues} errors={errors} />
+      </FormModal>
     </AppLayout>
   );
 }
@@ -701,22 +1078,24 @@ export function FinanceReports() {
   const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [initial, setInitial] = useState(true);
-  const load = async (key = reportKey) => {
+  const [loading, setLoading] = useState(true);
+  const load = async (key = reportKey, from = fromDate, to = toDate) => {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/phase2/reports/${key}`, { ...authConfig(), params: { from: fromDate, to: toDate, asOf: toDate } });
+      const res = await axios.get(`/api/phase2/reports/${key}`, { ...authConfig(), params: { from, to, asOf: to } });
       setColumns((res.data.columns || []).map((column) => ({ header: column.label, accessor: column.key })));
       setRows(res.data.rows || []);
     } finally {
       setLoading(false);
-      setInitial(false);
     }
   };
   useEffect(() => { load(); }, [reportKey, fromDate, toDate]);
   const exportFile = async () => {
-    const res = await axios.get(`/api/phase2/reports/${reportKey}`, { ...authConfig(), params: { from: fromDate, to: toDate, asOf: toDate, format: 'xlsx' }, responseType: 'blob' });
+    const res = await axios.get(`/api/phase2/reports/${reportKey}`, {
+      ...authConfig(),
+      params: { from: fromDate, to: toDate, asOf: toDate, format: 'xlsx' },
+      responseType: 'blob'
+    });
     const url = URL.createObjectURL(res.data);
     const link = document.createElement('a');
     link.href = url;
@@ -725,16 +1104,34 @@ export function FinanceReports() {
   };
   return (
     <AppLayout title="Finance reports" icon={FileText}>
-      {initial ? <PageSkeleton /> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <ReportFilter fromDate={fromDate} setFromDate={setFromDate} toDate={toDate} setToDate={setToDate} onExport={exportFile}>
-            <select value={reportKey} onChange={(event) => setReportKey(event.target.value)} style={{ height: '36px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}>
-              {REPORTS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </ReportFilter>
-          <DataTable columns={columns} data={rows} loading={loading} searchPlaceholder="Search this report..." searchKeys={columns.slice(0, 3).map((column) => column.accessor)} noDataMessage="No rows for this filter." />
-        </div>
-      )}
+      <FilterBar
+        actions={(
+          <>
+            <ActionButton variant="secondary" icon={Printer} onClick={() => window.print()}>Print</ActionButton>
+            <ActionButton variant="secondary" onClick={exportFile}>Export XLSX</ActionButton>
+          </>
+        )}
+      >
+        <FormField label="From" width="180px">
+          <TextControl type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
+        </FormField>
+        <FormField label="To" width="180px">
+          <TextControl type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
+        </FormField>
+        <FormField label="Report" width="260px">
+          <SelectControl value={reportKey} onChange={(event) => setReportKey(event.target.value)}>
+            {REPORTS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </SelectControl>
+        </FormField>
+      </FilterBar>
+      <DataTable
+        columns={columns}
+        data={rows}
+        loading={loading}
+        searchPlaceholder="Search this report..."
+        searchKeys={columns.slice(0, 3).map((column) => column.accessor)}
+        noDataMessage="No rows for this filter."
+      />
     </AppLayout>
   );
 }

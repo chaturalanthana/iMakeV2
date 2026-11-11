@@ -87,10 +87,10 @@ import SupplierInvoices from './pages/procurement/SupplierInvoices';
 import NewSupplierInvoice from './pages/procurement/NewSupplierInvoice';
 import PartyStatement from './pages/finance/PartyStatement';
 import {
-  Centers, NewCenter, Projects, NewProject, Budgets, NewBudget, Contracts, NewContract,
-  Rfqs, NewRfq, RfqDetail, LandedCosts, NewLandedCost, NewCapex, Assets, AssetDetail, DepreciationRun,
-  Notes, NewNote, Collections, CollectionDetail, Cheques, NewCheque, Ious, NewIou, IouDetail,
-  Closes, NewClose, CloseDetail, FinanceReports
+  Centers, Projects, Budgets, Contracts,
+  Rfqs, NewRfq, RfqDetail, LandedCosts, NewLandedCost, NewCapex, Assets,
+  Notes, Collections, Cheques, Ious,
+  Closes, CloseDetail, FinanceReports
 } from './pages/phase2/pages';
 
 // Warehouse / Stock Features
@@ -220,7 +220,7 @@ function App() {
               <Route path="/procurement/rfqs/new" element={<NewRfq />} />
               <Route path="/procurement/rfqs/:id" element={<RfqDetail />} />
               <Route path="/procurement/rfqs" element={<Rfqs />} />
-              <Route path="/procurement/contracts/new" element={<NewContract />} />
+              <Route path="/procurement/contracts/new" element={<Contracts />} />
               <Route path="/procurement/contracts" element={<Contracts />} />
               <Route path="/procurement/landed-costs/new" element={<NewLandedCost />} />
               <Route path="/procurement/landed-costs" element={<LandedCosts />} />
@@ -284,25 +284,25 @@ function App() {
               <Route path="/finance/tax-groups/:id" element={<NewTaxGroup />} />
               <Route path="/finance/vat" element={<VATReport />} />
               <Route path="/finance/reconciliation" element={<BankReconciliation />} />
-              <Route path="/finance/centers/new" element={<NewCenter />} />
+              <Route path="/finance/centers/new" element={<Centers />} />
               <Route path="/finance/centers" element={<Centers />} />
-              <Route path="/finance/budgets/new" element={<NewBudget />} />
+              <Route path="/finance/budgets/new" element={<Budgets />} />
               <Route path="/finance/budgets" element={<Budgets />} />
-              <Route path="/finance/projects/new" element={<NewProject />} />
+              <Route path="/finance/projects/new" element={<Projects />} />
               <Route path="/finance/projects" element={<Projects />} />
-              <Route path="/finance/assets/:id" element={<AssetDetail />} />
+              <Route path="/finance/assets/:id" element={<Assets />} />
               <Route path="/finance/assets" element={<Assets />} />
-              <Route path="/finance/depreciation" element={<DepreciationRun />} />
-              <Route path="/finance/notes/new" element={<NewNote />} />
+              <Route path="/finance/depreciation" element={<Assets />} />
+              <Route path="/finance/notes/new" element={<Notes />} />
               <Route path="/finance/notes" element={<Notes />} />
-              <Route path="/finance/collections/:id" element={<CollectionDetail />} />
+              <Route path="/finance/collections/:id" element={<Collections />} />
               <Route path="/finance/collections" element={<Collections />} />
-              <Route path="/finance/cheques/new" element={<NewCheque />} />
+              <Route path="/finance/cheques/new" element={<Cheques />} />
               <Route path="/finance/cheques" element={<Cheques />} />
-              <Route path="/finance/ious/new" element={<NewIou />} />
-              <Route path="/finance/ious/:id" element={<IouDetail />} />
+              <Route path="/finance/ious/new" element={<Ious />} />
+              <Route path="/finance/ious/:id" element={<Ious />} />
               <Route path="/finance/ious" element={<Ious />} />
-              <Route path="/finance/period-close/new" element={<NewClose />} />
+              <Route path="/finance/period-close/new" element={<Closes />} />
               <Route path="/finance/period-close/:id" element={<CloseDetail />} />
               <Route path="/finance/period-close" element={<Closes />} />
               <Route path="/finance/reports" element={<FinanceReports />} />
