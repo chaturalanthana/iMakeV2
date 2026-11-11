@@ -79,8 +79,6 @@ const cashSale = z.object({
 const settings = z.object({
   maxDiscountPercent: z.coerce.number().min(0, 'Discount limit cannot be negative.').max(100, 'Discount limit cannot exceed 100.').optional(),
   shortagePolicy: z.enum(['ALLOW_PARTIAL', 'BLOCK']).optional(),
-  sfaReservation: z.enum(['HARD', 'SOFT']).optional(),
-  sfaSyncMinutes: z.coerce.number().int().min(1, 'Sync interval must be at least 1 minute.').optional(),
   emailHookUrl: z.string().trim().optional()
 }).passthrough();
 
@@ -91,51 +89,7 @@ const bankColumns = z.object({
   })).min(1, 'Add at least one column.')
 }).passthrough();
 
-const sfaOrder = z.object({
-  externalRef: requiredText('External reference is required.'),
-  items: z.array(z.object({
-    productCode: z.string().optional(),
-    productId: z.string().optional(),
-    quantity: z.coerce.number({ error: 'Quantity must be a number.' }).positive('Quantity must be greater than zero.')
-  }).passthrough(), { error: 'Add at least one product.' }).min(1, 'Add at least one product.')
-}).passthrough();
-
-const sfaCustomer = z.object({
-  externalRef: requiredText('External reference is required.'),
-  name: requiredText('Customer name is required.')
-}).passthrough();
-
-const sfaCollection = z.object({
-  externalRef: requiredText('External reference is required.'),
-  amount: z.coerce.number({ error: 'Amount must be a number.' }).positive('Amount must be greater than zero.')
-}).passthrough();
-
-const sfaReturn = z.object({
-  externalRef: requiredText('External reference is required.'),
-  invoiceNumber: requiredText('Invoice is required.'),
-  reason: requiredText('A reason is required.'),
-  items: z.array(z.object({
-    productCode: requiredText('Product is required.'),
-    quantity: z.coerce.number().positive('Quantity must be greater than zero.')
-  })).min(1, 'Add at least one product.')
-}).passthrough();
-
-const sfaRoute = z.object({
-  externalRef: requiredText('External reference is required.'),
-  code: requiredText('Code is required.'),
-  name: requiredText('Name is required.')
-}).passthrough();
-
-const sfaVisit = z.object({
-  externalRef: requiredText('External reference is required.')
-}).passthrough();
-
-const apiKey = z.object({
-  name: requiredText('Name is required.')
-}).passthrough();
-
 module.exports = {
   priceRule, route, vehicle, shipTo, release, cancel, pick, advance, trip, proof,
-  salesReturn, cashSale, settings, bankColumns, sfaOrder, sfaCustomer, sfaCollection,
-  sfaReturn, sfaRoute, sfaVisit, apiKey
+  salesReturn, cashSale, settings, bankColumns
 };

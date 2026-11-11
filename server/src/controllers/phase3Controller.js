@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { sendError } = require('../services/errors');
 const { deliverPending } = require('../services/phase3/notify');
@@ -8,9 +7,7 @@ const { resolvePrice, savePriceRule } = require('../services/phase3/pricing');
 const dispatch = require('../services/phase3/dispatch');
 const { postCashSale, cancelCashSale } = require('../services/phase3/cashSale');
 const { postSalesReturn, cancelSalesReturn } = require('../services/phase3/returns');
-const sfa = require('../services/phase3/sfa');
 const bank = require('../services/phase3/bankFile');
-const { hashKey } = require('../middlewares/sfaAuth');
 
 async function finish(req, res, status, result) {
   await deliverPending(prisma, req.tenantId);
@@ -229,43 +226,6 @@ const readNote = async (req, res) => {
   res.json({ updated: note.count });
 };
 
-const createKey = async (req, res) => {
-  try {
-    const raw = crypto.randomBytes(24).toString('hex');
-    const saved = await prisma.sfaApiKey.create({
-      data: { tenantId: req.tenantId, name: req.body.name, keyHash: hashKey(raw), prefix: raw.slice(0, 8) }
-    });
-    res.status(201).json({ id: saved.id, name: saved.name, prefix: saved.prefix, apiKey: raw });
-  } catch (error) {
-    sendError(res, error, 'Failed to create API key');
-  }
-};
-const listKeys = async (req, res) => {
-  const keys = await prisma.sfaApiKey.findMany({
-    where: { tenantId: req.tenantId },
-    select: { id: true, name: true, prefix: true, active: true, createdAt: true }
-  });
-  res.json(keys);
-};
-const listMessages = async (req, res) => {
-  const where = { tenantId: req.tenantId };
-  if (req.query.status) where.status = req.query.status;
-  if (req.query.direction) where.direction = req.query.direction;
-  res.json(await prisma.sfaMessage.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 }));
-};
-const retry = async (req, res) => {
-  try {
-    const result = await sfa.retryMessage(prisma, req.tenantId, req.params.id);
-    return finish(req, res, 200, result);
-  } catch (error) {
-    return sendError(res, error, 'Failed to retry the message');
-  }
-};
-const sync = async (req, res) => {
-  try { res.json(await sfa.runSync(prisma, req.tenantId)); }
-  catch (error) { sendError(res, error, 'Failed to run sync'); }
-};
-
 const getBank = async (req, res) => {
   try { res.json(await bank.templateFor(prisma, req.tenantId)); }
   catch (error) { sendError(res, error, 'Failed to load the bank file'); }
@@ -280,16 +240,6 @@ const exportBank = async (req, res) => {
   }
 };
 
-const publicHandler = (work) => async (req, res) => {
-  try {
-    const result = await work(req);
-    const status = result?.duplicate ? 200 : 201;
-    res.status(status).json(result);
-  } catch (error) {
-    sendError(res, error, 'SFA message failed');
-  }
-};
-
 module.exports = {
   getDefaults, getSettingsRow, putSettings,
   listRoutes, createRoute, listVehicles, createVehicle, listShipTos, createShipTo,
@@ -297,28 +247,6 @@ module.exports = {
   listPicks, createPick, advance, deliver,
   listTrips, createTrip, invoiceTrip, gatePass, depart, returnTrip, cancelTrip,
   recordProof, creditProof, listReturns, createReturn, cancelReturn, cashSale, cancelCash,
-  listNotes, readNote, createKey, listKeys, listMessages, retry, sync,
-  getBank, putBank, exportBank, publicHandler,
-  importOrder: publicHandler((req) => sfa.importOrder(prisma, { ...req.body, tenantId: req.tenantId })),
-  importCustomer: publicHandler((req) => sfa.importCustomer(prisma, { ...req.body, tenantId: req.tenantId })),
-  importCollection: publicHandler((req) => sfa.importCollection(prisma, { ...req.body, tenantId: req.tenantId })),
-  importReturn: publicHandler((req) => sfa.importReturn(prisma, { ...req.body, tenantId: req.tenantId })),
-  importRoute: publicHandler((req) => sfa.importRoute(prisma, { ...req.body, tenantId: req.tenantId })),
-  importVisit: publicHandler((req) => sfa.importVisit(prisma, { ...req.body, tenantId: req.tenantId })),
-  exportItems: async (req, res) => {
-    try { res.json(await sfa.exportItems(prisma, req.tenantId)); }
-    catch (error) { sendError(res, error, 'Failed to export items'); }
-  },
-  exportPrices: async (req, res) => {
-    try { res.json(await sfa.exportPrices(prisma, req.tenantId, req.query.customerRef)); }
-    catch (error) { sendError(res, error, 'Failed to export prices'); }
-  },
-  exportStock: async (req, res) => {
-    try { res.json(await sfa.exportStock(prisma, req.tenantId)); }
-    catch (error) { sendError(res, error, 'Failed to export stock'); }
-  },
-  exportBalances: async (req, res) => {
-    try { res.json(await sfa.exportBalances(prisma, req.tenantId, req.query.customerRef)); }
-    catch (error) { sendError(res, error, 'Failed to export balances'); }
-  }
+  listNotes, readNote,
+  getBank, putBank, exportBank
 };

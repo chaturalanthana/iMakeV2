@@ -70,11 +70,6 @@ router.post('/dispatch/cash-sales', validateBody(phase3Schemas.cashSale), phase3
 router.post('/dispatch/cash-sales/:id/cancel', validateBody(phase3Schemas.cancel), phase3.cancelCash);
 router.get('/dispatch/notifications', phase3.listNotes);
 router.post('/dispatch/notifications/:id/read', phase3.readNote);
-router.post('/dispatch/sfa/keys', validateBody(phase3Schemas.apiKey), phase3.createKey);
-router.get('/dispatch/sfa/keys', phase3.listKeys);
-router.get('/dispatch/sfa/messages', phase3.listMessages);
-router.post('/dispatch/sfa/messages/:id/retry', phase3.retry);
-router.post('/dispatch/sfa/sync', phase3.sync);
 router.get('/dispatch/bank-file', phase3.getBank);
 router.put('/dispatch/bank-file', validateBody(phase3Schemas.bankColumns), phase3.putBank);
 router.post('/dispatch/bank-file/export', phase3.exportBank);

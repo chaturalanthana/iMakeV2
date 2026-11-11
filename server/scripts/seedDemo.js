@@ -8,7 +8,6 @@
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const prisma = require('../src/lib/prisma');
 const { seedTenantRoles } = require('../src/permissions/catalog');
@@ -53,8 +52,6 @@ async function wipe(tenantId) {
   await prisma.salesReservation.deleteMany({ where });
   await prisma.orderCancellation.deleteMany({ where });
   await prisma.customerPrice.deleteMany({ where });
-  await prisma.sfaMessage.deleteMany({ where });
-  await prisma.sfaApiKey.deleteMany({ where });
   await prisma.appNotification.deleteMany({ where });
   await prisma.bankFileExport.deleteMany({ where });
   await prisma.bankFileTemplate.deleteMany({ where });
@@ -596,15 +593,6 @@ async function main() {
     data: { tenantId, scope: 'CHANNEL', channel: 'MODERN_TRADE', productId: chair.id, currency: 'LKR', minQty: 1, price: 18000 }
   });
   await prisma.dispatchSetting.create({ data: { tenantId } });
-  const demoKey = 'ncc-demo-sfa-key';
-  await prisma.sfaApiKey.create({
-    data: {
-      tenantId,
-      name: 'iForce demo',
-      prefix: demoKey.slice(0, 8),
-      keyHash: crypto.createHash('sha256').update(demoKey).digest('hex')
-    }
-  });
   await prisma.$transaction(async (tx) => {
     await postReceiptDocument(tx, {
       tenantId,
@@ -728,7 +716,6 @@ async function main() {
   console.log('  Buy       reorder teak and screws. Chairs and tables are planned in MRP.');
   console.log('  Make      CHAIR and TABLE, routed across SAW, ASM, and FIN');
   console.log('  Dispatch  Elakanda stock, GT-NORTH, pending hotel order for 2 chairs');
-  console.log('  SFA key   ncc-demo-sfa-key');
   console.log('  Make      CHAIR is make-to-stock on the weekly MPS. TABLE is make-to-order.');
   console.log('  Machines  Soya Machine 2, Packeting 2, Pasta 1, Sachet Packet Machine 1');
   console.log('  Contract  SUB-01 virtual warehouse for Elakanda Contract Packers');}

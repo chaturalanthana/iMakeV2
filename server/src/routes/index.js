@@ -38,7 +38,6 @@ const replenishmentRoutes = require('./replenishmentRoutes');
 const alertRoutes = require('./alertRoutes');
 const importRoutes = require('./importRoutes');
 const labelRoutes = require('./labelRoutes');
-const sfaPublicRoutes = require('./sfaPublicRoutes');
 const { work: controlWorkRoutes, controls: controlSettingsRoutes } = require('./controlRoutes');
 const inventoryRoutes = require('./inventoryRoutes');
 const { secureModule, secureAny } = require('../middlewares/rbacMiddleware');
@@ -47,7 +46,6 @@ const { requireTenant } = require('../middlewares/tenantMiddleware');
 const router = express.Router();
 
 router.use('/auth', authRoutes);
-router.use('/sfa/v1', sfaPublicRoutes);
 router.use('/me/preferences', ...requireTenant, preferenceRoutes);
 
 router.use('/products', ...secureModule('products'), productRoutes);

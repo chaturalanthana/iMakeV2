@@ -78,7 +78,6 @@ export default function Sidebar() {
         { name: 'Trips', icon: Truck, path: '/sales/trips' },
         { name: 'Van / factory sales', icon: Receipt, path: '/sales/cash-sales' },
         { name: 'Sales returns', icon: RotateCcw, path: '/sales/returns' },
-        { name: 'SFA queue', icon: RefreshCw, path: '/sales/sfa' },
         { name: 'Bank file', icon: Landmark, path: '/sales/bank-file' },
         { name: 'Notifications', icon: Bell, path: '/sales/notifications' },
         { name: 'Dispatch settings', icon: Sliders, path: '/sales/dispatch-settings' },

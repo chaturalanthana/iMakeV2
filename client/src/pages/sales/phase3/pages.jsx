@@ -11,7 +11,7 @@ import ActionButton from '../../../components/ui/ActionButton';
 import { useToast } from '../../../context/ToastContext';
 import { api, errorsOf, messageOf } from './api';
 import {
-  BadgePercent, Truck, Route, Receipt, RotateCcw, KeyRound, Landmark, Bell, SlidersHorizontal, Plus
+  BadgePercent, Truck, Route, Receipt, RotateCcw, Landmark, Bell, SlidersHorizontal, Plus
 } from 'lucide-react';
 
 function useLoader(path) {
@@ -470,86 +470,6 @@ export function SalesReturns() {
   );
 }
 
-export function SfaQueue() {
-  const { showToast } = useToast();
-  const [messages, setMessages] = useState([]);
-  const [keys, setKeys] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState('FAILED');
-  const [name, setName] = useState('iForce');
-  const [revealed, setRevealed] = useState('');
-
-  const load = async (next = status) => {
-    setLoading(true);
-    const client = api();
-    const [queue, keyRows] = await Promise.all([
-      client.get('/api/sales/dispatch/sfa/messages', { params: next ? { status: next } : {} }),
-      client.get('/api/sales/dispatch/sfa/keys')
-    ]);
-    setMessages(queue.data);
-    setKeys(keyRows.data);
-    setLoading(false);
-  };
-  useEffect(() => { load().catch(() => setLoading(false)); }, []);
-
-  const retry = async (row) => {
-    try {
-      await api().post(`/api/sales/dispatch/sfa/messages/${row.id}/retry`);
-      showToast('Message retried.', 'success');
-      load();
-    } catch (error) {
-      showToast(messageOf(error, 'Retry failed.'), 'error');
-    }
-  };
-
-  const createKey = async () => {
-    if (!name.trim()) return showToast('Name is required.', 'error');
-    try {
-      const res = await api().post('/api/sales/dispatch/sfa/keys', { name });
-      setRevealed(res.data.apiKey);
-      showToast('API key created. Copy it now.', 'success');
-      load();
-    } catch (error) {
-      showToast(messageOf(error, 'Could not create the key.'), 'error');
-    }
-  };
-
-  return (
-    <AppLayout title="SFA queue" icon={KeyRound}>
-      <FilterBar actions={<ActionButton onClick={createKey}>New API key</ActionButton>}>
-        <FormField label="Queue" width="200px">
-          <SelectControl value={status} onChange={(event) => { setStatus(event.target.value); load(event.target.value); }}>
-            <option value="FAILED">Failed</option>
-            <option value="PROCESSED">Processed</option>
-            <option value="">All</option>
-          </SelectControl>
-        </FormField>
-        <FormField label="Key name" width="220px">
-          <TextControl value={name} onChange={(event) => setName(event.target.value)} />
-        </FormField>
-      </FilterBar>
-      {revealed && <p style={{ fontSize: '0.85rem' }}>API key: <strong>{revealed}</strong></p>}
-      {keys.length > 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active keys: {keys.map((row) => `${row.name} (${row.prefix}…)`).join(', ')}</p>}
-      {loading ? <PageSkeleton type="table" /> : (
-        <DataTable
-          columns={[
-            { header: 'When', render: (row) => new Date(row.createdAt).toLocaleString() },
-            { header: 'Entity', accessor: 'entity' },
-            { header: 'External ref', accessor: 'externalRef' },
-            { header: 'Status', accessor: 'status', render: (row) => <StatusBadge status={row.status} /> },
-            { header: 'Error', accessor: 'error' },
-            { header: 'Actions', align: 'right', sortable: false, render: (row) => row.status === 'FAILED' ? <ActionButton onClick={(event) => { event.stopPropagation(); retry(row); }}>Retry</ActionButton> : null }
-          ]}
-          data={messages}
-          searchKeys={['externalRef', 'entity', 'error']}
-          searchPlaceholder="Search the queue..."
-          noDataMessage="The queue is empty."
-        />
-      )}
-    </AppLayout>
-  );
-}
-
 export function BankFiles() {
   const { showToast } = useToast();
   const [file, setFile] = useState(null);
@@ -598,8 +518,7 @@ export function DispatchSettings() {
     try {
       const res = await api().put('/api/sales/dispatch/settings', {
         ...form,
-        maxDiscountPercent: Number(form.maxDiscountPercent),
-        sfaSyncMinutes: Number(form.sfaSyncMinutes)
+        maxDiscountPercent: Number(form.maxDiscountPercent)
       });
       setForm(res.data);
       showToast('Dispatch settings saved.', 'success');
@@ -628,15 +547,6 @@ export function DispatchSettings() {
             <option value="BLOCK">Block the release</option>
           </SelectControl>
         </FormField>
-        <FormField label="SFA reserve" width="180px">
-          <SelectControl value={form.sfaReservation} onChange={(event) => setForm({ ...form, sfaReservation: event.target.value })}>
-            <option value="HARD">Hard</option>
-            <option value="SOFT">Soft</option>
-          </SelectControl>
-        </FormField>
-        <FormField label="Sync minutes" width="160px">
-          <TextControl value={form.sfaSyncMinutes} onChange={(event) => setForm({ ...form, sfaSyncMinutes: event.target.value })} />
-        </FormField>
         <FormField label="Email hook URL" width="320px">
           <TextControl value={form.emailHookUrl || ''} onChange={(event) => setForm({ ...form, emailHookUrl: event.target.value })} />
         </FormField>
@@ -647,13 +557,6 @@ export function DispatchSettings() {
         {flag('gatePassRequired', 'Block departure until the gate pass is issued')}
         {flag('invoiceBeforeDispatch', 'Require the tax invoice before the gate pass')}
         {flag('emailHookEnabled', 'Send dispatch events to the email hook')}
-        {flag('sfaImportOrders', 'Import SFA orders')}
-        {flag('sfaImportCustomers', 'Import SFA customers')}
-        {flag('sfaImportCollections', 'Import SFA collections')}
-        {flag('sfaExportItems', 'Export items')}
-        {flag('sfaExportPrices', 'Export prices')}
-        {flag('sfaExportStock', 'Export stock')}
-        {flag('sfaExportBalances', 'Export customer balances')}
       </div>
       <DataTable
         columns={[{ header: 'Decision', accessor: 'key' }, { header: 'Default', accessor: 'value' }]}
