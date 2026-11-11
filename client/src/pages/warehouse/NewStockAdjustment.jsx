@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -199,6 +200,45 @@ export default function NewStockAdjustment() {
   const isReadOnly = status === 'COMPLETED';
   const isCompleted = isReadOnly;
 
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => {
+        const existing = current.find((item) => item.productId === hit.product.id);
+        if (existing) {
+          return current.map((item) => {
+            if (item.productId !== hit.product.id) return item;
+            const actual = (parseFloat(item.actualQty) || 0) + 1;
+            const system = parseFloat(item.systemQty) || 0;
+            const price = parseFloat(item.unitPrice) || 0;
+            return { ...item, actualQty: actual, diffQty: actual - system, total: (actual - system) * price };
+          });
+        }
+        const system = getSystemQty(hit.product.id);
+        const price = parseFloat(hit.product.costPrice) || 0;
+        const row = {
+          id: Date.now() + Math.random(),
+          productId: hit.product.id,
+          productName: hit.product.name,
+          systemQty: system,
+          actualQty: 1,
+          diffQty: 1 - system,
+          unitPrice: price,
+          total: (1 - system) * price
+        };
+        const blank = current.find((item) => !item.productId);
+        if (blank) return current.map((item) => (item.id === blank.id ? { ...row, id: blank.id } : item));
+        return [...current, row];
+      });
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
+
   return (
     <AppLayout title={id ? `Stock Adjustment - ${adjNumber}` : "New Stock Adjustment"} icon={ArrowUpRight}>
       {isInitialLoad ? (
@@ -243,6 +283,8 @@ export default function NewStockAdjustment() {
               )}
             </div>
           </div>
+
+          {!isReadOnly && <ScanCapture onScan={onScan} placeholder="Scan item or lot to count" />}
 
           {/* Header Details */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>

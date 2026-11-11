@@ -26,6 +26,7 @@ export default function NewSupplierInvoice() {
   const [exchangeRate, setExchangeRate] = useState('1');
   const [reference, setReference] = useState('');
   const [items, setItems] = useState([emptyLine()]);
+  const [receipts, setReceipts] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saved, setSaved] = useState(null);
   const readOnly = Boolean(id || saved);
@@ -41,6 +42,7 @@ export default function NewSupplierInvoice() {
           axios.get('/api/procurement/supplier-invoices', config)
         ]);
         setSuppliers(supplierRes.data);
+        setReceipts(grnRes.data || []);
         if (id) {
           const current = invoiceRes.data.find((row) => row.id === id);
           if (current) {
@@ -172,7 +174,23 @@ export default function NewSupplierInvoice() {
               <input className="input-field" value={reference} onChange={(event) => setReference(event.target.value)} disabled={readOnly} />
             </div>
           </div>
-          {fieldErrors.grnId && <div style={{ color: 'var(--error)', marginBottom: '0.75rem' }}>{fieldErrors.grnId}</div>}
+          {!id && !grnId && (
+            <div style={{ marginBottom: '1rem', maxWidth: 420 }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Goods receipt</label>
+              <select
+                value=""
+                onChange={(event) => { if (event.target.value) navigate(`/procurement/supplier-invoices/new?grnId=${event.target.value}`); }}
+                style={{ width: '100%', height: 42, borderRadius: 8, border: '1px solid var(--border-color)', padding: '0 0.75rem' }}
+              >
+                <option value="">Choose the goods receipt to invoice</option>
+                {receipts.map((receipt) => (
+                  <option key={receipt.id} value={receipt.id}>{receipt.grnNumber} — {receipt.supplier?.name || 'Supplier'}</option>
+                ))}
+              </select>
+              {fieldErrors.grnId && <div style={{ color: 'var(--error)', marginTop: 6 }}>{fieldErrors.grnId}</div>}
+            </div>
+          )}
+          {fieldErrors.grnId && grnId && <div style={{ color: 'var(--error)', marginBottom: '0.75rem' }}>{fieldErrors.grnId}</div>}
           <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
             <thead>
               <tr>

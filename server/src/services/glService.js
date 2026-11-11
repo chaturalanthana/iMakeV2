@@ -26,7 +26,15 @@ const DEFAULT_ACCOUNTS = [
   { key: 'VARIANCE_OVERHEAD', code: '5520', name: 'Production Variance - Overhead', type: 'EXPENSE' },
   { key: 'VARIANCE_SCRAP', code: '5530', name: 'Production Variance - Scrap', type: 'EXPENSE' },
   { key: 'FX_GAIN', code: '4150', name: 'Realised FX Gain', type: 'REVENUE' },
-  { key: 'FX_LOSS', code: '5300', name: 'Realised FX Loss', type: 'EXPENSE' }
+  { key: 'FX_LOSS', code: '5300', name: 'Realised FX Loss', type: 'EXPENSE' },
+  { key: 'OPENING_EQUITY', code: '3000', name: 'Opening Balance Equity', type: 'EQUITY' },
+  { key: 'SALARY_EXPENSE', code: '5600', name: 'Salary Expense', type: 'EXPENSE' },
+  { key: 'EMPLOYER_EPF', code: '5610', name: 'Employer EPF Expense', type: 'EXPENSE' },
+  { key: 'EMPLOYER_ETF', code: '5620', name: 'Employer ETF Expense', type: 'EXPENSE' },
+  { key: 'EPF_PAYABLE', code: '2130', name: 'EPF Payable', type: 'LIABILITY' },
+  { key: 'ETF_PAYABLE', code: '2140', name: 'ETF Payable', type: 'LIABILITY' },
+  { key: 'SALARIES_PAYABLE', code: '2150', name: 'Salaries Payable', type: 'LIABILITY' },
+  { key: 'PAYROLL_DEDUCTIONS', code: '2160', name: 'Payroll Deductions Payable', type: 'LIABILITY' }
 ];
 
 async function ensureGlMap(tx, tenantId, userId) {

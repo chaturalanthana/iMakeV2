@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Boxes, Upload, Scale
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -33,6 +33,7 @@ export default function Sidebar() {
         { name: 'Costing', icon: DollarSign, path: '/production/costing' },
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
+        { name: 'Replenishment', icon: Boxes, path: '/production/replenishment' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
         { name: 'Product Types', icon: Layers, path: '/registries/product-types' },
         { name: 'Brands', icon: Tag, path: '/registries/brands' },
@@ -78,6 +79,7 @@ export default function Sidebar() {
         { name: 'Stock Transfers', icon: RefreshCw, path: '/warehouse/transfers' },
         { name: 'Stock Adjustments', icon: BarChart2, path: '/warehouse/adjustments' },
         { name: 'Inventory Report', icon: FileText, path: '/warehouse/inventory-report' },
+        { name: 'Labels', icon: Tag, path: '/warehouse/labels' },
         { name: 'Stock Ledger', icon: Layers, path: '/warehouse/movements' },
       ]
     },
@@ -87,6 +89,7 @@ export default function Sidebar() {
       subItems: [
         { name: 'Chart of Accounts', icon: Network, path: '/finance/accounts' },
         { name: 'General Ledger', icon: Landmark, path: '/finance/ledger' },
+        { name: 'Trial Balance', icon: Scale, path: '/finance/trial-balance' },
         { name: 'Profit & Loss', icon: TrendingUp, path: '/finance/pnl' },
         { name: 'Cash Flow', icon: Landmark, path: '/finance/cashflow' },
         { name: 'Balance Sheet', icon: Landmark, path: '/finance/balancesheet' },
@@ -115,6 +118,7 @@ export default function Sidebar() {
         { name: 'Salary Process', icon: DollarSign, path: '/hr/salary-process' },
         { name: 'Pay Slips', icon: FileText, path: '/hr/payslips' },
         { name: 'Holiday Calendar', icon: CalendarDays, path: '/hr/holidays' },
+        { name: 'EPF / ETF', icon: Landmark, path: '/hr/statutory' },
       ]
     },
   ];
@@ -126,6 +130,7 @@ export default function Sidebar() {
       subItems: [
         { name: 'Users', icon: Users, path: '/settings/users' },
         { name: 'Roles', icon: Layers, path: '/settings/roles' },
+        { name: 'Data import', icon: Upload, path: '/settings/import' },
       ] 
     }
   ];

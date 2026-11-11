@@ -19,6 +19,12 @@ import NewProductionOrder from './pages/production/NewProductionOrder';
 import Workstations from './pages/production/Workstations';
 import NewWorkstation from './pages/production/NewWorkstation';
 import MRPPlanner from './pages/production/MRPPlanner';
+import Replenishment from './pages/production/Replenishment';
+import Alerts from './pages/Alerts';
+import DataImport from './pages/settings/DataImport';
+import Labels from './pages/warehouse/Labels';
+import WhtCertificate from './pages/finance/WhtCertificate';
+import StatutoryReport from './pages/hr/StatutoryReport';
 import ProductGroups from './pages/production/ProductGroups';
 import Brands from './pages/registries/Brands';
 import Categories from './pages/registries/Categories';
@@ -36,6 +42,7 @@ import CashBook from './pages/finance/CashBook';
 import BankBook from './pages/finance/BankBook';
 import VATReport from './pages/finance/VATReport';
 import BankReconciliation from './pages/finance/BankReconciliation';
+import TrialBalance from './pages/finance/TrialBalance';
 import JournalEntries from './pages/finance/JournalEntries';
 import NewJournalEntry from './pages/finance/NewJournalEntry';
 import PaymentReceipts from './pages/finance/PaymentReceipts';
@@ -123,6 +130,7 @@ function App() {
             {/* Authenticated Routes wrapped in PersistentLayout */}
             <Route element={<PersistentLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/alerts" element={<Alerts />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/new" element={<NewProduct />} />
               <Route path="/products/:id" element={<NewProduct />} />
@@ -145,6 +153,7 @@ function App() {
               <Route path="/production/workstations/new" element={<NewWorkstation />} />
               <Route path="/production/workstations/:id" element={<NewWorkstation />} />
               <Route path="/production/mrp" element={<MRPPlanner />} />
+              <Route path="/production/replenishment" element={<Replenishment />} />
               <Route path="/production/groups" element={<ProductGroups />} />
               <Route path="/registries/brands" element={<Brands />} />
               <Route path="/registries/categories" element={<Categories />} />
@@ -220,6 +229,7 @@ function App() {
               <Route path="/warehouse/adjustments/:id" element={<NewStockAdjustment />} />
               <Route path="/warehouse/adjustments" element={<StockAdjustments />} />
               <Route path="/warehouse/inventory-report" element={<InventoryReport />} />
+              <Route path="/warehouse/labels" element={<Labels />} />
               <Route path="/warehouse/movements/new" element={<NewStockMovement />} />
               <Route path="/warehouse/movements" element={<StockMovements />} />
 
@@ -233,12 +243,14 @@ function App() {
               <Route path="/hr/payslips/:runId" element={<PaySlips />} />
               <Route path="/hr/payslips" element={<PaySlips />} />
               <Route path="/hr/holidays" element={<HolidayCalendar />} />
+              <Route path="/hr/statutory" element={<StatutoryReport />} />
 
               {/* Finance Base Redirect */}
               <Route path="/finance" element={<Navigate to="/finance/accounts" replace />} />
               
               <Route path="/finance/accounts" element={<ChartOfAccounts />} />
               <Route path="/finance/ledger" element={<GeneralLedger />} />
+              <Route path="/finance/trial-balance" element={<TrialBalance />} />
               <Route path="/finance/ledger/:accountId" element={<LedgerDetails />} />
               <Route path="/finance/pnl" element={<ProfitAndLoss />} />
               <Route path="/finance/cashflow" element={<CashFlow />} />
@@ -250,6 +262,7 @@ function App() {
               <Route path="/finance/receipts/new" element={<NewPaymentReceipt />} />
               <Route path="/finance/receipts" element={<PaymentReceipts />} />
               <Route path="/finance/vouchers/new" element={<NewPaymentVoucher />} />
+              <Route path="/finance/vouchers/:id/wht" element={<WhtCertificate />} />
               <Route path="/finance/vouchers" element={<PaymentVouchers />} />
               <Route path="/finance/currencies" element={<Currencies />} />
               <Route path="/finance/tax-groups" element={<TaxGroups />} />
@@ -261,6 +274,7 @@ function App() {
               {/* Settings */}
               <Route path="/settings/users" element={<Users />} />
               <Route path="/settings/roles" element={<Roles />} />
+              <Route path="/settings/import" element={<DataImport />} />
             </Route>
           </Routes>
         </BrowserRouter>

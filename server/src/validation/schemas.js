@@ -452,5 +452,25 @@ module.exports = {
     amount: optionalNumber('Amount'),
     date: requiredText('Date is required.')
   }).passthrough(),
-  mrpPlan: z.object({}).passthrough()
+  mrpPlan: z.object({}).passthrough(),
+  replenishmentPolicy: z.object({
+    productId: requiredText('Product is required.'),
+    warehouseId: requiredText('Warehouse is required.'),
+    reorderPoint: optionalNumber('Reorder point'),
+    minQty: optionalNumber('Min qty'),
+    maxQty: optionalNumber('Max qty')
+  }).passthrough(),
+  replenishmentSettings: z.object({
+    replenishDaily: z.boolean({ error: 'Choose whether the daily run is on.' }).optional()
+  }).passthrough(),
+  statutoryRates: z.object({
+    epfEmployeePercent: optionalNumber('EPF employee rate'),
+    epfEmployerPercent: optionalNumber('EPF employer rate'),
+    etfEmployerPercent: optionalNumber('ETF rate')
+  }).passthrough(),
+  labelRender: z.object({
+    type: z.enum(['item', 'lot', 'work-order']).optional(),
+    codes: z.array(z.string()).optional(),
+    code: z.string().optional()
+  }).passthrough()
 };

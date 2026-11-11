@@ -15,6 +15,7 @@ export default function VATReport() {
   const [outputTaxBreakdown, setOutputTaxBreakdown] = useState([]);
   const [inputTaxBreakdown, setInputTaxBreakdown] = useState([]);
   const [summary, setSummary] = useState({ outputVat: 0, inputVat: 0, netPayable: 0 });
+  const [returnSummary, setReturnSummary] = useState(null);
   const [transactionLog, setTransactionLog] = useState([]);
 
   // Date Filters
@@ -31,12 +32,14 @@ export default function VATReport() {
   const fetchVATData = async () => {
     setLoading(true);
     try {
-      const [accountsRes, ledgerRes, salesTaxesRes, purchaseTaxesRes] = await Promise.all([
+      const [accountsRes, ledgerRes, salesTaxesRes, purchaseTaxesRes, returnRes] = await Promise.all([
         axios.get('/api/finance/accounts', authConfig()),
         axios.get('/api/finance/ledger', authConfig()),
         axios.get('/api/finance/tax-groups', authConfig()),
-        axios.get('/api/procurement/tax-groups', authConfig())
+        axios.get('/api/procurement/tax-groups', authConfig()),
+        axios.get('/api/finance/tax-return', { ...authConfig(), params: { from: fromDate, to: toDate } })
       ]);
+      setReturnSummary(returnRes.data);
 
       const accounts = accountsRes.data;
       const ledgerLines = ledgerRes.data;
@@ -290,11 +293,11 @@ export default function VATReport() {
           </div>
 
           {/* Core Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.5rem' }}>
             <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Output VAT (Sales)</span>
-                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1e293b',  }}>{formatCurrency(summary.outputVat)}</span>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1e293b',  }}>{formatCurrency(returnSummary ? returnSummary.outputVat : summary.outputVat)}</span>
               </div>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#eff6ff', display: 'flex', alignItems: 'center', justify: 'center', color: '#2563eb' }}>
                 <ArrowUpRight size={20} />
@@ -303,7 +306,7 @@ export default function VATReport() {
             <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Input VAT (Purchases)</span>
-                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1e293b',  }}>{formatCurrency(summary.inputVat)}</span>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1e293b',  }}>{formatCurrency(returnSummary ? returnSummary.inputVat : summary.inputVat)}</span>
               </div>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justify: 'center', color: '#16a34a' }}>
                 <ArrowDownLeft size={20} />
@@ -312,10 +315,19 @@ export default function VATReport() {
             <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Net VAT Payable</span>
-                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: summary.netPayable >= 0 ? '#1e293b' : '#dc2626',  }}>{formatCurrency(summary.netPayable)}</span>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: (returnSummary ? returnSummary.netVat : summary.netPayable) >= 0 ? '#1e293b' : '#dc2626',  }}>{formatCurrency(returnSummary ? returnSummary.netVat : summary.netPayable)}</span>
               </div>
               <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#f5f3ff', display: 'flex', alignItems: 'center', justify: 'center', color: '#7c3aed' }}>
                 <DollarSign size={20} />
+              </div>
+            </div>
+            <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>SSCL payable</span>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1e293b' }}>{formatCurrency(returnSummary?.ssclPayable || 0)}</span>
+              </div>
+              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c2410c' }}>
+                <FileText size={20} />
               </div>
             </div>
           </div>

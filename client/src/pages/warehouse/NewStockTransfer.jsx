@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -166,6 +167,19 @@ export default function NewStockTransfer() {
   const isReadOnly = status === 'COMPLETED';
   const isCompleted = isReadOnly;
 
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => mergeScannedProduct(current, hit.product, 'quantity').items);
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
+
   return (
     <AppLayout title={id ? `Stock Transfer - ${transferNumber}` : "New Stock Transfer"} icon={RefreshCw}>
       {isInitialLoad ? (
@@ -208,6 +222,8 @@ export default function NewStockTransfer() {
               )}
             </div>
           </div>
+
+          {!isReadOnly && <ScanCapture onScan={onScan} placeholder="Scan item or lot to transfer" />}
 
           {/* Header Details */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>

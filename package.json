@@ -7,7 +7,8 @@
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
-    "start": "concurrently \"npm --prefix server start\" \"npm --prefix client run dev\""
+    "start": "concurrently \"npm --prefix server start\" \"npm --prefix client run dev\"",
+    "seed:demo": "npm --prefix server run seed:demo"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

@@ -768,9 +768,10 @@ async function getWorkOrder(tenantId, id) {
   return wo;
 }
 
-async function createWorkOrder(tenantId, userId, body) {
+async function createWorkOrder(tenantId, userId, body, db = prisma) {
   if (!body.productId) throw new ProductionError('Product is required');
-  return createInside(prisma, {
+  const status = body.status === 'DRAFT' ? 'DRAFT' : 'CREATED';
+  return createInside(db, {
     tenantId,
     userId,
     productId: body.productId,
@@ -786,13 +787,14 @@ async function createWorkOrder(tenantId, userId, body) {
     sourceType: body.sourceType || 'MANUAL',
     sourceId: body.sourceId || null,
     salesOrderId: body.salesOrderId || null,
-    salesOrderItemId: body.salesOrderItemId || null
+    salesOrderItemId: body.salesOrderItemId || null,
+    status
   });
 }
 
 async function updateWorkOrder(tenantId, id, body) {
   const wo = await getWorkOrder(tenantId, id);
-  if (wo.status !== 'CREATED') throw new ProductionError('Only created work orders can be edited');
+  if (!['CREATED', 'DRAFT'].includes(wo.status)) throw new ProductionError('Only draft or created work orders can be edited');
   const quantity = body.quantity !== undefined ? num(body.quantity) : num(wo.quantity);
   if (!(quantity > 0)) throw new ProductionError('Quantity must be greater than zero');
   let warehouseId = wo.warehouseId;
@@ -820,8 +822,8 @@ async function updateWorkOrder(tenantId, id, body) {
 
 async function deleteWorkOrder(tenantId, id) {
   const wo = await getWorkOrder(tenantId, id);
-  if (!['CREATED', 'CANCELLED'].includes(wo.status)) {
-    throw new ProductionError('Only created or cancelled work orders can be deleted');
+  if (!['CREATED', 'DRAFT', 'CANCELLED'].includes(wo.status)) {
+    throw new ProductionError('Only draft, created, or cancelled work orders can be deleted');
   }
   if (wo.legacyJobId) {
     await prisma.productionJob.delete({ where: { id: wo.legacyJobId } });
@@ -951,8 +953,10 @@ async function confirmOperation(tenantId, id, body, userId) {
     if (yieldQty + scrapQty + reworkQty <= 0) {
       throw new ProductionError('Enter a yield, scrap, or rework quantity');
     }
-    if (round4(num(wo.quantityCompleted) + yieldQty) - num(wo.quantity) > 0.00005) {
-      throw new ProductionError('Yield exceeds the remaining order quantity');
+    const lastSequence = (wo.operations || []).reduce((max, row) => Math.max(max, num(row.sequence)), 0);
+    const isLast = num(operation.sequence) === lastSequence;
+    if (round4(num(operation.yieldQty) + yieldQty) - num(wo.quantity) > 0.00005) {
+      throw new ProductionError('Yield exceeds the remaining quantity for this operation');
     }
     if (scrapQty > 0 && !body.scrapReasonId) throw new ProductionError('Scrap reason is required');
     if (reworkQty > 0 && !body.reworkReasonId) throw new ProductionError('Rework reason is required');
@@ -1000,7 +1004,7 @@ async function confirmOperation(tenantId, id, body, userId) {
 
     let materialCost = 0;
     let scrapCost = 0;
-    if (wo.issueMode === 'BACKFLUSH' && (yieldQty + scrapQty) > 0) {
+    if (isLast && wo.issueMode === 'BACKFLUSH' && (yieldQty + scrapQty) > 0) {
       const lots = Array.isArray(body.componentLots) ? body.componentLots : [];
       for (const component of wo.components) {
         const qty = round4(num(component.quantityPer) * (yieldQty + scrapQty) * (1 + num(component.scrapPercent) / 100));
@@ -1046,7 +1050,7 @@ async function confirmOperation(tenantId, id, body, userId) {
       });
     }
 
-    if (yieldQty > 0) {
+    if (isLast && yieldQty > 0) {
       const capitalized = round4(materialCost + labourCost + machineCost + subcontractCost + overheadCost);
       await postFinishedGoods(tx, wo, {
         quantity: yieldQty,
@@ -1084,10 +1088,10 @@ async function confirmOperation(tenantId, id, body, userId) {
       where: { id: wo.id },
       data: {
         status: 'IN_PROGRESS',
-        quantityCompleted: round4(num(wo.quantityCompleted) + yieldQty),
-        quantityScrapped: round4(num(wo.quantityScrapped) + scrapQty),
-        quantityRework: round4(num(wo.quantityRework) + reworkQty),
-        quantityReceipted: round4(num(wo.quantityReceipted) + yieldQty)
+        quantityCompleted: isLast ? round4(num(wo.quantityCompleted) + yieldQty) : num(wo.quantityCompleted),
+        quantityScrapped: isLast ? round4(num(wo.quantityScrapped) + scrapQty) : num(wo.quantityScrapped),
+        quantityRework: isLast ? round4(num(wo.quantityRework) + reworkQty) : num(wo.quantityRework),
+        quantityReceipted: isLast ? round4(num(wo.quantityReceipted) + yieldQty) : num(wo.quantityReceipted)
       }
     });
     await mirrorLegacy(tx, wo, 'IN_PROGRESS');

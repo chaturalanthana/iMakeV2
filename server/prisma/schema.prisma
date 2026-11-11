@@ -87,6 +87,12 @@ model Tenant {
   reasonCodes                  ReasonCode[]
   productionSetting            ProductionSetting?
   operationTimeLogs            OperationTimeLog[]
+  itemWarehousePolicies        ItemWarehousePolicy[]
+  replenishmentRuns            ReplenishmentRun[]
+  replenishmentLines           ReplenishmentLine[]
+  operationsSetting            OperationsSetting?
+  statutorySetting             StatutorySetting?
+  whtCertificates              WhtCertificate[]
 
   @@map("tenants")
 }
@@ -219,6 +225,7 @@ model Supplier {
   purchaseOrders   PurchaseOrder[]
   purchaseRequisitions PurchaseRequisition[]
   supplierInvoices SupplierInvoice[]
+  whtCertificates  WhtCertificate[]
   accountsPayable  Account?         @relation("SupplierAPAccount", fields: [accountsPayableId], references: [id])
   advancePaymentAccount Account?   @relation("SupplierAdvanceAccount", fields: [advancePaymentAccountId], references: [id])
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -367,6 +374,8 @@ model Product {
   supplierInvoiceItems  SupplierInvoiceItem[]
   workOrders            WorkOrder[]            @relation("WorkOrderProduct")
   workOrderComponents   WorkOrderComponent[]
+  itemWarehousePolicies ItemWarehousePolicy[]
+  replenishmentLines    ReplenishmentLine[]
 
   @@index([tenantId])
   @@map("products")
@@ -853,10 +862,13 @@ model PaymentVoucher {
   exchangeRate  Decimal              @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
   status        String               @default("POSTED")
   lines         PaymentVoucherLine[]
+  whtAmount     Decimal              @default(0) @map("wht_amount") @db.Decimal(19, 4)
+  whtRate       Decimal              @default(0) @map("wht_rate") @db.Decimal(9, 4)
   allocations   SupplierPaymentAllocation[]
   account       Account?             @relation("VoucherBankAccount", fields: [accountId], references: [id])
   supplier      Supplier             @relation(fields: [supplierId], references: [id])
   tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  certificate   WhtCertificate?
 
   @@index([tenantId])
   @@map("payment_vouchers")
@@ -894,6 +906,8 @@ model Warehouse {
   transfersFrom    StockTransfer[]   @relation("FromWarehouse")
   transfersTo      StockTransfer[]   @relation("ToWarehouse")
   workOrders       WorkOrder[]
+  itemWarehousePolicies ItemWarehousePolicy[]
+  replenishmentLines ReplenishmentLine[]
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -1078,6 +1092,9 @@ model SalaryRunLine {
   grossEarnings   Decimal              @map("gross_earnings") @db.Decimal(19, 4)
   totalDeductions Decimal              @map("total_deductions") @db.Decimal(19, 4)
   netPay          Decimal              @map("net_pay") @db.Decimal(19, 4)
+  epfEmployee     Decimal              @default(0) @map("epf_employee") @db.Decimal(19, 4)
+  epfEmployer     Decimal              @default(0) @map("epf_employer") @db.Decimal(19, 4)
+  etfEmployer     Decimal              @default(0) @map("etf_employer") @db.Decimal(19, 4)
   additions       SalaryRunAddition[]
   deductions      SalaryRunDeduction[]
   employee        Employee             @relation(fields: [employeeId], references: [id])
@@ -1394,6 +1411,9 @@ model PurchaseRequisition {
   createdBy    String?             @map("created_by")
   currencyId   String?             @map("currency_id")
   exchangeRate Decimal             @default(1.0) @map("exchange_rate") @db.Decimal(19, 4)
+  sourceType   String              @default("MANUAL") @map("source_type")
+  sourceId     String?             @map("source_id")
+  notes        String?
   
   currency     Currency?           @relation(fields: [currencyId], references: [id])
   supplier     Supplier?           @relation(fields: [supplierId], references: [id])
@@ -2078,6 +2098,115 @@ model ProductionSetting {
   @@map("production_settings")
 }
 
+// Reorder point and min-max live on the item and warehouse, not only on the product.
+model ItemWarehousePolicy {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  productId    String   @map("product_id")
+  warehouseId  String   @map("warehouse_id")
+  reorderPoint Decimal  @default(0) @map("reorder_point") @db.Decimal(19, 4)
+  minQty       Decimal  @default(0) @map("min_qty") @db.Decimal(19, 4)
+  maxQty       Decimal  @default(0) @map("max_qty") @db.Decimal(19, 4)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, productId, warehouseId])
+  @@index([tenantId])
+  @@map("item_warehouse_policies")
+}
+
+model ReplenishmentRun {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  runNumber String   @map("run_number")
+  status    String   @default("DRAFT")
+  trigger   String   @default("MANUAL")
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String?  @map("created_by")
+
+  tenant Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines  ReplenishmentLine[]
+
+  @@unique([tenantId, runNumber])
+  @@index([tenantId])
+  @@map("replenishment_runs")
+}
+
+model ReplenishmentLine {
+  id          String  @id @default(uuid())
+  tenantId    String  @map("tenant_id")
+  runId       String  @map("run_id")
+  productId   String  @map("product_id")
+  warehouseId String? @map("warehouse_id")
+  kind        String
+  quantity    Decimal @db.Decimal(19, 4)
+  reason      String
+  minMaxQty   Decimal @default(0) @map("min_max_qty") @db.Decimal(19, 4)
+  mrpQty      Decimal @default(0) @map("mrp_qty") @db.Decimal(19, 4)
+  prId        String? @map("pr_id")
+  workOrderId String? @map("work_order_id")
+
+  run       ReplenishmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  product   Product          @relation(fields: [productId], references: [id])
+  warehouse Warehouse?       @relation(fields: [warehouseId], references: [id])
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([runId])
+  @@map("replenishment_lines")
+}
+
+model OperationsSetting {
+  id              String    @id @default(uuid())
+  tenantId        String    @unique @map("tenant_id")
+  replenishDaily  Boolean   @default(false) @map("replenish_daily")
+  lastReplenishOn DateTime? @map("last_replenish_on")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("operations_settings")
+}
+
+model StatutorySetting {
+  id                 String  @id @default(uuid())
+  tenantId           String  @unique @map("tenant_id")
+  epfEmployeePercent Decimal @default(8) @map("epf_employee_percent") @db.Decimal(9, 4)
+  epfEmployerPercent Decimal @default(12) @map("epf_employer_percent") @db.Decimal(9, 4)
+  etfEmployerPercent Decimal @default(3) @map("etf_employer_percent") @db.Decimal(9, 4)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("statutory_settings")
+}
+
+model WhtCertificate {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  certificateNumber String   @map("certificate_number")
+  voucherId         String   @unique @map("voucher_id")
+  supplierId        String   @map("supplier_id")
+  date              DateTime
+  grossAmount       Decimal  @map("gross_amount") @db.Decimal(19, 4)
+  whtRate           Decimal  @default(0) @map("wht_rate") @db.Decimal(9, 4)
+  whtAmount         Decimal  @map("wht_amount") @db.Decimal(19, 4)
+  paymentWht        Decimal  @default(0) @map("payment_wht") @db.Decimal(19, 4)
+  invoiceWht        Decimal  @default(0) @map("invoice_wht") @db.Decimal(19, 4)
+  netPaid           Decimal  @map("net_paid") @db.Decimal(19, 4)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  voucher  PaymentVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, certificateNumber])
+  @@index([tenantId])
+  @@map("wht_certificates")
+}
+
 // Minimal FIFO cost-layer ledger. Finance can extend source types and valuation.
 // OPENING layers are created only when a product is issued and has no layers yet.
 model CostLayer {
@@ -2090,6 +2219,7 @@ model CostLayer {
   unitCost           Decimal   @map("unit_cost") @db.Decimal(19, 4)
   sourceType         String    @map("source_type")
   sourceId           String?   @map("source_id")
+  lotNumber          String?   @map("lot_number")
   receivedAt         DateTime  @default(now()) @map("received_at")
   createdAt          DateTime  @default(now()) @map("created_at")
 

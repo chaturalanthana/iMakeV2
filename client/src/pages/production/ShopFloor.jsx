@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
+import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import { Factory, ArrowLeft } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -20,7 +21,6 @@ export default function ShopFloor() {
   const [orders, setOrders] = useState([]);
   const [order, setOrder] = useState(null);
   const [reasons, setReasons] = useState([]);
-  const [scan, setScan] = useState('');
   const [forms, setForms] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
 
@@ -72,13 +72,24 @@ export default function ShopFloor() {
     run();
   }, [id, loadList, loadOrder, showToast]);
 
-  const submitScan = async (event) => {
-    event.preventDefault();
+  const onScan = async (code) => {
     try {
-      const res = await axios.get('/api/work-orders/scan', { ...authConfig(), params: { code: scan.trim() } });
-      navigate(`/production/shop-floor/${res.data.id}`);
+      const hit = await lookupScan(code);
+      if (hit.kind === 'workOrder') {
+        if (!id || hit.workOrder.id !== id) navigate(`/production/shop-floor/${hit.workOrder.id}`);
+        return;
+      }
+      if (hit.kind === 'lot' && id && order) {
+        const operation = (order.operations || []).find((row) => row.status !== 'COMPLETE') || order.operations?.[0];
+        if (operation) {
+          setField(operation.id, 'lotNumber', hit.lotNumber);
+          showToast(`Lot ${hit.lotNumber}`, 'success');
+        }
+        return;
+      }
+      showToast('Scan a work order to open it, or a lot to fill the confirmation.', 'error');
     } catch (error) {
-      showToast(error.response?.data?.error || 'Work order not found', 'error');
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
     }
   };
 
@@ -139,18 +150,7 @@ export default function ShopFloor() {
     <AppLayout title="Shop Floor" icon={Factory}>
       {!id ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <form onSubmit={submitScan}>
-            <input
-              autoFocus
-              value={scan}
-              onChange={(event) => setScan(event.target.value)}
-              placeholder="Scan or type work order / job number"
-              inputMode="text"
-              autoCapitalize="characters"
-              autoComplete="off"
-              style={FIELD}
-            />
-          </form>
+          <ScanCapture onScan={onScan} placeholder="Scan or type a work order" />
           {orders.length === 0 && <div style={{ color: '#64748b', padding: '1rem 0' }}>No released work orders.</div>}
           {orders.map((row) => (
             <button
@@ -168,6 +168,7 @@ export default function ShopFloor() {
           <button onClick={() => navigate('/production/shop-floor')} style={{ ...BUTTON, background: 'transparent', color: '#475569', width: 'fit-content', minHeight: '40px' }}>
             <ArrowLeft size={16} /> Back
           </button>
+          <ScanCapture onScan={onScan} placeholder="Scan the next work order or a finished lot" />
           <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem' }}>
             <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{order.orderNumber}</div>
             <div style={{ color: '#475569' }}>{order.product?.code} — {order.product?.name}</div>
@@ -175,22 +176,36 @@ export default function ShopFloor() {
           </div>
           {(order.operations || []).map((operation) => {
             const form = forms[operation.id] || {};
+            const done = operation.status === 'COMPLETE';
             return (
               <div key={operation.id} style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                 <div>
                   <div style={{ fontWeight: 800 }}>{operation.sequence}. {operation.name}</div>
                   <div style={{ color: '#64748b', fontSize: '0.85rem' }}>{operation.workstation?.code || 'No workstation'} · {operation.status} · clock {parseFloat(operation.actualMachineMinutes || 0).toFixed(1)} min</div>
                 </div>
+                {done ? (
+                  <div style={{ fontWeight: 700, color: '#15803d' }}>Completed · good {parseFloat(operation.yieldQty || 0)}</div>
+                ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem' }}>
                   <button onClick={() => clock(operation.id, 'start')} style={{ ...BUTTON, background: '#15803d', color: '#fff' }}>Start</button>
                   <button onClick={() => clock(operation.id, 'pause')} style={{ ...BUTTON, background: '#b45309', color: '#fff' }}>Pause</button>
                   <button onClick={() => clock(operation.id, 'stop')} style={{ ...BUTTON, background: '#1e293b', color: '#fff' }}>Stop</button>
                 </div>
-                <input style={FIELD} placeholder="Operator" value={form.operatorName || ''} onChange={(event) => setField(operation.id, 'operatorName', event.target.value)} />
+                )}
+                {!done && <>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Operator
+                  <input style={{ ...FIELD, marginTop: 4 }} placeholder="Name" value={form.operatorName || ''} onChange={(event) => setField(operation.id, 'operatorName', event.target.value)} />
+                </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem' }}>
-                  <input style={FIELD} className={fieldErrors[operation.id]?.yieldQty ? 'field-invalid' : undefined} inputMode="decimal" placeholder="Good qty" value={form.yieldQty || ''} onChange={(event) => setField(operation.id, 'yieldQty', event.target.value)} />
-                  <input style={FIELD} inputMode="decimal" placeholder="Scrap qty" value={form.scrapQty || ''} onChange={(event) => setField(operation.id, 'scrapQty', event.target.value)} />
-                  <input style={FIELD} inputMode="decimal" placeholder="Rework qty" value={form.reworkQty || ''} onChange={(event) => setField(operation.id, 'reworkQty', event.target.value)} />
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Good qty
+                    <input style={{ ...FIELD, marginTop: 4 }} className={fieldErrors[operation.id]?.yieldQty ? 'field-invalid' : undefined} inputMode="decimal" placeholder="0" value={form.yieldQty || ''} onChange={(event) => setField(operation.id, 'yieldQty', event.target.value)} />
+                  </label>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Scrap qty
+                    <input style={{ ...FIELD, marginTop: 4 }} inputMode="decimal" placeholder="0" value={form.scrapQty || ''} onChange={(event) => setField(operation.id, 'scrapQty', event.target.value)} />
+                  </label>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Rework qty
+                    <input style={{ ...FIELD, marginTop: 4 }} inputMode="decimal" placeholder="0" value={form.reworkQty || ''} onChange={(event) => setField(operation.id, 'reworkQty', event.target.value)} />
+                  </label>
                 </div>
                 <select style={FIELD} className={fieldErrors[operation.id]?.scrapReasonId ? 'field-invalid' : undefined} value={form.scrapReasonId || ''} onChange={(event) => setField(operation.id, 'scrapReasonId', event.target.value)}>
                   <option value="">Scrap reason</option>
@@ -207,6 +222,7 @@ export default function ShopFloor() {
                 <input style={FIELD} placeholder="Finished lot" autoCapitalize="characters" autoComplete="off" value={form.lotNumber || ''} onChange={(event) => setField(operation.id, 'lotNumber', event.target.value)} />
                 <input style={FIELD} placeholder="Serial numbers" autoComplete="off" value={form.serialNumbers || ''} onChange={(event) => setField(operation.id, 'serialNumbers', event.target.value)} />
                 <button onClick={() => confirm(operation)} style={{ ...BUTTON, background: 'var(--accent)', color: '#fff' }}>Confirm</button>
+                </>}
               </div>
             );
           })}

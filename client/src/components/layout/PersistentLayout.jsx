@@ -1,13 +1,29 @@
-import React from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Outlet, Navigate, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import Sidebar from './Sidebar';
-import { LogOut, Bell, User, Search, HelpCircle, Info } from 'lucide-react';
+import { LogOut, Bell, Search, HelpCircle, Info } from 'lucide-react';
 import { useLayout } from '../../context/LayoutContext';
 
 export default function PersistentLayout() {
   const isAuthenticated = !!localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const { title, icon: Icon } = useLayout();
+  const navigate = useNavigate();
+  const [alertCount, setAlertCount] = useState(0);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    let stop = false;
+    const load = () => {
+      axios.get('/api/alerts', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then((res) => { if (!stop) setAlertCount(res.data.count || 0); })
+        .catch(() => { if (!stop) setAlertCount(0); });
+    };
+    load();
+    const timer = setInterval(load, 60000);
+    return () => { stop = true; clearInterval(timer); };
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -88,11 +104,13 @@ export default function PersistentLayout() {
             </button>
 
             {/* Badged Notification Bell */}
-            <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px', display: 'flex', alignItems: 'center', position: 'relative' }} title="Notifications">
+            <button type="button" onClick={() => navigate('/alerts')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px', display: 'flex', alignItems: 'center', position: 'relative' }} title="Alerts">
               <Bell size={20} />
-              <div style={{ position: 'absolute', top: '2px', right: '2px', width: '15px', height: '15px', borderRadius: '50%', backgroundColor: '#ef4444', color: '#ffffff', fontSize: '0.65rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                2
-              </div>
+              {alertCount > 0 && (
+                <div style={{ position: 'absolute', top: '0px', right: '0px', minWidth: '16px', height: '16px', padding: '0 3px', borderRadius: '8px', backgroundColor: '#ef4444', color: '#ffffff', fontSize: '0.65rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {alertCount > 99 ? '99+' : alertCount}
+                </div>
+              )}
             </button>
 
             {/* Profile Block */}

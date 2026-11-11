@@ -32,7 +32,11 @@ const mrpRoutes = require('./mrpRoutes');
 const workstationRoutes = require('./workstationRoutes');
 const machineRoutes = require('./machineRoutes');
 const uploadRoutes = require('./uploadRoutes');
-const { secureModule } = require('../middlewares/rbacMiddleware');
+const replenishmentRoutes = require('./replenishmentRoutes');
+const alertRoutes = require('./alertRoutes');
+const importRoutes = require('./importRoutes');
+const labelRoutes = require('./labelRoutes');
+const { secureModule, secureAny } = require('../middlewares/rbacMiddleware');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
 
 const router = express.Router();
@@ -71,6 +75,10 @@ router.use('/work-orders', ...secureModule('production'), workOrderRoutes);
 router.use('/workstations', ...secureModule('production'), workstationRoutes);
 router.use('/machines', ...secureModule('production'), machineRoutes);
 router.use('/mrp', ...secureModule('production'), mrpRoutes);
+router.use('/replenishment', ...secureAny(['production', 'procurement']), replenishmentRoutes);
+router.use('/alerts', ...secureAny(['sales', 'procurement', 'finance', 'hr', 'warehouse', 'production']), alertRoutes);
+router.use('/imports', ...secureAny(['products', 'sales', 'procurement', 'production', 'warehouse', 'finance']), importRoutes);
+router.use('/labels', ...secureAny(['products', 'warehouse', 'production', 'sales', 'procurement']), labelRoutes);
 router.use('/uploads', ...secureModule('production'), uploadRoutes);
 router.use('/costing', ...secureModule('costing'), costingRoutes);
 

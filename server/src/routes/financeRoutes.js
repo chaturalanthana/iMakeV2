@@ -1,5 +1,6 @@
 const express = require('express');
 const financeController = require('../controllers/financeController');
+const complianceController = require('../controllers/complianceController');
 const currencyRoutes = require('./currencyRoutes');
 const taxGroupRoutes = require('./taxGroupRoutes');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
@@ -26,6 +27,7 @@ router.delete('/accounts/:id', financeController.deleteAccount);
 // General Ledger Transaction Lines
 router.get('/ledger', financeController.getGeneralLedgerLines);
 router.get('/trial-balance', financeController.getTrialBalance);
+router.get('/tax-return', complianceController.taxReturn);
 
 // Journal Entries
 router.get('/journal-entries', financeController.getJournalEntries);
@@ -38,6 +40,7 @@ router.post('/payment-receipts/:id/cancel', financeController.cancelPaymentRecei
 
 // Payment Vouchers
 router.get('/payment-vouchers', financeController.getPaymentVouchers);
+router.get('/payment-vouchers/:id/wht-certificate', complianceController.whtCertificate);
 router.post('/payment-vouchers', validateBody(schemas.supplierPayment), financeController.createPaymentVoucher);
 router.post('/payment-vouchers/:id/cancel', financeController.cancelPaymentVoucher);
 
