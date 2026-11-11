@@ -6,7 +6,7 @@ function listSpec(query, { sortFields = [], defaultSort = 'createdAt', defaultDi
   const sort = sortFields.includes(query.sort) ? query.sort : defaultSort;
   const dir = query.dir === 'asc' ? 'asc' : (query.dir === 'desc' ? 'desc' : defaultDir);
   const q = String(query.q || '').trim();
-  const paged = query.page !== undefined || query.pageSize !== undefined || query.sort !== undefined || q.length > 0;
+  const paged = query.page !== undefined || query.pageSize !== undefined;
   return {
     page,
     pageSize,

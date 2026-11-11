@@ -5,22 +5,30 @@ const { assertPeriodOpen } = require('./periodService');
 
 const DOCUMENT_TYPES = [
   { type: 'PR', label: 'Purchase requisition', roleName: 'Procurement', thresholds: [0] },
+  { type: 'CAPEX_PR', label: 'Capex purchase requisition', roleName: 'Finance', thresholds: [0] },
   { type: 'PO', label: 'Purchase order', roleName: 'Procurement', thresholds: [50000, 250000] },
   { type: 'SUPPLIER_PAYMENT', label: 'Supplier payment', roleName: 'Finance', thresholds: [10000, 100000] },
   { type: 'JOURNAL', label: 'Journal', roleName: 'Finance', thresholds: [0] },
+  { type: 'PARTY_NOTE', label: 'Credit or debit note', roleName: 'Finance', thresholds: [0] },
   { type: 'STOCK_ADJUSTMENT', label: 'Stock adjustment', roleName: 'Finance', thresholds: [0] },
+  { type: 'CYCLE_COUNT', label: 'Cycle count variance', roleName: 'Finance', thresholds: [0] },
+  { type: 'MATERIAL_REQUEST', label: 'Material request', roleName: 'Procurement', thresholds: [0] },
   { type: 'PRICE_OVERRIDE', label: 'Price override', roleName: 'Sales', thresholds: [0] },
   { type: 'SALES_ORDER_CREDIT', label: 'Sales order credit release', roleName: 'Finance', thresholds: [0] }
 ];
 
 const LINKS = {
-  PR: (number) => `/procurement/purchase-requisitions/${encodeURIComponent(number)}`,
-  PO: (number) => `/procurement/purchase-orders/${encodeURIComponent(number)}`,
-  SUPPLIER_PAYMENT: (number) => `/finance/vouchers/${encodeURIComponent(number)}`,
-  JOURNAL: (number) => `/finance/journals/${encodeURIComponent(number)}`,
-  STOCK_ADJUSTMENT: (number) => `/warehouse/adjustments/${encodeURIComponent(number)}`,
-  PRICE_OVERRIDE: (number) => `/sales/orders/${encodeURIComponent(number)}`,
-  SALES_ORDER_CREDIT: (number) => `/sales/orders/${encodeURIComponent(number)}`
+  PR: (row) => `/procurement/purchase-requisitions/${encodeURIComponent(row.documentNumber)}`,
+  CAPEX_PR: (row) => `/procurement/purchase-requisitions/${encodeURIComponent(row.documentNumber)}`,
+  PO: (row) => `/procurement/purchase-orders/${encodeURIComponent(row.documentNumber)}`,
+  SUPPLIER_PAYMENT: (row) => `/finance/vouchers/${encodeURIComponent(row.documentNumber)}`,
+  JOURNAL: (row) => `/finance/journals/${encodeURIComponent(row.documentNumber)}`,
+  PARTY_NOTE: (row) => `/finance/notes`,
+  STOCK_ADJUSTMENT: (row) => `/warehouse/adjustments/${encodeURIComponent(row.documentNumber)}`,
+  CYCLE_COUNT: (row) => `/warehouse/cycle-counts/${row.documentId}`,
+  MATERIAL_REQUEST: (row) => `/warehouse/material-requests/${row.documentId}`,
+  PRICE_OVERRIDE: (row) => `/sales/orders/${encodeURIComponent(row.documentNumber)}`,
+  SALES_ORDER_CREDIT: (row) => `/sales/orders/${encodeURIComponent(row.documentNumber)}`
 };
 
 function levelsForAmount(rule, amount) {
@@ -71,7 +79,7 @@ function present(request) {
   const linkFor = LINKS[request.documentType];
   return {
     ...request,
-    link: request.documentNumber && linkFor ? linkFor(request.documentNumber) : null
+    link: linkFor ? linkFor(request) : null
   };
 }
 
@@ -162,7 +170,7 @@ async function actorMatches(db, level, userId) {
 async function setDocumentStatus(db, request, status) {
   const id = request.documentId;
   const tenantId = request.tenantId;
-  if (request.documentType === 'PR') {
+  if (request.documentType === 'PR' || request.documentType === 'CAPEX_PR') {
     await db.purchaseRequisition.updateMany({ where: { id, tenantId }, data: { status } });
   } else if (request.documentType === 'PO') {
     await db.purchaseOrder.updateMany({ where: { id, tenantId }, data: { status } });
@@ -177,8 +185,15 @@ async function setDocumentStatus(db, request, status) {
     await db.stockAdjustment.updateMany({ where: { id, tenantId }, data: { status } });
   } else if (request.documentType === 'SUPPLIER_PAYMENT') {
     await db.paymentVoucher.updateMany({ where: { id, tenantId }, data: { status } });
-  } else if (request.documentType === 'SALES_ORDER_CREDIT') {
-    await db.salesOrder.updateMany({ where: { id, tenantId }, data: { status } });
+  } else if (request.documentType === 'PARTY_NOTE') {
+    await db.partyNote.updateMany({ where: { id, tenantId }, data: { status } });
+  } else if (request.documentType === 'CYCLE_COUNT') {
+    await db.cycleCount.updateMany({ where: { id, tenantId }, data: { status, financeStatus: status } });
+  } else if (request.documentType === 'MATERIAL_REQUEST') {
+    await db.materialRequest.updateMany({
+      where: { id, tenantId },
+      data: { status, approvalStatus: status === 'APPROVED' ? 'APPROVED' : status }
+    });
   }
 }
 
@@ -267,8 +282,29 @@ async function releaseDocument(db, request, userId) {
     });
     return;
   }
-  const released = request.documentType === 'PR' || request.documentType === 'PO' ? 'APPROVED' : 'APPROVED';
-  await setDocumentStatus(db, request, released);
+  if (request.documentType === 'PARTY_NOTE') {
+    const { postHeldPartyNote } = require('./phase2/treasury');
+    await postHeldPartyNote(db, { tenantId: request.tenantId, id: request.documentId, createdBy: userId });
+    return;
+  }
+  if (request.documentType === 'CYCLE_COUNT') {
+    const { postApprovedCycleCount } = require('./inventory/ops');
+    await postApprovedCycleCount(db, { tenantId: request.tenantId, id: request.documentId, createdBy: userId });
+    return;
+  }
+  if (request.documentType === 'MATERIAL_REQUEST') {
+    const { releaseMaterialRequest } = require('./inventory/ops');
+    await releaseMaterialRequest(db, { tenantId: request.tenantId, id: request.documentId, userId });
+    return;
+  }
+  await setDocumentStatus(db, request, 'APPROVED');
+}
+
+async function cancelOpenRequests(db, { tenantId, documentId }) {
+  await db.approvalRequest.updateMany({
+    where: { tenantId, documentId, status: 'PENDING' },
+    data: { status: 'REJECTED' }
+  });
 }
 
 async function decide(db, { tenantId, requestId, userId, action, reason }) {
@@ -350,5 +386,6 @@ module.exports = {
   ensureDefaultRules,
   submitForApproval,
   decide,
-  present
+  present,
+  cancelOpenRequests
 };

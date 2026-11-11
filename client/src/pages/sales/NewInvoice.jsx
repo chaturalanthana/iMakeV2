@@ -525,6 +525,7 @@ export default function NewInvoice() {
             </div>
           )}
 
+          {activeTab !== 'history' && <>
           {/* Product Section Header */}
           {!isCompleted && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '2.5rem' }}>
@@ -547,6 +548,7 @@ export default function NewInvoice() {
               lockLines={!!baseOrderId || !!baseDeliveryId}
             />
           </div>
+          </>}
 
           <OrderPrintModal 
             isOpen={isPrintModalOpen} 

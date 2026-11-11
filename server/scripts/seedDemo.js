@@ -17,6 +17,9 @@ const { postReceiptDocument } = require('../src/services/documentPosting');
 const { syncRoutingForBom } = require('../src/services/production/routing');
 const { ensureReasonCodes } = require('../src/services/production/workOrders');
 const { ensureProductTypes } = require('../src/services/productTypes');
+const { createContract, createRfq, addQuotation, selectQuotation } = require('../src/services/phase2/procurement');
+const { openPeriod } = require('../src/services/phase2/close');
+const { openPettyCash, issueIou } = require('../src/services/phase2/treasury');
 
 const SLUG = 'ceylon-woodworks';
 const EMAIL = 'nimal@ceylonwood.lk';
@@ -36,6 +39,56 @@ function refuseUnsafeDatabase() {
 
 async function wipe(tenantId) {
   const where = { tenantId };
+  await prisma.depreciationLine.deleteMany({ where });
+  await prisma.assetEvent.deleteMany({ where });
+  await prisma.depreciationRun.deleteMany({ where });
+  await prisma.fixedAsset.deleteMany({ where });
+  await prisma.fixedAssetClass.deleteMany({ where });
+  await prisma.landedCostAllocation.deleteMany({ where });
+  await prisma.landedCostCharge.deleteMany({ where });
+  await prisma.landedCost.deleteMany({ where });
+  await prisma.iouSettlement.deleteMany({ where });
+  await prisma.iouAdvance.deleteMany({ where });
+  await prisma.pettyCashFund.deleteMany({ where });
+  await prisma.cheque.deleteMany({ where });
+  await prisma.collectionActivity.deleteMany({ where });
+  await prisma.collectionCase.deleteMany({ where });
+  await prisma.partyNote.deleteMany({ where });
+  await prisma.quotationSelection.deleteMany({ where });
+  await prisma.supplierQuotationLine.deleteMany({ where });
+  await prisma.supplierQuotation.deleteMany({ where });
+  await prisma.rfqInvitation.deleteMany({ where });
+  await prisma.rfqLine.deleteMany({ where });
+  await prisma.requestForQuotation.deleteMany({ where });
+  await prisma.priceException.deleteMany({ where });
+  await prisma.contractPrice.deleteMany({ where });
+  await prisma.approvedSupplierItem.deleteMany({ where });
+  await prisma.tradeProfile.deleteMany({ where });
+  await prisma.purchaseClassification.deleteMany({ where });
+  await prisma.documentDimension.deleteMany({ where });
+  await prisma.itemMeasure.deleteMany({ where });
+  await prisma.allocationRuleLine.deleteMany({ where });
+  await prisma.allocationRule.deleteMany({ where });
+  await prisma.budget.deleteMany({ where });
+  await prisma.capitalProject.deleteMany({ where });
+  await prisma.orgCenter.deleteMany({ where });
+  await prisma.financeSetting.deleteMany({ where });
+  await prisma.periodCloseStep.deleteMany({ where });
+  await prisma.periodClose.deleteMany({ where });
+  await prisma.recurringJournal.deleteMany({ where });
+  await prisma.qaRetest.deleteMany({ where });
+  await prisma.cycleCountLine.deleteMany({ where });
+  await prisma.cycleCount.deleteMany({ where });
+  await prisma.stockReturnItem.deleteMany({ where });
+  await prisma.stockReturn.deleteMany({ where });
+  await prisma.inventoryTransferLeg.deleteMany({ where });
+  await prisma.inventoryTransferItem.deleteMany({ where });
+  await prisma.inventoryTransfer.deleteMany({ where });
+  await prisma.pickListLine.deleteMany({ where });
+  await prisma.pickList.deleteMany({ where });
+  await prisma.materialRequestItem.deleteMany({ where });
+  await prisma.materialRequest.deleteMany({ where });
+  await prisma.stockAllocation.deleteMany({ where });
   await prisma.replenishmentLine.deleteMany({ where });
   await prisma.replenishmentRun.deleteMany({ where });
   await prisma.itemWarehousePolicy.deleteMany({ where });
@@ -83,6 +136,8 @@ async function wipe(tenantId) {
   await prisma.productionSetting.deleteMany({ where });
   await prisma.costLayer.deleteMany({ where });
   await prisma.stockMovement.deleteMany({ where });
+  await prisma.stockBatch.deleteMany({ where });
+  await prisma.pallet.deleteMany({ where });
   await prisma.supplierPaymentAllocation.deleteMany({ where });
   await prisma.supplierInvoiceItem.deleteMany({ where: { supplierInvoice: where } });
   await prisma.supplierInvoice.deleteMany({ where });
@@ -119,12 +174,17 @@ async function wipe(tenantId) {
   await prisma.taxSlab.deleteMany({ where });
   await prisma.taxGroup.deleteMany({ where });
   await prisma.account.deleteMany({ where });
+  await prisma.itemSupplier.deleteMany({ where });
   await prisma.product.deleteMany({ where });
+  await prisma.bin.deleteMany({ where });
   await prisma.workstation.deleteMany({ where });
   await prisma.machine.deleteMany({ where });
   await prisma.customer.deleteMany({ where });
   await prisma.supplier.deleteMany({ where });
   await prisma.warehouse.deleteMany({ where });
+  await prisma.branch.deleteMany({ where });
+  await prisma.uomTemplateLine.deleteMany({ where });
+  await prisma.uomTemplate.deleteMany({ where });
   await prisma.unitOfMeasure.deleteMany({ where });
   await prisma.productType.deleteMany({ where });
   await prisma.currency.deleteMany({ where });
@@ -257,7 +317,10 @@ async function main() {
       standardCost: data.costPrice
     }
   });
-  const teak = await material({ code: 'TEAK', name: 'Teak plank', costPrice: 4500, supplierId: timber.id, reorderLevel: 15 });
+  const teak = await material({
+    code: 'TEAK', name: 'Teak plank', costPrice: 4500, supplierId: timber.id, reorderLevel: 15,
+    batchTracked: true, expiryTracked: false, pickRule: 'FIFO', leadTimeDays: 7, dailyDemand: 1, safetyStock: 8
+  });
   const screw = await material({ code: 'SCREW', name: 'Wood screw', costPrice: 12, supplierId: hardware.id, reorderLevel: 200 });
   const varnish = await material({ code: 'VARN', name: 'Varnish, 1L', costPrice: 1800, supplierId: hardware.id, reorderLevel: 5 });
   const fabric = await material({ code: 'FAB', name: 'Upholstery fabric', costPrice: 950, supplierId: hardware.id, reorderLevel: 8 });
@@ -349,6 +412,46 @@ async function main() {
     });
   }
 
+  const bins = {};
+  for (const bin of [
+    { code: 'BIN-A1', name: 'Bulk rack', binType: 'STORAGE' },
+    { code: 'QA-HOLD', name: 'Quarantine', binType: 'QUARANTINE' },
+    { code: 'DMG-01', name: 'Damaged', binType: 'DAMAGED' }
+  ]) {
+    bins[bin.code] = await prisma.bin.create({ data: { tenantId, warehouseId: warehouse.id, ...bin } });
+  }
+  const pallet = await prisma.pallet.create({
+    data: { tenantId, warehouseId: warehouse.id, code: 'PLT-TEAK-1', status: 'ACTIVE' }
+  });
+  const teakBatch = await prisma.stockBatch.create({
+    data: {
+      tenantId, productId: teak.id, lotNumber: 'TEAK-OPEN', status: 'UNRESTRICTED',
+      supplierId: timber.id, receiptDate: new Date()
+    }
+  });
+  const screwBatch = await prisma.stockBatch.create({
+    data: {
+      tenantId, productId: screw.id, lotNumber: 'SCREW-OPEN', status: 'UNRESTRICTED',
+      supplierId: hardware.id, receiptDate: new Date()
+    }
+  });
+  await prisma.costLayer.updateMany({
+    where: { tenantId, lotNumber: 'TEAK-OPEN' },
+    data: { batchId: teakBatch.id, binId: bins['BIN-A1'].id, palletId: pallet.id, stockStatus: 'UNRESTRICTED' }
+  });
+  await prisma.costLayer.updateMany({
+    where: { tenantId, lotNumber: 'SCREW-OPEN' },
+    data: { batchId: screwBatch.id, binId: bins['BIN-A1'].id, stockStatus: 'UNRESTRICTED' }
+  });
+  await prisma.stockMovement.updateMany({
+    where: { tenantId, lotNumber: 'TEAK-OPEN' },
+    data: { batchId: teakBatch.id, binId: bins['BIN-A1'].id, palletId: pallet.id, stockStatus: 'UNRESTRICTED' }
+  });
+  await prisma.stockMovement.updateMany({
+    where: { tenantId, lotNumber: 'SCREW-OPEN' },
+    data: { batchId: screwBatch.id, binId: bins['BIN-A1'].id, stockStatus: 'UNRESTRICTED' }
+  });
+
   await prisma.employee.create({
     data: {
       tenantId, empCode: 'E-01', firstName: 'Kumari', lastName: 'Silva',
@@ -361,6 +464,70 @@ async function main() {
       department: 'Finishing', designation: 'Finisher', dateOfJoining: new Date('2021-08-15'), basicSalary: 78000
     }
   });
+
+  const hotel = await prisma.customer.findFirst({ where: { tenantId, code: 'CUS-HOTEL' } });
+  const centers = {};
+  for (const [code, name, admin] of [
+    ['SOYA', 'Soya Manufacturing', false],
+    ['PASTA', 'Pasta Manufacturing', false],
+    ['SAUCE', 'Sauce Manufacturing', false],
+    ['TURKEY', 'Turkey Import', false],
+    ['CONTRACT', 'Contract Manufacturing', false],
+    ['ADMIN', 'Administration', true]
+  ]) {
+    centers[code] = await prisma.orgCenter.create({
+      data: { tenantId, code, name, kind: 'BOTH', isAdministration: admin }
+    });
+  }
+  await prisma.financeSetting.create({ data: { tenantId } });
+  await prisma.currency.create({
+    data: { tenantId, code: 'USD', name: 'US Dollar', symbol: '$', exchangeRate: 305, isBase: false }
+  });
+  const adminExpense = await prisma.account.findFirst({ where: { tenantId, code: '5600' } });
+  await prisma.allocationRule.create({
+    data: {
+      tenantId,
+      name: 'Administration to operations',
+      sourceAccountId: adminExpense.id,
+      sourceCenterId: centers.ADMIN.id,
+      lines: {
+        create: ['SOYA', 'PASTA', 'SAUCE', 'TURKEY', 'CONTRACT'].map((code) => ({
+          tenantId, targetCostCenterId: centers[code].id, percent: 20
+        }))
+      }
+    }
+  });
+  await prisma.capitalProject.create({
+    data: { tenantId, code: 'PACK-1', name: 'Packing line', budgetAmount: 2500000, costCenterId: centers.SOYA.id }
+  });
+  await prisma.budget.create({
+    data: { tenantId, kind: 'OPEX', year: new Date().getFullYear(), month: 0, accountId: adminExpense.id, costCenterId: centers.ADMIN.id, amount: 480000 }
+  });
+  await createContract(prisma, {
+    tenantId, supplierId: timber.id, productId: teak.id, unitPrice: 4500, currencyCode: 'LKR', validFrom: '2026-01-01', tolerancePercent: 2
+  });
+  const rfq = await createRfq(prisma, {
+    tenantId, date: new Date(), supplierIds: [timber.id, hardware.id],
+    lines: [{ productId: teak.id, quantity: 20 }]
+  });
+  const low = await addQuotation(prisma, {
+    tenantId, rfqId: rfq.id, supplierId: timber.id, date: new Date(), currencyCode: 'LKR', exchangeRate: 1, leadTimeDays: 7,
+    lines: [{ productId: teak.id, quantity: 20, unitPrice: 4500 }]
+  });
+  await addQuotation(prisma, {
+    tenantId, rfqId: rfq.id, supplierId: hardware.id, date: new Date(), currencyCode: 'LKR', exchangeRate: 1, leadTimeDays: 10,
+    lines: [{ productId: teak.id, quantity: 20, unitPrice: 4900 }]
+  });
+  await selectQuotation(prisma, { tenantId, rfqId: rfq.id, quotationId: low.id, reason: 'Lower price and the agreed lead time' });
+  await prisma.collectionCase.create({
+    data: { tenantId, customerId: hotel.id, disputeStatus: 'NONE', promisedDate: new Date('2026-11-20'), notes: 'Will pay after the Galle function', collector: 'Nimal' }
+  });
+  await prisma.fixedAssetClass.create({
+    data: { tenantId, code: 'PLANT', name: 'Plant and machinery', accountingMethod: 'SL', accountingLifeMonths: 60, taxMethod: 'RB', taxRate: 20 }
+  });
+  await openPeriod(prisma, { tenantId, year: 2026, month: 11 });
+  const fund = await openPettyCash(prisma, { tenantId, name: 'Malabe tin', amount: 15000, date: new Date(), custodian: 'Nimal Perera' });
+  await issueIou(prisma, { tenantId, date: new Date(), employeeName: 'Kumari Silva', department: 'Assembly', amount: 2500, fundId: fund.id });
 
   console.log('Demo tenant ready.');
   console.log('  Company   Ceylon Woodworks (Pvt) Ltd');

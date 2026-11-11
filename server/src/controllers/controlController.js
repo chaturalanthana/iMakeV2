@@ -2,7 +2,7 @@ const prisma = require('../lib/prisma');
 const { sendError } = require('../services/errors');
 const { DocumentError } = require('../services/errors');
 const { respondList } = require('../services/listQuery');
-const { ensureYear } = require('../services/periodService');
+const { ensureYear, syncChecklistFromFiscal } = require('../services/periodService');
 const { writeAudit } = require('../services/auditService');
 const {
   DOCUMENT_TYPES,
@@ -155,9 +155,13 @@ const updatePeriod = async (req, res) => {
     const before = await prisma.fiscalPeriod.findUnique({
       where: { tenantId_year_month: { tenantId: req.tenantId, year, month } }
     });
-    const saved = await prisma.fiscalPeriod.update({
-      where: { tenantId_year_month: { tenantId: req.tenantId, year, month } },
-      data: { status, updatedBy: req.user.userId }
+    const saved = await prisma.$transaction(async (tx) => {
+      const period = await tx.fiscalPeriod.update({
+        where: { tenantId_year_month: { tenantId: req.tenantId, year, month } },
+        data: { status, updatedBy: req.user.userId }
+      });
+      await syncChecklistFromFiscal(tx, { tenantId: req.tenantId, year, month, status });
+      return period;
     });
     await writeAudit(prisma, {
       tenantId: req.tenantId,

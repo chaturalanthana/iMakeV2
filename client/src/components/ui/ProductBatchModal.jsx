@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Calculator, CircleDot, Ruler, SlidersHorizontal, Tags, Wallet } from 'lucide-react';
+import { Calculator, CircleDot, Ruler, SlidersHorizontal, Tags, Wallet, Package } from 'lucide-react';
 import Modal from './Modal';
 import LiveSearchDropdown from './LiveSearchDropdown';
 import { useToast } from '../../context/ToastContext';
@@ -10,7 +10,8 @@ const TABS = [
   { id: 'units', label: 'Units', icon: Ruler },
   { id: 'costing', label: 'Costing', icon: Calculator },
   { id: 'finance', label: 'Finance', icon: Wallet },
-  { id: 'status', label: 'Status', icon: CircleDot }
+  { id: 'status', label: 'Status', icon: CircleDot },
+  { id: 'operations', label: 'Operations', icon: Package }
 ];
 
 const COSTING_OPTIONS = [
@@ -42,8 +43,17 @@ const FIELDS = [
   { key: 'cogsAccountId', label: 'COGS Account', kind: 'select', group: 'finance', options: 'expenseAccounts', placeholder: 'COGS account' },
   { key: 'activeStatus', label: 'Status', kind: 'select', group: 'status', options: 'status', placeholder: 'Status' },
   { key: 'bomApplicable', label: 'BOM', kind: 'boolean', group: 'status' },
-  { key: 'isLocked', label: 'Locked', kind: 'boolean', group: 'status' }
+  { key: 'isLocked', label: 'Locked', kind: 'boolean', group: 'status' },
+  { key: 'description', label: 'Description', kind: 'text', group: 'operations' },
+  { key: 'sku', label: 'SKU', kind: 'text', group: 'operations' },
+  { key: 'barcode', label: 'Barcode', kind: 'text', group: 'operations' },
+  { key: 'variant', label: 'Variant', kind: 'text', group: 'operations' },
+  { key: 'sizeLabel', label: 'Size / weight', kind: 'text', group: 'operations' },
+  { key: 'weight', label: 'Weight', kind: 'number', group: 'operations', min: 0 },
+  { key: 'volume', label: 'Volume', kind: 'number', group: 'operations', min: 0 }
 ];
+
+const SENSITIVE = new Set(['taxGroup', 'safetyStock', 'reorderLevel', 'costingMethod']);
 
 function readShared(products, key) {
   const values = products.map((product) => {
@@ -77,6 +87,7 @@ export default function ProductBatchModal({ isOpen, products = [], attributes = 
   const [mixed, setMixed] = useState({});
   const [invalid, setInvalid] = useState({});
   const [saving, setSaving] = useState(false);
+  const [authorizedUpdate, setAuthorizedUpdate] = useState(false);
 
   const selectionKey = products.map((product) => product.id).join('|');
 
@@ -154,6 +165,12 @@ export default function ProductBatchModal({ isOpen, products = [], attributes = 
       changes[field.key] = value;
     });
 
+    const sensitive = Object.keys(changes).filter((key) => SENSITIVE.has(key));
+    if (sensitive.length && !authorizedUpdate) {
+      showToast('Tax, reorder and costing changes need the authorized update confirmation.', 'error');
+      return;
+    }
+
     if (Object.keys(changes).length === 0 && Object.keys(nextInvalid).length === 0) {
       showToast('Change a parameter to update.', 'error');
       return;
@@ -177,7 +194,8 @@ export default function ProductBatchModal({ isOpen, products = [], attributes = 
       const token = localStorage.getItem('token');
       const response = await axios.post('/api/products/batch', {
         ids: products.map((product) => product.id),
-        changes
+        changes,
+        authorizedUpdate
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -283,6 +301,15 @@ export default function ProductBatchModal({ isOpen, products = [], attributes = 
                   invalid={!!invalid[field.key]}
                 />
               )}
+              {field.kind === 'text' && (
+                <input
+                  type="text"
+                  value={values[field.key] || ''}
+                  placeholder={mixed[field.key] ? 'Mixed' : ''}
+                  onChange={(event) => setField(field.key, event.target.value)}
+                  style={inputStyle}
+                />
+              )}
               {field.kind === 'number' && (
                 <input
                   type="number"
@@ -330,6 +357,12 @@ export default function ProductBatchModal({ isOpen, products = [], attributes = 
           </div>
         </div>
 
+        {(tab === 'finance' || tab === 'costing') && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', fontWeight: 600, marginTop: '0.5rem' }}>
+            <input type="checkbox" checked={authorizedUpdate} onChange={(event) => setAuthorizedUpdate(event.target.checked)} />
+            Authorized update for tax, reorder and costing
+          </label>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
           <button
             type="button"

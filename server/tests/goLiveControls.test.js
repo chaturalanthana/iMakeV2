@@ -69,6 +69,16 @@ describe('phase 0 go-live controls', () => {
     await prisma.journalEntry.deleteMany({ where }).catch(() => {});
     await prisma.costLayer.deleteMany({ where }).catch(() => {});
     await prisma.stockMovement.deleteMany({ where }).catch(() => {});
+    await prisma.cycleCountLine.deleteMany({ where }).catch(() => {});
+    await prisma.cycleCount.deleteMany({ where }).catch(() => {});
+    await prisma.partyNote.deleteMany({ where }).catch(() => {});
+    await prisma.periodCloseStep.deleteMany({ where }).catch(() => {});
+    await prisma.periodClose.deleteMany({ where }).catch(() => {});
+    await prisma.purchaseClassification.deleteMany({ where }).catch(() => {});
+    await prisma.purchaseRequisitionItem.deleteMany({ where: { purchaseRequisition: where } }).catch(() => {});
+    await prisma.purchaseRequisition.deleteMany({ where }).catch(() => {});
+    await prisma.capitalProject.deleteMany({ where }).catch(() => {});
+    await prisma.financeSetting.deleteMany({ where }).catch(() => {});
     await prisma.auditLog.deleteMany({ where }).catch(() => {});
     await prisma.approvalAction.deleteMany({ where }).catch(() => {});
     await prisma.approvalRequest.deleteMany({ where }).catch(() => {});
@@ -262,5 +272,96 @@ describe('phase 0 go-live controls', () => {
     expect(file.status).toBe(200);
     const bytes = Buffer.isBuffer(file.body) ? file.body : Buffer.from(file.body);
     expect(bytes.slice(0, 2).toString()).toBe('PK');
+  });
+
+  test('phase 2 notes, capex requisitions and cycle counts wait for approval, and the close checklist locks the period', async () => {
+    const finance = await prisma.role.findFirst({ where: { tenantId: tenant.id, name: 'Finance' } });
+    await prisma.role.update({
+      where: { id: finance.id },
+      data: { permissions: { finance: ['read', 'write'], procurement: ['read', 'write'], sales: ['read', 'write'], warehouse: ['read', 'write'], products: ['read', 'write'], financeClose: true } }
+    });
+    for (const documentType of ['PARTY_NOTE', 'CAPEX_PR', 'CYCLE_COUNT']) {
+      await prisma.approvalRule.create({
+        data: {
+          tenantId: tenant.id,
+          documentType,
+          enabled: true,
+          allowSelfApprove: false,
+          levels: { create: [{ tenantId: tenant.id, sequence: 1, threshold: 0, approverRoleId: finance.id }] }
+        }
+      });
+    }
+
+    const note = await request(app).post('/api/phase2/notes').set(auth(makerToken)).send({
+      partyType: 'CUSTOMER', partyId: customer.id, kind: 'CREDIT', date: today, reasonCode: 'RETURN', subtotal: 25
+    });
+    expect(note.status).toBe(201);
+    expect(note.body.status).toBe('PENDING_APPROVAL');
+    const held = await prisma.journalEntry.count({ where: { tenantId: tenant.id, referenceType: 'PARTY_NOTE', referenceId: note.body.id } });
+    expect(held).toBe(0);
+    const noteRequest = await prisma.approvalRequest.findFirst({ where: { documentId: note.body.id, status: 'PENDING' } });
+    const noteApproved = await request(app).post(`/api/approvals/${noteRequest.id}/decide`).set(auth(approverToken)).send({ action: 'APPROVE' });
+    expect(noteApproved.status).toBe(200);
+    const postedNote = await prisma.partyNote.findUnique({ where: { id: note.body.id } });
+    expect(postedNote.status).toBe('POSTED');
+    const removed = await request(app).delete(`/api/phase2/notes/${note.body.id}`).set(auth(makerToken));
+    expect(removed.status).not.toBe(200);
+    const cancelled = await request(app).post(`/api/phase2/notes/${note.body.id}/cancel`).set(auth(makerToken)).send({ reason: 'Raised in error' });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.status).toBe('CANCELLED');
+
+    const project = await request(app).post('/api/phase2/projects').set(auth(makerToken)).send({
+      code: 'CW-1', name: 'New press', budgetAmount: 100000
+    });
+    expect(project.status).toBe(201);
+    const pr = await request(app).post('/api/procurement/purchase-requisitions').set(auth(makerToken)).send({
+      date: today,
+      spendClass: 'CAPEX',
+      capitalProjectId: project.body.id,
+      items: [{ productId: product.id, quantity: 1, unitPrice: 1000, total: 1000 }]
+    });
+    expect(pr.status).toBe(201);
+    expect(pr.body.status).toBe('PENDING_APPROVAL');
+    const prDelete = await request(app).delete(`/api/procurement/purchase-requisitions/${pr.body.id}`).set(auth(makerToken));
+    expect(prDelete.status).toBe(400);
+    const prCancel = await request(app).post(`/api/procurement/purchase-requisitions/${pr.body.id}/cancel`).set(auth(makerToken)).send({ reason: 'Project deferred' });
+    expect(prCancel.status).toBe(200);
+
+    const count = await request(app).post('/api/inventory/cycle-counts').set(auth(makerToken)).send({
+      date: today, warehouseId: warehouse.id, kind: 'CYCLE',
+      lines: [{ productId: product.id, countQty: 2, reason: 'Found stock' }]
+    });
+    expect(count.status).toBe(201);
+    const early = await request(app).post(`/api/inventory/cycle-counts/${count.body.id}/post`).set(auth(makerToken)).send({});
+    expect(early.status).toBe(200);
+    expect(early.body.status).toBe('PENDING_APPROVAL');
+    const countRequest = await prisma.approvalRequest.findFirst({ where: { documentId: count.body.id, documentType: 'CYCLE_COUNT', status: 'PENDING' } });
+    const countApproved = await request(app).post(`/api/approvals/${countRequest.id}/decide`).set(auth(approverToken)).send({ action: 'APPROVE' });
+    expect(countApproved.status).toBe(200);
+    const postedCount = await prisma.cycleCount.findUnique({ where: { id: count.body.id } });
+    expect(postedCount.status).toBe('POSTED');
+
+    const opened = await request(app).post('/api/phase2/period-closes').set(auth(makerToken)).send({ year: 2026, month: 6 });
+    expect(opened.status).toBe(201);
+    for (const code of ['INVENTORY', 'PRODUCTION', 'AP', 'AR', 'CASH_BANK', 'FIXED_ASSETS', 'GL']) {
+      const step = await request(app).post(`/api/phase2/period-closes/${opened.body.id}/steps/${code}`).set(auth(makerToken)).send({ status: 'DONE' });
+      expect(step.status).toBe(200);
+    }
+    const soft = await prisma.fiscalPeriod.findUnique({ where: { tenantId_year_month: { tenantId: tenant.id, year: 2026, month: 6 } } });
+    expect(soft.status).toBe('SOFT_CLOSED');
+    const closed = await request(app).post(`/api/phase2/period-closes/${opened.body.id}/closing-entries`).set(auth(approverToken)).send({});
+    expect(closed.status).toBe(200);
+    const hard = await prisma.fiscalPeriod.findUnique({ where: { tenantId_year_month: { tenantId: tenant.id, year: 2026, month: 6 } } });
+    expect(hard.status).toBe('CLOSED');
+    const blocked = await request(app).post('/api/finance/journal-entries').set(auth(approverToken)).send({
+      entryNumber: `JE-LOCK-${Date.now()}`,
+      date: '2026-06-15',
+      description: 'After close',
+      lines: [
+        { accountId: cash.id, debit: 1, credit: 0 },
+        { accountId: equity.id, debit: 0, credit: 1 }
+      ]
+    });
+    expect(blocked.status).toBe(400);
   });
 });

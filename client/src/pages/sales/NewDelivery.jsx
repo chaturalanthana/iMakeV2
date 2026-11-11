@@ -518,6 +518,7 @@ export default function NewDelivery() {
             </div>
           )}
 
+          {activeTab !== 'history' && <>
           {!isCompleted && (
             <ScanCapture
               onScan={async (code) => {
@@ -563,6 +564,7 @@ export default function NewDelivery() {
               lockLines={!!baseOrderId}
             />
           </div>
+          </>}
 
           <DeliveryPrintModal 
             isOpen={isPrintModalOpen} 

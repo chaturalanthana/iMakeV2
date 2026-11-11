@@ -1,6 +1,7 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { sendError } = require('../services/errors');
+const { purchaseLineQuantities } = require('../services/inventory/itemMaster');
 const { money } = require('../services/money');
 const { writeAudit } = require('../services/auditService');
 const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
@@ -15,6 +16,7 @@ const {
   supplierAging,
   supplierStatement
 } = require('../services/documentPosting');
+const { assertPoGuards, saveTradeProfile, copyClassification } = require('../services/phase2/procurement');
 
 // --- PURCHASE ORDERS ---
 const getPurchaseOrders = async (req, res) => {
@@ -51,11 +53,12 @@ const createPurchaseOrder = async (req, res) => {
     const { supplierId, date, status, items, currencyId, exchangeRate, prId } = req.body;
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
+    const tradeType = req.body.tradeType === 'IMPORT' ? 'IMPORT' : (req.body.tradeType === 'LOCAL' ? 'LOCAL' : null);
 
     const poNumber = await generateDocumentNumber(
       req.tenantId,
       'purchaseOrder',
-      'PO',
+      tradeType === 'IMPORT' ? 'IPO' : 'PO',
       'poNumber'
     );
     const rule = await loadRule(prisma, req.tenantId, 'PO');
@@ -65,6 +68,17 @@ const createPurchaseOrder = async (req, res) => {
 
     const order = await prisma.$transaction(async (tx) => {
       if (prId) await assertPrQuantity(tx, { tenantId: req.tenantId, prId, items: items || [] });
+      const guards = await assertPoGuards(tx, {
+        tenantId: req.tenantId,
+        supplierId,
+        date,
+        items: items || [],
+        exchangeRate,
+        currencyId,
+        tradeType,
+        acknowledgeVariance: req.body.acknowledgeVariance,
+        varianceReason: req.body.varianceReason
+      });
       const created = await tx.purchaseOrder.create({
         data: {
           tenantId: req.tenantId,
@@ -78,12 +92,7 @@ const createPurchaseOrder = async (req, res) => {
           createdBy: req.user.userId,
           prId: prId || null,
           items: items && items.length > 0 ? {
-            create: items.map(item => ({
-              productId: item.productId,
-              quantity: parseFloat(item.quantity),
-              unitPrice: parseFloat(item.unitPrice),
-              total: parseFloat(item.total)
-            }))
+            create: await mapPurchaseLines(tx, req.tenantId, items)
           } : undefined
         },
         include: {
@@ -92,7 +101,24 @@ const createPurchaseOrder = async (req, res) => {
           items: { include: { product: true } }
         }
       });
-      if (prId) await refreshPrStatus(tx, prId);
+      if (prId) {
+        await refreshPrStatus(tx, prId);
+        await copyClassification(tx, req.tenantId, prId, created.id);
+      }
+      if (tradeType) {
+        await saveTradeProfile(tx, {
+          tenantId: req.tenantId,
+          documentType: 'PO',
+          documentId: created.id,
+          tradeType,
+          shipmentRef: req.body.shipmentRef,
+          exchangeRate,
+          currencyCode: tradeType === 'IMPORT' ? 'USD' : 'LKR'
+        });
+      }
+      for (const row of guards.exceptions) {
+        await tx.priceException.create({ data: { tenantId: req.tenantId, poId: created.id, ...row } });
+      }
       if (rule?.enabled) {
         await submitForApproval(tx, {
           tenantId: req.tenantId,
@@ -202,12 +228,7 @@ const updatePurchaseOrder = async (req, res) => {
         currencyId: currencyId !== undefined ? currencyId : existing.currencyId,
         exchangeRate: exchangeRate !== undefined ? parseFloat(exchangeRate) : existing.exchangeRate,
         items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice),
-            total: parseFloat(item.total)
-          }))
+          create: await mapPurchaseLines(prisma, req.tenantId, items)
         } : undefined
       },
       include: {
@@ -257,10 +278,17 @@ const createGrn = async (req, res) => {
       }
     }
 
+    let grnPrefix = 'GRN';
+    if (poId) {
+      const profile = await prisma.tradeProfile.findFirst({
+        where: { tenantId: req.tenantId, documentType: 'PO', documentId: poId }
+      });
+      if (profile?.tradeType === 'IMPORT') grnPrefix = 'IGRN';
+    }
     const grnNumber = await generateDocumentNumber(
       req.tenantId,
       'gRN',
-      'GRN',
+      grnPrefix,
       'grnNumber'
     );
 
@@ -282,7 +310,13 @@ const createGrn = async (req, res) => {
               productId: item.productId,
               quantityReceived: parseFloat(item.quantityReceived),
               quantityOrdered: parseFloat(item.quantityOrdered || item.quantityReceived),
-              unitPrice: parseFloat(item.unitPrice || 0)
+              unitPrice: parseFloat(item.unitPrice || 0),
+              lotNumber: item.lotNumber || null,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+              palletCode: item.palletCode || null,
+              damagedQty: Number(item.damagedQty || 0),
+              rejectedQty: Number(item.rejectedQty || 0),
+              stockStatus: item.stockStatus || 'UNRESTRICTED'
             }))
           }
         },
@@ -486,6 +520,23 @@ const getSupplierStatement = async (req, res) => {
     res.status(500).json({ error: 'Failed to build supplier statement' });
   }
 };
+
+async function mapPurchaseLines(db, tenantId, items) {
+  const mapped = [];
+  for (const item of items) {
+    const uom = await purchaseLineQuantities(db, tenantId, item);
+    mapped.push({
+      productId: item.productId,
+      quantity: parseFloat(item.quantity),
+      unitPrice: parseFloat(item.unitPrice),
+      total: parseFloat(item.total),
+      uomId: uom.uomId,
+      conversionFactor: uom.conversionFactor,
+      baseQuantity: uom.baseQuantity
+    });
+  }
+  return mapped;
+}
 
 module.exports = {
   getPurchaseOrders,

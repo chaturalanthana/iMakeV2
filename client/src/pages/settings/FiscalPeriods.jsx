@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { CalendarDays } from 'lucide-react';
 import AppLayout from '../../components/layout/AppLayout';
@@ -67,6 +68,9 @@ export default function FiscalPeriods() {
               Allow negative stock
             </label>
           </FilterBar>
+          <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: '#64748b' }}>
+            Completing the <Link to="/finance/period-close" style={{ color: 'var(--accent)', fontWeight: 700 }}>month-end checklist</Link> soft-closes that month. Posting closing entries closes it, and a closed month rejects every posting.
+          </p>
           <DataTable
             columns={[
               { header: 'Period', accessor: 'month', fontWeight: 600, render: (row) => `${MONTHS[row.month - 1]} ${row.year}` },

@@ -33,7 +33,12 @@ async function receiveLayer(db, {
   sourceType,
   sourceId = null,
   lotNumber = null,
-  receivedAt = null
+  receivedAt = null,
+  batchId = null,
+  binId = null,
+  palletId = null,
+  stockStatus = null,
+  expiryDate = null
 }) {
   const qty = round4(quantity);
   if (!(qty > 0)) return null;
@@ -48,7 +53,12 @@ async function receiveLayer(db, {
       sourceType,
       sourceId: sourceId || null,
       lotNumber: lotNumber || null,
-      receivedAt: receivedAt || new Date()
+      receivedAt: receivedAt || new Date(),
+      batchId: batchId || null,
+      binId: binId || null,
+      palletId: palletId || null,
+      stockStatus: stockStatus || 'UNRESTRICTED',
+      expiryDate: expiryDate ? new Date(expiryDate) : null
     }
   });
 }
@@ -77,12 +87,30 @@ async function ensureOpeningLayer(db, { tenantId, productId, warehouseId = null 
   });
 }
 
-async function issueFifo(db, { tenantId, productId, warehouseId = null, quantity, strictWarehouse = false }) {
+async function issueFifo(db, {
+  tenantId,
+  productId,
+  warehouseId = null,
+  quantity,
+  strictWarehouse = false,
+  batchId = null,
+  eligibleOnly = false
+}) {
   const requested = round4(quantity);
   if (!(requested > 0)) return { totalCost: 0, unitCost: 0, consumptions: [] };
 
   const where = { tenantId, productId, quantityRemaining: { gt: 0 } };
+  if (batchId) where.batchId = batchId;
   let layers = await db.costLayer.findMany({ where, orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }] });
+  if (eligibleOnly) {
+    const today = new Date().toISOString().slice(0, 10);
+    layers = layers.filter((layer) => {
+      const status = layer.stockStatus || 'UNRESTRICTED';
+      if (status !== 'UNRESTRICTED') return false;
+      if (!layer.expiryDate) return true;
+      return new Date(layer.expiryDate).toISOString().slice(0, 10) >= today;
+    });
+  }
   if (warehouseId) {
     const local = strictWarehouse
       ? layers.filter((layer) => layer.warehouseId === warehouseId)

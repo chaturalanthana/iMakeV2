@@ -22,8 +22,12 @@ export default function Warehouses() {
   const [formData, setFormData] = useState({
     code: '',
     name: '',
-    address: ''
+    address: '',
+    warehouseType: 'GENERAL',
+    isVirtual: false,
+    tracksPallets: false
   });
+  const [branches, setBranches] = useState([]);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
@@ -37,8 +41,12 @@ export default function Warehouses() {
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const res = await axios.get('/api/warehouses', config);
+      const [res, branchRes] = await Promise.all([
+        axios.get('/api/warehouses', config),
+        axios.get('/api/inventory/branches', config).catch(() => ({ data: [] }))
+      ]);
       setWarehouses(res.data);
+      setBranches(branchRes.data || []);
     } catch (error) {
       console.error('Failed to fetch warehouses', error);
       showToast('Failed to fetch warehouses', 'error');
@@ -53,11 +61,15 @@ export default function Warehouses() {
       setFormData({
         code: warehouse.code || '',
         name: warehouse.name || '',
-        address: warehouse.address || ''
+        address: warehouse.address || '',
+        branchId: warehouse.branchId || '',
+        warehouseType: warehouse.warehouseType || 'GENERAL',
+        isVirtual: !!warehouse.isVirtual,
+        tracksPallets: !!warehouse.tracksPallets
       });
     } else {
       setEditingId(null);
-      setFormData({ code: '', name: '', address: '' });
+      setFormData({ code: '', name: '', address: '', branchId: '', warehouseType: 'GENERAL', isVirtual: false, tracksPallets: false });
     }
     setIsDrawerOpen(true);
   };
@@ -146,12 +158,29 @@ export default function Warehouses() {
               </div>
             </div>
 
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await axios.post('/api/inventory/locations/ensure', {}, { headers: { Authorization: `Bearer ${token}` } });
+                  showToast('Location defaults are ready', 'success');
+                  fetchWarehouses();
+                } catch (error) {
+                  showToast(error.response?.data?.error || 'Failed to add locations', 'error');
+                }
+              }}
+              style={{ padding: '10px 16px', backgroundColor: '#fff', color: 'var(--text-main)', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}
+            >
+              NCC locations
+            </button>
             <button 
               onClick={() => handleOpenDrawer()}
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '10px 16px', backgroundColor: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)' }}
             >
               <Plus size={18} /> Add Warehouse
             </button>
+            </div>
           </div>
 
           {/* Grid of Cards */}
@@ -190,6 +219,7 @@ export default function Warehouses() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{w.code}</span>
                       <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)' }}>{w.name}</h3>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(w.warehouseType || 'GENERAL').replaceAll('_', ' ')}{w.isVirtual ? ' · virtual' : ''}{w.branch?.code ? ` · ${w.branch.code}` : ''}</span>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', background: '#f8fafc', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                       <button onClick={() => handleOpenDrawer(w)} style={{ padding: '6px', backgroundColor: 'transparent', color: '#3b82f6', border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#eff6ff'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
@@ -257,6 +287,30 @@ export default function Warehouses() {
                     placeholder="Physical location details"
                   />
                 </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>Branch</label>
+                  <select value={formData.branchId || ''} onChange={(e) => setFormData({ ...formData, branchId: e.target.value })} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.95rem' }}>
+                    <option value="">No branch</option>
+                    {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.code} — {branch.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>Warehouse type</label>
+                  <select value={formData.warehouseType} onChange={(e) => setFormData({ ...formData, warehouseType: e.target.value })} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.95rem' }}>
+                    <option value="GENERAL">General</option>
+                    <option value="RAW_MATERIAL">Raw material</option>
+                    <option value="PACKAGING">Packaging</option>
+                    <option value="FINISHED_GOODS">Finished goods</option>
+                    <option value="DISTRIBUTION">Distribution</option>
+                    <option value="VIRTUAL_FACTORY">Contract manufacturing (virtual)</option>
+                  </select>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                  <input type="checkbox" checked={!!formData.isVirtual} onChange={(e) => setFormData({ ...formData, isVirtual: e.target.checked })} /> Virtual warehouse
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                  <input type="checkbox" checked={!!formData.tracksPallets} onChange={(e) => setFormData({ ...formData, tracksPallets: e.target.checked })} /> Track pallets
+                </label>
               </form>
             </div>
 
