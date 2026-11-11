@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { isUuid, recordPath, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import { Factory, ArrowLeft } from 'lucide-react';
@@ -15,7 +16,8 @@ const BUTTON = {
 };
 
 export default function ShopFloor() {
-  const { id } = useParams();
+  const routeKey = routeKeyOf(useParams());
+  const [id, setId] = useState(() => (isUuid(routeKey) ? routeKey : ''));
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [orders, setOrders] = useState([]);
@@ -62,25 +64,36 @@ export default function ShopFloor() {
       };
     });
     setForms(next);
+    return orderRes.data;
   }, [authConfig]);
 
   useEffect(() => {
     const run = async () => {
       try {
-        if (id) await loadOrder(id);
-        else await loadList();
+        if (!routeKey) {
+          await loadList();
+          return;
+        }
+        let orderId = isUuid(routeKey) ? routeKey : '';
+        if (!orderId) {
+          const scanned = await axios.get('/api/work-orders/scan', { ...authConfig(), params: { code: routeKey } });
+          orderId = scanned.data.id;
+        }
+        setId(orderId);
+        const loaded = await loadOrder(orderId);
+        showRecord(navigate, '/production/shop-floor', loaded, 'orderNumber');
       } catch (error) {
         showToast(error.response?.data?.error || 'Failed to load shop floor', 'error');
       }
     };
     run();
-  }, [id, loadList, loadOrder, showToast]);
+  }, [routeKey, loadList, loadOrder, showToast, authConfig, navigate]);
 
   const onScan = async (code) => {
     try {
       const hit = await lookupScan(code);
       if (hit.kind === 'workOrder') {
-        if (!id || hit.workOrder.id !== id) navigate(`/production/shop-floor/${hit.workOrder.id}`);
+        if (!id || hit.workOrder.id !== id) navigate(recordPath('/production/shop-floor', hit.workOrder, 'orderNumber'));
         return;
       }
       if (hit.kind === 'lot' && id && order) {
@@ -159,7 +172,7 @@ export default function ShopFloor() {
           {orders.map((row) => (
             <button
               key={row.id}
-              onClick={() => navigate(`/production/shop-floor/${row.id}`)}
+              onClick={() => navigate(recordPath('/production/shop-floor', row, 'orderNumber'))}
               style={{ ...BUTTON, textAlign: 'left', background: '#fff', border: '1px solid #e2e8f0', color: '#1e293b' }}
             >
               <div>{row.orderNumber}</div>

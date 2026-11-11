@@ -655,15 +655,15 @@ export default function Dashboard() {
                   {(() => {
                     // Combine actual registered workstations with mock placeholders to guarantee high-fidelity
                     const baseStations = workstationsList.length > 0 ? workstationsList : [
-                      { code: 'WS-817', name: 'Testing Machine', hourlyRate: 45, efficiency: 95 },
-                      { code: 'WS-002', name: 'Manual Solder Bench', hourlyRate: 15, efficiency: 88 }
+                      { code: 'WS-817', name: 'Testing Machine', efficiency: 95 },
+                      { code: 'WS-002', name: 'Manual Solder Bench', efficiency: 88 }
                     ];
 
                     const mockExtensions = [
-                      { code: 'WS-003', name: 'Automated Pick & Place', hourlyRate: 65, efficiency: 98, status: 'RUNNING' },
-                      { code: 'WS-004', name: 'Reflow Oven Chamber', hourlyRate: 80, efficiency: 92, status: 'SETUP' },
-                      { code: 'WS-005', name: 'Optical Inspection QC', hourlyRate: 40, efficiency: 96, status: 'IDLE' },
-                      { code: 'WS-006', name: 'Final Packing Terminal', hourlyRate: 20, efficiency: 94, status: 'RUNNING' }
+                      { code: 'WS-003', name: 'Automated Pick & Place', efficiency: 98, status: 'RUNNING' },
+                      { code: 'WS-004', name: 'Reflow Oven Chamber', efficiency: 92, status: 'SETUP' },
+                      { code: 'WS-005', name: 'Optical Inspection QC', efficiency: 96, status: 'IDLE' },
+                      { code: 'WS-006', name: 'Final Packing Terminal', efficiency: 94, status: 'RUNNING' }
                     ];
 
                     const allStations = [
@@ -698,7 +698,6 @@ export default function Dashboard() {
                           </div>
                           <div>
                             <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>{ws.name}</p>
-                            <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>Rate: ${parseFloat(ws.hourlyRate).toFixed(2)}/hr</span>
                           </div>
 
                           <div style={{ marginTop: '0.25rem' }}>

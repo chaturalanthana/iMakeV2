@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
@@ -48,7 +49,7 @@ export default function SupplierInvoices() {
           data={rows}
           searchPlaceholder="Search supplier invoices..."
           searchKeys={['invoiceNumber', 'supplier.name', 'supplierReference']}
-          onRowClick={(row) => navigate(`/procurement/supplier-invoices/${row.id}`)}
+          onRowClick={(row) => navigate(recordPath('/procurement/supplier-invoices', row, 'invoiceNumber'))}
           extraActions={(
             <button onClick={() => navigate('/procurement/supplier-invoices/new')} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '0.55rem 1.25rem', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
               <Plus size={16} /> New Invoice

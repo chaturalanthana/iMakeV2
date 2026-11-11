@@ -217,16 +217,13 @@ const orderUpdate = z.object({
   quantity: optionalPositive('Quantity must be greater than zero')
 }).passthrough();
 
-const workstation = z.object({
-  hourlyRate: optionalNumber('Hourly rate')
-}).passthrough().superRefine((value, ctx) => {
+const workstation = z.object({}).passthrough().superRefine((value, ctx) => {
   if (!String(value.code || '').trim() || !String(value.name || '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['code'], message: 'Code and Name are required' });
   }
 });
 
 const workstationUpdate = z.object({
-  hourlyRate: optionalNumber('Hourly rate'),
   code: z.string().trim().min(1, 'Code and Name are required').optional(),
   name: z.string().trim().min(1, 'Code and Name are required').optional()
 }).passthrough();

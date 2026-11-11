@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -145,7 +146,7 @@ export default function PurchaseWithholdingTaxGroups() {
             loading={loading}
             searchPlaceholder="Search tax group name..."
             searchKeys={['name', 'description']}
-            onRowClick={(row) => navigate(`/procurement/withholding-tax-groups/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/procurement/withholding-tax-groups', row, 'name'))}
             extraActions={
               <button
                 onClick={() => navigate('/procurement/withholding-tax-groups/new')}

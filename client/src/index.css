@@ -305,11 +305,13 @@ textarea,
 }
 
 /* Spreadsheet Table inputs and cells overrides */
-main table td.spreadsheet-cell {
+main table td.spreadsheet-cell,
+.spreadsheet-table td.spreadsheet-cell {
   padding: 0 !important;
 }
 
-main table td.spreadsheet-cell:focus-within {
+main table td.spreadsheet-cell:focus-within,
+.spreadsheet-table td.spreadsheet-cell:focus-within {
   position: relative !important;
   z-index: 50 !important;
 }
@@ -330,6 +332,11 @@ input.spreadsheet-input:focus {
   box-shadow: none !important;
   transform: none !important;
   outline: none !important;
+}
+
+input.spreadsheet-input.field-invalid {
+  background-color: #fff5f5 !important;
+  box-shadow: inset 0 0 0 1px var(--error) !important;
 }
 
 

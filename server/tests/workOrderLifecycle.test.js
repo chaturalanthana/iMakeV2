@@ -389,6 +389,64 @@ describe('Work order lifecycle', () => {
     expect(parseFloat(mrpOrders[0].quantity)).toBe(2);
   });
 
+  test('a sales order makes only the quantity stock cannot cover', async () => {
+    await prisma.stockMovement.create({
+      data: {
+        tenantId: tenant.id,
+        productId: fg.id,
+        warehouseId: warehouse.id,
+        type: 'GR',
+        quantity: 4,
+        referenceType: 'ADJ',
+        referenceId: 'FG-OPEN'
+      }
+    });
+
+    const covered = await request(app)
+      .post('/api/sales/orders')
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 3, unitPrice: 50, total: 150 }]
+      });
+    expect(covered.status).toBe(201);
+    const none = await prisma.workOrder.count({
+      where: { tenantId: tenant.id, salesOrderId: covered.body.id, status: 'CREATED' }
+    });
+    expect(none).toBe(0);
+
+    const short = await request(app)
+      .post('/api/sales/orders')
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 3, unitPrice: 50, total: 150 }]
+      });
+    expect(short.status).toBe(201);
+    const balance = await prisma.workOrder.findFirst({
+      where: { tenantId: tenant.id, salesOrderId: short.body.id, status: 'CREATED' }
+    });
+    expect(balance).toBeTruthy();
+    expect(parseFloat(balance.quantity)).toBe(2);
+
+    const reduced = await request(app)
+      .put(`/api/sales/orders/${short.body.id}`)
+      .set(auth())
+      .send({
+        customerId: customer.id,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: [{ productId: fg.id, quantity: 1, unitPrice: 50, total: 50 }]
+      });
+    expect(reduced.status).toBe(200);
+    const cancelled = await prisma.workOrder.findFirst({ where: { id: balance.id } });
+    expect(cancelled.status).toBe('CANCELLED');
+  });
+
   test('legacy production jobs are copied onto the work order', async () => {
     const job = await request(app)
       .post('/api/production-jobs')

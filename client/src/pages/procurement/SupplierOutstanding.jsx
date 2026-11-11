@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { statementPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
@@ -107,7 +108,7 @@ export default function SupplierOutstanding() {
           loading={loading}
           searchPlaceholder="Search supplier..."
           searchKeys={['supplierName']}
-          onRowClick={(row) => navigate(`/procurement/suppliers/${row.id}/statement`)}
+          onRowClick={(row) => navigate(statementPath('/procurement/suppliers', row))}
           itemsPerPage={15}
           extraActions={extraActions}
           noDataMessage="No outstanding supplier balances found."

@@ -1,22 +1,41 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import { findByRouteKey, isUuid, routeKeyOf, showRecord } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import { ArrowLeft, Printer, FileText } from 'lucide-react';
 
 const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function WhtCertificate() {
-  const { id } = useParams();
+  const params = useParams();
+  const routeKey = params['*'] ? routeKeyOf(params) : (params.id || '');
   const navigate = useNavigate();
   const [certificate, setCertificate] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    axios.get(`/api/finance/payment-vouchers/${id}/wht-certificate`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    }).then((res) => setCertificate(res.data)).catch((err) => setError(err.response?.data?.error || 'Certificate not found'));
-  }, [id]);
+    const load = async () => {
+      const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+      try {
+        let voucherId = isUuid(routeKey) ? routeKey : '';
+        if (!voucherId) {
+          const list = await axios.get('/api/finance/payment-vouchers', { headers });
+          voucherId = findByRouteKey(list.data, routeKey, 'voucherNumber')?.id || '';
+        }
+        if (!voucherId) {
+          setError('Certificate not found');
+          return;
+        }
+        const res = await axios.get(`/api/finance/payment-vouchers/${voucherId}/wht-certificate`, { headers });
+        setCertificate(res.data);
+        if (res.data?.voucherNumber) showRecord(navigate, '/finance/vouchers/wht', { voucherNumber: res.data.voucherNumber }, 'voucherNumber');
+      } catch (err) {
+        setError(err.response?.data?.error || 'Certificate not found');
+      }
+    };
+    if (routeKey) load();
+  }, [routeKey, navigate]);
 
   return (
     <AppLayout title={certificate?.certificateNumber || 'WHT certificate'} icon={FileText}>

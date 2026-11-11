@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../utils/recordPath';
 import AppLayout from '../components/layout/AppLayout';
 import LiveSearchDropdown from '../components/ui/LiveSearchDropdown';
 import ConfirmModal from '../components/ui/ConfirmModal';
@@ -231,7 +232,7 @@ export default function Products() {
             selectable
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
-            onRowClick={(row) => navigate(`/products/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/products', row, 'code'))}
           />
 
           <ProductBatchModal

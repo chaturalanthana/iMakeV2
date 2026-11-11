@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -127,7 +128,7 @@ export default function Orders() {
             searchPlaceholder="Search by order number or customer..."
             searchKeys={['orderNumber', 'customerName']}
             extraActions={extraActions}
-            onRowClick={(row) => navigate(`/sales/orders/${row.id}`)}
+            onRowClick={(row) => navigate(recordPath('/sales/orders', row, 'orderNumber'))}
           />
 
           <ConfirmModal 
