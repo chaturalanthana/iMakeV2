@@ -219,6 +219,15 @@ async function buildSnapshot(db, { tenantId, productId, bomId, quantity }) {
     instructions: operation.instructions || null
   }));
 
+  if (routed.length && routed.some((operation) => operation.workstationId)) {
+    const ids = [...new Set(routed.map((operation) => operation.workstationId).filter(Boolean))];
+    const stations = await db.workstation.findMany({ where: { id: { in: ids } } });
+    const rates = new Map(stations.map((station) => [station.id, num(station.hourlyRate)]));
+    routed.forEach((operation) => {
+      if (operation.workstationId) operation.machineRatePerHour = rates.get(operation.workstationId) || 0;
+    });
+  }
+
   const operations = routed.length ? routed : [{
     sequence: 10,
     name: 'Final assembly',

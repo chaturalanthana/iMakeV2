@@ -556,6 +556,7 @@ export default function ProductionCalendar() {
               className={fieldErrors.date ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
+            {fieldErrors.date && <span className="field-error-text">{fieldErrors.date}</span>}
           </div>
 
           <div>
@@ -568,6 +569,7 @@ export default function ProductionCalendar() {
               className={fieldErrors.name ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
+            {fieldErrors.name && <span className="field-error-text">{fieldErrors.name}</span>}
           </div>
 
           {/* Conditional parameters based on Event Type */}
@@ -649,6 +651,7 @@ export default function ProductionCalendar() {
               className={fieldErrors.shiftName ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
+            {fieldErrors.shiftName && <span className="field-error-text">{fieldErrors.shiftName}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '1rem' }}>

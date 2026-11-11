@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Camera, ScanLine } from 'lucide-react';
+import ActionButton from './ActionButton';
 
 export async function lookupScan(code) {
   const res = await axios.get('/api/labels/resolve', {
@@ -107,10 +108,10 @@ export default function ScanCapture({ onScan, placeholder = 'Scan or type a code
   }, [cameraOn]);
 
   return (
-    <div style={{ margin: '0.75rem 0 1rem' }}>
-      <form onSubmit={(event) => { event.preventDefault(); submit(value); }} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 460 }}>
-          <ScanLine size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+    <div style={{ margin: '0 0 1.25rem' }}>
+      <form onSubmit={(event) => { event.preventDefault(); submit(value); }} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 320 }}>
+          <ScanLine size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             value={value}
             disabled={disabled}
@@ -118,14 +119,14 @@ export default function ScanCapture({ onScan, placeholder = 'Scan or type a code
             autoCapitalize="characters"
             placeholder={placeholder}
             onChange={(event) => setValue(event.target.value)}
-            style={{ width: '100%', height: 38, padding: '0 12px 0 34px', border: '1px solid var(--border-color)', borderRadius: 8, fontSize: '0.9rem', boxSizing: 'border-box' }}
+            style={{ width: '100%', paddingLeft: '34px', paddingRight: '12px', height: '38px', border: '1px solid var(--border-color)', borderRadius: '8px', outline: 'none', fontSize: '0.85rem', backgroundColor: '#fff', boxSizing: 'border-box' }}
           />
         </div>
-        <button type="button" disabled={disabled} onClick={cameraOn ? stop : start} style={{ height: 38, padding: '0 0.8rem', borderRadius: 8, border: '1px solid var(--border-color)', background: '#fff', cursor: disabled ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
-          <Camera size={16} /> {cameraOn ? 'Stop' : 'Camera'}
-        </button>
+        <ActionButton variant="secondary" icon={Camera} disabled={disabled} onClick={cameraOn ? stop : start}>
+          {cameraOn ? 'Stop' : 'Camera'}
+        </ActionButton>
       </form>
-      {cameraError && <div style={{ color: '#b45309', fontSize: '0.8rem', marginTop: 6 }}>{cameraError}</div>}
+      {cameraError && <span className="field-error-text">{cameraError}</span>}
       {cameraOn && <video ref={videoRef} muted playsInline style={{ marginTop: 8, width: 280, maxWidth: '100%', borderRadius: 8, background: '#000' }} />}
     </div>
   );

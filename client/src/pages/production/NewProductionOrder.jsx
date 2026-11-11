@@ -152,6 +152,7 @@ export default function NewProductionOrder() {
               placeholder="Select finished or semi-finished product..."
               style={{ input: FIELD_STYLE }}
             />
+            {fieldErrors.productId && <span className="field-error-text">{fieldErrors.productId}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '1rem' }}>
@@ -164,6 +165,7 @@ export default function NewProductionOrder() {
                 className={fieldErrors.quantity ? 'field-invalid' : undefined}
                 style={FIELD_STYLE} 
               />
+              {fieldErrors.quantity && <span className="field-error-text">{fieldErrors.quantity}</span>}
             </div>
             <div style={{ flex: 1 }}>
               <label style={LABEL_STYLE}>BOM Version</label>

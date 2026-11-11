@@ -11,6 +11,8 @@ import LiveSearchDropdown from '../../components/ui/LiveSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import DataTable from '../../components/ui/DataTable';
 import Modal from '../../components/ui/Modal';
+import Section from '../../components/ui/Section';
+import StatusBadge from '../../components/ui/StatusBadge';
 
 const JOB_COLORS = [
   '#c5d4f2', '#b7e0c8', '#f3c7c7', '#f3d7ad', '#d4c6f2',
@@ -84,6 +86,7 @@ export default function PlanningBoard() {
   const [workOrders, setWorkOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [boms, setBoms] = useState([]);
+  const [capacity, setCapacity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -135,6 +138,7 @@ export default function PlanningBoard() {
       setWorkOrders(ordersRes.data);
       setProducts(productsRes.data.filter(p => p.bomApplicable));
       setBoms(bomsRes.data);
+      axios.get('/api/work-orders/capacity', config).then((res) => setCapacity(res.data)).catch(() => setCapacity(null));
     } catch (err) {
       console.error(err);
       showToast('Failed to load production planning data', 'error');
@@ -904,7 +908,7 @@ export default function PlanningBoard() {
         </div>
       </div>
       {viewMode === 'plan' && pendingItems.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, marginBottom: '1rem' }}>
           <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
             Pending ({pendingItems.length})
           </span>
@@ -948,6 +952,41 @@ export default function PlanningBoard() {
             ))}
           </div>
         </div>
+      )}
+
+      {capacity && (capacity.workstations || []).length > 0 && (
+        <Section title="Workstation load">
+          <div style={{ padding: '0.75rem 1rem 0', fontSize: '0.75rem', fontWeight: 700, color: capacity.overloads?.length ? '#dc2626' : '#059669' }}>
+            {capacity.overloads?.length > 0
+              ? `Overload on ${capacity.overloads.length} ${capacity.overloads.length === 1 ? 'day' : 'days'}`
+              : 'Within available hours'}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr>
+                  <th>Workstation</th>
+                  <th style={{ textAlign: 'right' }}>Load</th>
+                  <th style={{ textAlign: 'right' }}>Available</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).length === 0 ? (
+                  <tr><td colSpan={4} style={{ color: 'var(--text-muted)' }}>No workstation load in this horizon.</td></tr>
+                ) : capacity.workstations.filter((row) => row.loadHours > 0 || row.overload).map((row) => (
+                  <tr key={row.id || row.code}>
+                    <td style={{ fontWeight: 600 }}>{row.code} · {row.name}</td>
+                    <td style={{ textAlign: 'right' }}>{row.loadHours}h</td>
+                    <td style={{ textAlign: 'right' }}>{row.availableHours}h</td>
+                    <td><StatusBadge status={row.overload ? 'OVERLOAD' : 'WITHIN'} label={row.overload ? 'Overload' : 'Within hours'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+          </div>
+        </Section>
       )}
       </div>
 
@@ -1414,6 +1453,7 @@ export default function PlanningBoard() {
               placeholder="Select Finished / Semi-Finished Product..."
               style={{ input: FIELD_STYLE }}
             />
+            {fieldErrors.productId && <span className="field-error-text">{fieldErrors.productId}</span>}
           </div>
 
           <div>
@@ -1436,6 +1476,7 @@ export default function PlanningBoard() {
               className={fieldErrors.quantity ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
+            {fieldErrors.quantity && <span className="field-error-text">{fieldErrors.quantity}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '1rem' }}>
