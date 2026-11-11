@@ -58,7 +58,18 @@ async function wipe(tenantId) {
   await prisma.appNotification.deleteMany({ where });
   await prisma.bankFileExport.deleteMany({ where });
   await prisma.bankFileTemplate.deleteMany({ where });
-  await prisma.depreciationLine.deleteMany({ where });
+  await prisma.batchGenealogy.deleteMany({ where });
+  await prisma.machineCapture.deleteMany({ where });
+  await prisma.abnormalLoss.deleteMany({ where });
+  await prisma.contractIssue.deleteMany({ where });
+  await prisma.contractOrder.deleteMany({ where });
+  await prisma.plannedProductionOrder.deleteMany({ where });
+  await prisma.mpsBucket.deleteMany({ where });
+  await prisma.mpsRun.deleteMany({ where });
+  await prisma.demandForecast.deleteMany({ where });
+  await prisma.bomAlternate.deleteMany({ where });
+  await prisma.payrollImport.deleteMany({ where });
+  await prisma.overheadReconciliation.deleteMany({ where });  await prisma.depreciationLine.deleteMany({ where });
   await prisma.assetEvent.deleteMany({ where });
   await prisma.depreciationRun.deleteMany({ where });
   await prisma.fixedAsset.deleteMany({ where });
@@ -262,6 +273,19 @@ async function main() {
   const warehouse = await prisma.warehouse.create({
     data: { tenantId, code: 'MAIN', name: 'Malabe stores', address: '42 Kaduwela Road, Malabe' }
   });
+  const subcontractor = await prisma.supplier.create({
+    data: {
+      tenantId, code: 'SUP-CM', name: 'Elakanda Contract Packers',
+      address: 'Factory sub-location, Peliyagoda', phone: '0112340000',
+      leadTime: 5, currency: 'LKR', creditPeriod: 30
+    }
+  });
+  await prisma.warehouse.create({
+    data: {
+      tenantId, code: 'SUB-01', name: 'Contract packing floor',
+      locationRole: 'VIRTUAL', isVirtual: true, supplierId: subcontractor.id
+    }
+  });
 
   const stations = {};
   for (const station of [
@@ -272,6 +296,14 @@ async function main() {
     stations[station.code] = await prisma.workstation.create({
       data: { tenantId, ...station, capacity: 1, efficiency: 1, status: 'ACTIVE' }
     });
+  }
+  for (const machine of [
+    { code: 'SOYA-2', name: 'Soya Machine 2', workstationId: stations.ASM.id },
+    { code: 'PACK-2', name: 'Packeting 2', workstationId: stations.FIN.id },
+    { code: 'PASTA-1', name: 'Pasta 1', workstationId: stations.SAW.id },
+    { code: 'SACHET-1', name: 'Sachet Packet Machine 1', workstationId: stations.FIN.id }
+  ]) {
+    await prisma.machine.create({ data: { tenantId, ...machine } });
   }
   await prisma.shiftPattern.create({
     data: {
@@ -291,7 +323,14 @@ async function main() {
       overheadPercent: 10,
       labourRatePerHour: 650,
       hoursPerDay: 8,
-      workDays: [1, 2, 3, 4, 5]
+      workDays: [1, 2, 3, 4, 5],
+      closeGraceDays: 3,
+      planningHorizonWeeks: 8,
+      labourAbsorptionBase: 'PER_LABOUR_HOUR',
+      overheadAbsorptionBase: 'PERCENT_OF_CONVERSION',
+      abnormalLossThreshold: 2,
+      defaultYieldPercent: 98,
+      defaultScrapPercent: 2
     }
   });
   await ensureReasonCodes(prisma, tenantId);
@@ -349,18 +388,33 @@ async function main() {
   const fabric = await material({ code: 'FAB', name: 'Upholstery fabric', costPrice: 950, supplierId: hardware.id, reorderLevel: 8 });
   const glue = await material({ code: 'GLUE', name: 'Wood glue', costPrice: 420, supplierId: hardware.id, reorderLevel: 4 });
 
+  const furniture = await prisma.productGroup.create({
+    data: { tenantId, name: 'Furniture', standardYieldPercent: 98, standardScrapPercent: 2, abnormalLossThreshold: 2 }
+  });
+  await prisma.productGroup.create({
+    data: { tenantId, name: 'Soya', standardYieldPercent: 97, standardScrapPercent: 2, abnormalLossThreshold: 2 }
+  });
+  await prisma.productGroup.create({
+    data: { tenantId, name: 'Pasta', standardYieldPercent: 96, standardScrapPercent: 3, abnormalLossThreshold: 2 }
+  });
+  await prisma.productGroup.create({
+    data: { tenantId, name: 'Sauce', standardYieldPercent: 98, standardScrapPercent: 1.5, abnormalLossThreshold: 2 }
+  });
   const chair = await prisma.product.create({
     data: {
       tenantId, code: 'CHAIR', name: 'Dining chair', currency: 'LKR', type: 'PRODUCT', costingMethod: 'FIFO',
       costPrice: 9000, standardCost: 9000, sellingPrice: 18500, bomApplicable: true,
-      uomId: nos.id, stockUomId: nos.id, productTypeId: fgType.id, reorderLevel: 2
+      uomId: nos.id, stockUomId: nos.id, productTypeId: fgType.id, reorderLevel: 2,
+      productGroupId: furniture.id, planningPolicy: 'MAKE_TO_STOCK', safetyStock: 2, stockTarget: 8,
+      manufacturingLeadDays: 5, lotPolicy: 'FIXED', fixedLotQty: 2
     }
   });
   const table = await prisma.product.create({
     data: {
       tenantId, code: 'TABLE', name: 'Side table', currency: 'LKR', type: 'PRODUCT', costingMethod: 'FIFO',
       costPrice: 12000, standardCost: 12000, sellingPrice: 24000, bomApplicable: true,
-      uomId: nos.id, stockUomId: nos.id, productTypeId: fgType.id, reorderLevel: 1
+      uomId: nos.id, stockUomId: nos.id, productTypeId: fgType.id, reorderLevel: 1,
+      planningPolicy: 'MAKE_TO_ORDER'
     }
   });
 
@@ -405,6 +459,15 @@ async function main() {
   });
   await syncRoutingForBom(chairBom.id);
   await syncRoutingForBom(tableBom.id);
+  const screwLine = await prisma.bOMItem.findFirst({ where: { tenantId, bomId: chairBom.id, productId: screw.id } });
+  const altScrew = await material({ code: 'SCREW-B', name: 'Wood screw, alternate', costPrice: 14, supplierId: hardware.id });
+  await prisma.bomAlternate.create({
+    data: { tenantId, bomItemId: screwLine.id, productId: altScrew.id, ratio: 1, approved: true }
+  });
+  const { weekStart } = require('../src/services/production/productionMath');
+  await prisma.demandForecast.create({
+    data: { tenantId, productId: chair.id, weekStart: weekStart(new Date()), quantity: 4, notes: 'Weekly chair forecast' }
+  });
 
   await prisma.$transaction(async (tx) => {
     await postReceiptDocument(tx, {
@@ -666,7 +729,9 @@ async function main() {
   console.log('  Make      CHAIR and TABLE, routed across SAW, ASM, and FIN');
   console.log('  Dispatch  Elakanda stock, GT-NORTH, pending hotel order for 2 chairs');
   console.log('  SFA key   ncc-demo-sfa-key');
-}
+  console.log('  Make      CHAIR is make-to-stock on the weekly MPS. TABLE is make-to-order.');
+  console.log('  Machines  Soya Machine 2, Packeting 2, Pasta 1, Sachet Packet Machine 1');
+  console.log('  Contract  SUB-01 virtual warehouse for Elakanda Contract Packers');}
 
 main()
   .catch((error) => {

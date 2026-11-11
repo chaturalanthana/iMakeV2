@@ -4,6 +4,43 @@ const { writeAudit } = require('../services/auditService');
 const { DocumentError, sendError } = require('../services/errors');
 const { prepareItem, SENSITIVE_BULK, OPERATIONAL_BULK } = require('../services/inventory/itemMaster');
 
+function planningFields(body) {
+  const data = {};
+  if (body.planningPolicy !== undefined) {
+    if (!['MAKE_TO_ORDER', 'MAKE_TO_STOCK'].includes(body.planningPolicy)) {
+      const error = new Error('Planning policy must be Make to order or Make to stock');
+      error.status = 400;
+      throw error;
+    }
+    data.planningPolicy = body.planningPolicy;
+  }
+  if (body.lotPolicy !== undefined) {
+    if (!['LOT_FOR_LOT', 'FIXED', 'MINIMUM'].includes(body.lotPolicy)) {
+      const error = new Error('Lot policy must be lot for lot, fixed, or minimum');
+      error.status = 400;
+      throw error;
+    }
+    data.lotPolicy = body.lotPolicy;
+  }
+  const number = (key, label, max) => {
+    if (body[key] === undefined || body[key] === null || body[key] === '') return;
+    const value = Number(body[key]);
+    if (!Number.isFinite(value) || value < 0 || (max !== undefined && value > max)) {
+      const error = new Error(max ? `${label} must be between 0 and ${max}` : `${label} cannot be negative`);
+      error.status = 400;
+      throw error;
+    }
+    data[key] = key === 'manufacturingLeadDays' ? Math.round(value) : value;
+  };
+  number('stockTarget', 'Stock target');
+  number('manufacturingLeadDays', 'Manufacturing lead time');
+  number('fixedLotQty', 'Fixed lot quantity');
+  number('minLotQty', 'Minimum lot quantity');
+  number('standardYieldPercent', 'Standard yield', 100);
+  number('abnormalLossThreshold', 'Abnormal loss threshold', 100);
+  return data;
+}
+
 const getProducts = async (req, res) => {
   try {
     const where = { tenantId: req.tenantId };
@@ -333,6 +370,7 @@ const createProduct = async (req, res) => {
         standardCost: parseFloat(standardCost) || 0,
         scrapPercent: parseFloat(scrapPercent) || 0,
         safetyStock: parseInt(safetyStock) || 0,
+        ...planningFields(req.body),
         taxGroup: taxGroup || null,
         inventoryAccountId: inventoryAccountId || null,
         cogsAccountId: cogsAccountId || null,
@@ -359,6 +397,7 @@ const createProduct = async (req, res) => {
 
     res.status(201).json(newProduct);
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ error: error.message });
     if (error instanceof DocumentError) return sendError(res, error, 'Failed to create product');
     console.error('Create product error:', error);
     res.status(500).json({ error: 'Failed to create product' });
@@ -576,6 +615,7 @@ const updateProduct = async (req, res) => {
         standardCost: standardCost !== undefined ? (parseFloat(standardCost) || 0) : undefined,
         scrapPercent: scrapPercent !== undefined ? (parseFloat(scrapPercent) || 0) : undefined,
         safetyStock: safetyStock !== undefined ? (parseInt(safetyStock) || 0) : undefined,
+        ...planningFields(req.body),
         taxGroup: taxGroup !== undefined ? taxGroup : undefined,
         inventoryAccountId: inventoryAccountId !== undefined ? (inventoryAccountId || null) : undefined,
         cogsAccountId: cogsAccountId !== undefined ? (cogsAccountId || null) : undefined,
@@ -600,6 +640,7 @@ const updateProduct = async (req, res) => {
 
     res.json(updatedProduct);
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ error: error.message });
     if (error instanceof DocumentError) return sendError(res, error, 'Failed to update product');
     console.error('Update product error:', error);
     res.status(500).json({ error: 'Failed to update product' });
@@ -684,6 +725,14 @@ const duplicateProduct = async (req, res) => {
         standardCost: originalProduct.standardCost,
         scrapPercent: originalProduct.scrapPercent,
         safetyStock: originalProduct.safetyStock,
+        planningPolicy: originalProduct.planningPolicy,
+        stockTarget: originalProduct.stockTarget,
+        manufacturingLeadDays: originalProduct.manufacturingLeadDays,
+        lotPolicy: originalProduct.lotPolicy,
+        fixedLotQty: originalProduct.fixedLotQty,
+        minLotQty: originalProduct.minLotQty,
+        standardYieldPercent: originalProduct.standardYieldPercent,
+        abnormalLossThreshold: originalProduct.abnormalLossThreshold,
         taxGroup: originalProduct.taxGroup,
         inventoryAccountId: originalProduct.inventoryAccountId,
         cogsAccountId: originalProduct.cogsAccountId,

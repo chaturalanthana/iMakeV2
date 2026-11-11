@@ -2,6 +2,7 @@ const app = require('./app');
 const { port } = require('./config');
 const { migrateAllTenants } = require('./services/production/workOrders');
 const { runDueReplenishment } = require('./services/replenishment');
+const { closeDueWorkOrders } = require('./services/production/phase4');
 const { ensureAllProductTypes } = require('./services/productTypes');
 
 const startServer = () => {
@@ -17,6 +18,9 @@ const startServer = () => {
       const tick = () => {
         runDueReplenishment().catch((error) => {
           console.error('Replenishment schedule skipped:', error.message);
+        });
+        closeDueWorkOrders().catch((error) => {
+          console.error('Work order auto-close skipped:', error.message);
         });
       };
       setTimeout(tick, 15000);

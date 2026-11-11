@@ -27,6 +27,7 @@ async function syncRoutingForBom(bomId, db = prisma) {
       noOfWorkers: Math.max(1, parseInt(step.noOfWorkers, 10) || 1),
       isSubcontract: Boolean(step.isSubcontract || step.subcontract),
       subcontractCostPerUnit: num(step.subcontractCostPerUnit || 0),
+      milestoneWeight: num(step.milestoneWeight || step.weight || 0),
       instructions: step.instructions || null
     };
   });

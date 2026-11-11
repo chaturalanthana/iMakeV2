@@ -19,6 +19,8 @@ import NewProductionOrder from './pages/production/NewProductionOrder';
 import Workstations from './pages/production/Workstations';
 import NewWorkstation from './pages/production/NewWorkstation';
 import MRPPlanner from './pages/production/MRPPlanner';
+import ProductionReports from './pages/production/ProductionReports';
+import ContractManufacturing from './pages/production/ContractManufacturing';
 import Alerts from './pages/Alerts';
 import DataImport from './pages/settings/DataImport';
 import Labels from './pages/warehouse/Labels';
@@ -172,6 +174,8 @@ function App() {
               <Route path="/production/workstations/new" element={<NewWorkstation />} />
               <Route path="/production/workstations/:id" element={<NewWorkstation />} />
               <Route path="/production/mrp" element={<MRPPlanner />} />
+              <Route path="/production/reports" element={<ProductionReports />} />
+              <Route path="/production/contracts" element={<ContractManufacturing />} />
               <Route path="/production/replenishment" element={<Navigate to="/production/mrp" replace />} />
               <Route path="/production/groups" element={<ProductGroups />} />
               <Route path="/registries/brands" element={<Brands />} />

@@ -23,11 +23,21 @@ export default function MRPPlanner() {
   const [loading, setLoading] = useState(false);
   const [ran, setRan] = useState(false);
   const [tab, setTab] = useState('buy');
-  const [data, setData] = useState({ purchaseSuggestions: [], productionSuggestions: [] });
+  const [data, setData] = useState({ purchaseSuggestions: [], productionSuggestions: [], mps: null });
 
   const authConfig = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
   });
+
+  const firm = async (id) => {
+    try {
+      const res = await axios.post(`/api/production/planned-orders/${id}/firm`, {}, authConfig());
+      showToast(`Draft ${res.data.workOrder?.orderNumber || 'work order'} created`, 'success');
+      await runMRP();
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to firm the planned order', 'error');
+    }
+  };
 
   const runMRP = async () => {
     setLoading(true);
@@ -45,12 +55,33 @@ export default function MRPPlanner() {
 
   const buyRows = (data.purchaseSuggestions || []).map((row) => ({ ...row, id: row.productId }));
   const makeRows = (data.productionSuggestions || []).map((row) => ({ ...row, id: row.productId }));
-  const rows = tab === 'buy' ? buyRows : makeRows;
+  const mpsRows = (data.mps?.buckets || []).map((row) => ({
+    ...row,
+    id: row.id,
+    code: row.product?.code,
+    name: row.product?.name,
+    week: String(row.weekStart).slice(0, 10),
+    forecast: row.forecastQty,
+    orders: row.orderQty,
+    demand: row.demandQty,
+    receipts: row.receiptsQty,
+    planned: row.plannedQty
+  }));
+  const rows = tab === 'buy' ? buyRows : tab === 'make' ? makeRows : mpsRows;
   const refColor = tab === 'buy' ? '#0369a1' : '#15803d';
 
   const columns = [
     { header: 'Code', accessor: 'code', fontWeight: 700 },
     { header: 'Product', accessor: 'name' },
+    ...(tab === 'mps' ? [
+      { header: 'Week', accessor: 'week' },
+      numberCol('Forecast', 'forecast'),
+      numberCol('Orders', 'orders'),
+      numberCol('Demand', 'demand'),
+      numberCol('Receipts', 'receipts'),
+      numberCol('Projected', 'projected'),
+      numberCol('Planned', 'planned')
+    ] : [
     numberCol('Demand', 'grossDemand'),
     numberCol('Stock', 'currentStock'),
     numberCol('Safety', 'safetyStock'),
@@ -65,6 +96,7 @@ export default function MRPPlanner() {
       accessor: 'documentNumber',
       render: (row) => <span style={{ fontWeight: 700, color: refColor }}>{row.documentNumber || ''}</span>
     }
+    ])
   ];
 
   const tabButton = (id, Icon, label, count, color) => {
@@ -109,14 +141,25 @@ export default function MRPPlanner() {
         </button>
         {tabButton('buy', ShoppingCart, 'Buy', buyRows.length, '#0369a1')}
         {tabButton('make', Factory, 'Make', makeRows.length, '#15803d')}
+        {tabButton('mps', Boxes, 'MPS', (data.mps?.plannedOrders || []).length, '#7c3aed')}
       </div>
+
+      {ran && tab === 'mps' && (data.mps?.plannedOrders || []).length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.6rem' }}>
+          {data.mps.plannedOrders.map((order) => (
+            <button key={order.id} type="button" onClick={() => firm(order.id)} style={{ height: '32px', padding: '0 0.7rem', borderRadius: '8px', border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#5b21b6', fontWeight: 700, cursor: 'pointer' }}>
+              Firm {order.product?.code} {qty(order.quantity)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {ran && (
         <DataTable
           key={tab}
           columns={columns}
           data={rows}
-          searchKeys={['code', 'name', 'documentNumber']}
+          searchKeys={['code', 'name', 'documentNumber', 'week']}
           searchPlaceholder="Search"
           itemsPerPage={25}
           noDataMessage=""

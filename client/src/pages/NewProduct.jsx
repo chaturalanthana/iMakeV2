@@ -78,6 +78,13 @@ export default function NewProduct() {
     scrapPercent: '0.0',
     reorderLevel: '0',
     safetyStock: '0',
+    planningPolicy: 'MAKE_TO_ORDER',
+    stockTarget: '0',
+    manufacturingLeadDays: '1',
+    lotPolicy: 'LOT_FOR_LOT',
+    fixedLotQty: '0',
+    standardYieldPercent: '100',
+    abnormalLossThreshold: '2',
     sku: '',
     barcode: '',
     variant: '',
@@ -172,6 +179,13 @@ export default function NewProduct() {
             standardCost: product.standardCost !== undefined ? product.standardCost.toString() : '0.0',
             scrapPercent: product.scrapPercent !== undefined ? product.scrapPercent.toString() : '0.0',
             safetyStock: product.safetyStock !== undefined ? product.safetyStock.toString() : '0',
+            planningPolicy: product.planningPolicy || 'MAKE_TO_ORDER',
+            stockTarget: product.stockTarget !== undefined ? product.stockTarget.toString() : '0',
+            manufacturingLeadDays: product.manufacturingLeadDays !== undefined ? String(product.manufacturingLeadDays) : '1',
+            lotPolicy: product.lotPolicy || 'LOT_FOR_LOT',
+            fixedLotQty: product.fixedLotQty !== undefined ? product.fixedLotQty.toString() : '0',
+            standardYieldPercent: product.standardYieldPercent !== undefined ? product.standardYieldPercent.toString() : '100',
+            abnormalLossThreshold: product.abnormalLossThreshold !== undefined ? product.abnormalLossThreshold.toString() : '2',
             sku: product.sku || '',
             barcode: product.barcode || '',
             variant: product.variant || '',
@@ -1038,6 +1052,41 @@ export default function NewProduct() {
                       style={inputStyle}
                     />
                   </div>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Planning</label>
+                  <select name="planningPolicy" value={formData.planningPolicy} onChange={handleInputChange} style={inputStyle}>
+                    <option value="MAKE_TO_ORDER">Make to order</option>
+                    <option value="MAKE_TO_STOCK">Make to stock</option>
+                  </select>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Stock target</label>
+                  <input type="number" name="stockTarget" value={formData.stockTarget} onChange={handleInputChange} style={inputStyle} />
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Manufacturing lead (days)</label>
+                  <input type="number" name="manufacturingLeadDays" value={formData.manufacturingLeadDays} onChange={handleInputChange} style={inputStyle} />
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Lot policy</label>
+                  <select name="lotPolicy" value={formData.lotPolicy} onChange={handleInputChange} style={inputStyle}>
+                    <option value="LOT_FOR_LOT">Lot for lot</option>
+                    <option value="FIXED">Fixed lot</option>
+                    <option value="MINIMUM">Minimum lot</option>
+                  </select>
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Fixed lot qty</label>
+                  <input type="number" name="fixedLotQty" value={formData.fixedLotQty} onChange={handleInputChange} style={inputStyle} />
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Standard yield %</label>
+                  <input type="number" name="standardYieldPercent" value={formData.standardYieldPercent} onChange={handleInputChange} style={inputStyle} />
+                </div>
+                <div style={formRowStyle}>
+                  <label style={labelStyle}>Loss threshold</label>
+                  <input type="number" name="abnormalLossThreshold" value={formData.abnormalLossThreshold} onChange={handleInputChange} style={inputStyle} />
                 </div>
                 <div style={formRowStyle}>
                   <label style={labelStyle}>SKU</label>

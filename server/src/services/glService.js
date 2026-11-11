@@ -26,6 +26,8 @@ const DEFAULT_ACCOUNTS = [
   { key: 'VARIANCE_LABOUR', code: '5510', name: 'Production Variance - Labour', type: 'EXPENSE' },
   { key: 'VARIANCE_OVERHEAD', code: '5520', name: 'Production Variance - Overhead', type: 'EXPENSE' },
   { key: 'VARIANCE_SCRAP', code: '5530', name: 'Production Variance - Scrap', type: 'EXPENSE' },
+  { key: 'ABNORMAL_LOSS', code: '5540', name: 'Abnormal Production Loss', type: 'EXPENSE' },
+  { key: 'SUBCONTRACT_EXPENSE', code: '5420', name: 'Contract Manufacturing', type: 'EXPENSE' },
   { key: 'FX_GAIN', code: '4150', name: 'Realised FX Gain', type: 'REVENUE' },
   { key: 'FX_LOSS', code: '5300', name: 'Realised FX Loss', type: 'EXPENSE' },
   { key: 'OPENING_EQUITY', code: '3000', name: 'Opening Balance Equity', type: 'EQUITY' },
@@ -246,7 +248,9 @@ async function reverseJournal(tx, { tenantId, referenceType, referenceId, date, 
       accountId: line.accountId,
       debit: num(line.credit),
       credit: num(line.debit),
-      description: 'Reversal'
+      description: 'Reversal',
+      costCenterId: line.costCenterId || null,
+      profitCenterId: line.profitCenterId || null
     }))
   });
 }

@@ -24,6 +24,8 @@ export default function ShopFloor() {
   const [reasons, setReasons] = useState([]);
   const [forms, setForms] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
+  const [machines, setMachines] = useState([]);
+  const [capture, setCapture] = useState({ machineId: '', inputQty: '', outputQty: '', wastageQty: '', downtimeMinutes: '', downtimeReason: '' });
   const [loading, setLoading] = useState(true);
 
   const authConfig = useCallback(() => ({
@@ -37,10 +39,12 @@ export default function ShopFloor() {
 
   const loadOrder = useCallback(async (orderId) => {
     const config = authConfig();
-    const [orderRes, reasonRes] = await Promise.all([
+    const [orderRes, reasonRes, machineRes] = await Promise.all([
       axios.get(`/api/work-orders/${orderId}`, config),
-      axios.get('/api/work-orders/reason-codes', config)
+      axios.get('/api/work-orders/reason-codes', config),
+      axios.get('/api/machines', config)
     ]);
+    setMachines(machineRes.data || []);
     setOrder(orderRes.data);
     setReasons(reasonRes.data);
     const next = {};
@@ -110,6 +114,25 @@ export default function ShopFloor() {
       showToast('Scan a work order to open it, or a lot to fill the confirmation.', 'error');
     } catch (error) {
       showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
+
+  const saveCapture = async () => {
+    try {
+      const operation = (order?.operations || []).find((row) => row.status !== 'COMPLETE') || order?.operations?.[0];
+      await axios.post('/api/production/captures', {
+        workOrderId: id,
+        operationId: operation?.id,
+        machineId: capture.machineId,
+        inputQty: capture.inputQty,
+        outputQty: capture.outputQty,
+        wastageQty: capture.wastageQty,
+        downtimeMinutes: capture.downtimeMinutes,
+        downtimeReason: capture.downtimeReason
+      }, authConfig());
+      showToast('Machine output saved', 'success');
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Failed to save machine output', 'error');
     }
   };
 
@@ -201,6 +224,22 @@ export default function ShopFloor() {
           <Section padded>
             <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
               Order {parseFloat(order.quantity)} · Good {parseFloat(order.quantityCompleted || 0)} · Scrap {parseFloat(order.quantityScrapped || 0)}
+            </div>
+          </Section>
+          <Section title="Machine output" padded>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+              <FormField label="Machine" width="220px">
+                <SelectControl value={capture.machineId} onChange={(event) => setCapture((prev) => ({ ...prev, machineId: event.target.value }))}>
+                  <option value="">Select</option>
+                  {machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
+                </SelectControl>
+              </FormField>
+              <FormField label="Input" width="120px"><TextControl value={capture.inputQty} onChange={(event) => setCapture((prev) => ({ ...prev, inputQty: event.target.value }))} /></FormField>
+              <FormField label="Output" width="120px"><TextControl value={capture.outputQty} onChange={(event) => setCapture((prev) => ({ ...prev, outputQty: event.target.value }))} /></FormField>
+              <FormField label="Wastage" width="120px"><TextControl value={capture.wastageQty} onChange={(event) => setCapture((prev) => ({ ...prev, wastageQty: event.target.value }))} /></FormField>
+              <FormField label="Downtime min" width="140px"><TextControl value={capture.downtimeMinutes} onChange={(event) => setCapture((prev) => ({ ...prev, downtimeMinutes: event.target.value }))} /></FormField>
+              <FormField label="Downtime reason" width="220px"><TextControl value={capture.downtimeReason} onChange={(event) => setCapture((prev) => ({ ...prev, downtimeReason: event.target.value }))} /></FormField>
+              <ActionButton onClick={saveCapture}>Save output</ActionButton>
             </div>
           </Section>
           {(order.operations || []).map((operation) => {

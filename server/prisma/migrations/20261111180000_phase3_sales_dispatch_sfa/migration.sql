@@ -3,13 +3,6 @@ ALTER TABLE "customers" ADD COLUMN     "channel" TEXT DEFAULT 'GENERAL_TRADE',
 ADD COLUMN     "external_ref" TEXT;
 
 -- AlterTable
-ALTER TABLE "machines" ADD COLUMN     "manufacturer" TEXT,
-ADD COLUMN     "model_number" TEXT,
-ADD COLUMN     "serial_number" TEXT,
-ADD COLUMN     "watts" INTEGER,
-ADD COLUMN     "year" INTEGER;
-
--- AlterTable
 ALTER TABLE "sales_invoices" ADD COLUMN     "channel" TEXT,
 ADD COLUMN     "external_ref" TEXT,
 ADD COLUMN     "sale_kind" TEXT DEFAULT 'CREDIT',
