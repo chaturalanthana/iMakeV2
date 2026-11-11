@@ -1,6 +1,7 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { syncLegacy } = require('../services/production/workOrders');
+const { runMps } = require('../services/production/phase4');
 
 const num = (value) => {
   const parsed = parseFloat(value);
@@ -147,6 +148,23 @@ const runMRPAna = async (req, res) => {
     purchaseSuggestions.sort(byCode);
     productionSuggestions.sort(byCode);
 
+    const mps = await runMps({
+      tenantId: req.tenantId,
+      userId: req.user?.userId || null,
+      horizonWeeks: req.body?.horizonWeeks
+    });
+    for (const need of mps.purchaseNeeds) {
+      if (!(need.quantity > 0)) continue;
+      const existing = purchaseSuggestions.find((row) => row.productId === need.productId);
+      if (existing) {
+        existing.shortage = roundQty(num(existing.shortage) + need.quantity);
+        existing.grossDemand = roundQty(num(existing.grossDemand) + need.quantity);
+      } else {
+        purchaseSuggestions.push(need);
+      }
+    }
+    purchaseSuggestions.sort(byCode);
+
     const raised = await raiseRequirements({
       tenantId: req.tenantId,
       userId: req.user?.userId || null,
@@ -161,7 +179,14 @@ const runMRPAna = async (req, res) => {
       totalShortagesCount: purchaseSuggestions.length + productionSuggestions.length,
       purchaseRequisition: raised.purchaseRequisition,
       productionOrders: raised.productionOrders,
-      message: raised.message
+      message: raised.message,
+      mps: {
+        runId: mps.runId,
+        horizonWeeks: mps.horizonWeeks,
+        weekStart: mps.weekStart,
+        buckets: mps.buckets,
+        plannedOrders: mps.plannedOrders
+      }
     });
   } catch (error) {
     console.error('MRP calculation error:', error);

@@ -24,6 +24,8 @@ router.post('/:id/operations/:operationId/stop', validateBody(schemas.clockBody)
 router.post('/:id/confirmations', validateBody(schemas.confirmation), controller.confirm);
 router.post('/:id/teco', controller.teco);
 router.post('/:id/close', controller.close);
+router.post('/:id/close-now', controller.closeNow);
+router.post('/:id/short-close', controller.shortClose);
 router.post('/:id/cancel', controller.cancel);
 router.get('/:id', controller.getOne);
 router.put('/:id', validateBody(schemas.workOrderUpdate), controller.update);

@@ -338,7 +338,7 @@ describe('Work order lifecycle', () => {
         customerId: customer.id,
         date: new Date().toISOString(),
         status: 'PENDING',
-        items: [{ productId: fg.id, quantity: 2, unitPrice: 50, total: 100 }]
+        items: [{ productId: fg.id, quantity: 6, unitPrice: 50, total: 300 }]
       });
     expect(sales.status).toBe(201);
     const drafts = await prisma.workOrder.findMany({
@@ -355,7 +355,7 @@ describe('Work order lifecycle', () => {
         customerId: customer.id,
         date: new Date().toISOString(),
         status: 'PENDING',
-        items: [{ productId: fg.id, quantity: 5, unitPrice: 50, total: 250 }]
+        items: [{ productId: fg.id, quantity: 9, unitPrice: 50, total: 450 }]
       });
     expect(revised.status).toBe(200);
     const updatedDraft = await prisma.workOrder.findFirst({
@@ -396,7 +396,7 @@ describe('Work order lifecycle', () => {
         productId: fg.id,
         warehouseId: warehouse.id,
         type: 'GR',
-        quantity: 4,
+        quantity: 0,
         referenceType: 'ADJ',
         referenceId: 'FG-OPEN'
       }

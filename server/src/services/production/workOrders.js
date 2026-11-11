@@ -5,17 +5,12 @@ const { receiveLayer, issueFifo, nextFifoUnitCost, lastReceiptUnitCost, onHandFr
 const { ensureGlMap, postJournal } = require('../glService');
 const { money } = require('../money');
 const { round4, num, materialUnitCost, rollupCost, prorateSheet, splitIssueCost, varianceReport } = require('./costing');
+const { absorbCosts } = require('./productionMath');
 const { buildLoadProfile } = require('./capacity');
+const { ProductionError } = require('./errors');
+const phase4 = require('./phase4');
 
 const runTx = (fn) => prisma.$transaction(fn, { timeout: 20000 });
-
-class ProductionError extends Error {
-  constructor(message, status = 400, extra = {}) {
-    super(message);
-    this.status = status;
-    this.extra = extra;
-  }
-}
 
 const LEGACY_TO_WO = {
   DRAFT: 'CREATED',
@@ -113,6 +108,32 @@ async function updateSettings(tenantId, body) {
   if (body.labourRatePerHour !== undefined) data.labourRatePerHour = num(body.labourRatePerHour);
   if (body.hoursPerDay !== undefined) data.hoursPerDay = num(body.hoursPerDay) || 8;
   if (body.workDays !== undefined) data.workDays = body.workDays;
+  if (body.closeGraceDays !== undefined) {
+    const days = parseInt(body.closeGraceDays, 10);
+    if (!Number.isFinite(days) || days < 0 || days > 90) throw new ProductionError('Close grace must be between 0 and 90 days');
+    data.closeGraceDays = days;
+  }
+  if (body.planningHorizonWeeks !== undefined) {
+    const weeks = parseInt(body.planningHorizonWeeks, 10);
+    if (!Number.isFinite(weeks) || weeks < 1 || weeks > 52) throw new ProductionError('Planning horizon must be between 1 and 52 weeks');
+    data.planningHorizonWeeks = weeks;
+  }
+  if (body.labourAbsorptionBase !== undefined) {
+    if (!['PER_LABOUR_HOUR', 'PER_UNIT'].includes(body.labourAbsorptionBase)) {
+      throw new ProductionError('Labour absorption base must be per labour hour or per unit');
+    }
+    data.labourAbsorptionBase = body.labourAbsorptionBase;
+  }
+  if (body.overheadAbsorptionBase !== undefined) {
+    if (!['PERCENT_OF_CONVERSION', 'PER_LABOUR_HOUR', 'PER_MACHINE_HOUR', 'PER_UNIT'].includes(body.overheadAbsorptionBase)) {
+      throw new ProductionError('Overhead absorption base is not recognised');
+    }
+    data.overheadAbsorptionBase = body.overheadAbsorptionBase;
+  }
+  if (body.overheadRate !== undefined) data.overheadRate = num(body.overheadRate);
+  if (body.abnormalLossThreshold !== undefined) data.abnormalLossThreshold = num(body.abnormalLossThreshold);
+  if (body.defaultYieldPercent !== undefined) data.defaultYieldPercent = num(body.defaultYieldPercent);
+  if (body.defaultScrapPercent !== undefined) data.defaultScrapPercent = num(body.defaultScrapPercent);
   return prisma.productionSetting.update({ where: { tenantId }, data });
 }
 
@@ -206,6 +227,8 @@ async function buildSnapshot(db, { tenantId, productId, bomId, quantity }) {
     });
   }
 
+  const stations = await db.workstation.findMany({ where: { tenantId } });
+  const machineRate = new Map(stations.map((station) => [station.id, num(station.hourlyRate)]));
   const routed = (routing?.operations || []).map((operation) => ({
     sequence: operation.sequence,
     name: operation.name,
@@ -215,7 +238,8 @@ async function buildSnapshot(db, { tenantId, productId, bomId, quantity }) {
     noOfWorkers: operation.noOfWorkers || 1,
     isSubcontract: operation.isSubcontract,
     subcontractCostPerUnit: num(operation.subcontractCostPerUnit),
-    machineRatePerHour: 0,
+    machineRatePerHour: machineRate.get(operation.workstationId) || num(operation.machineRatePerHour),
+    milestoneWeight: num(operation.milestoneWeight),
     instructions: operation.instructions || null
   }));
 
@@ -368,6 +392,7 @@ async function createInside(db, args) {
             isSubcontract: operation.isSubcontract,
             subcontractCostPerUnit: operation.subcontractCostPerUnit,
             machineRatePerHour: operation.machineRatePerHour,
+            milestoneWeight: operation.milestoneWeight || 0,
             instructions: operation.instructions
           }))
         }
@@ -470,18 +495,20 @@ async function consumeReservation(db, component, quantity) {
   component.issuedQty = round4(num(component.issuedQty) + quantity);
 }
 
-async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialNumber, userId, confirmationId, yieldQty, scrapQty }) {
+async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialNumber, userId, confirmationId, yieldQty, scrapQty, substitute }) {
   const qty = round4(quantity);
   if (!(qty > 0)) return null;
-  const available = await onHand(db, wo.tenantId, component.productId, wo.warehouseId);
-  if (qty - available > 0.00005) {
+  const stockProductId = substitute?.productId || component.productId;
+  const stockQty = substitute ? round4(qty * (num(substitute.ratio) || 1)) : qty;
+  const available = await onHand(db, wo.tenantId, stockProductId, wo.warehouseId);
+  if (stockQty - available > 0.00005) {
     throw new ProductionError(`Insufficient stock to issue ${component.product?.code || 'component'}`);
   }
-    const fifo = await issueFifo(db, {
+  const fifo = await issueFifo(db, {
     tenantId: wo.tenantId,
-    productId: component.productId,
+    productId: stockProductId,
     warehouseId: wo.warehouseId,
-    quantity: qty,
+    quantity: stockQty,
     strictWarehouse: Boolean(wo.warehouseId)
   });
   const split = mode === 'BACKFLUSH'
@@ -490,9 +517,9 @@ async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialN
   await db.stockMovement.create({
     data: {
       tenantId: wo.tenantId,
-      productId: component.productId,
+      productId: stockProductId,
       type: 'GI',
-      quantity: qty,
+      quantity: stockQty,
       unitCost: fifo.unitCost,
       value: fifo.totalCost,
       referenceType: 'WORK_ORDER',
@@ -525,7 +552,14 @@ async function postIssue(db, { wo, component, quantity, mode, lotNumber, serialN
       componentId: component.id,
       confirmationId: confirmationId || null,
       productId: component.productId,
-      quantity: qty,
+      issuedProductId: substitute?.productId || null,
+      substitutionRatio: substitute ? (num(substitute.ratio) || 1) : 1,
+      substitutionDelta: substitute ? phase4.deltaForIssue({
+        actualCost: fifo.totalCost,
+        standardUnitCost: component.unitCost,
+        componentQty: qty
+      }) : 0,
+      quantity: stockQty,
       unitCost: fifo.unitCost,
       totalCost: fifo.totalCost,
       materialCost: split.material,
@@ -592,7 +626,7 @@ async function recomputeActuals(db, wo) {
   const actualLabour = round4(confirmations.reduce((sum, row) => sum + num(row.labourCost), 0));
   const actualMachine = round4(confirmations.reduce((sum, row) => sum + num(row.machineCost), 0));
   const actualSubcontract = round4(confirmations.reduce((sum, row) => sum + num(row.subcontractCost), 0));
-  const actualOverhead = round4((actualLabour + actualMachine + actualSubcontract) * num(wo.overheadPercent) / 100);
+  const actualOverhead = round4(confirmations.reduce((sum, row) => sum + num(row.overheadCost), 0));
   await db.workOrder.update({
     where: { id: wo.id },
     data: {
@@ -889,6 +923,12 @@ async function issueMaterial(tenantId, id, body, userId) {
     if (!component) throw new ProductionError('Component is not on this work order');
     const quantity = num(body.quantity);
     if (!(quantity > 0)) throw new ProductionError('Quantity must be greater than zero');
+    const substitute = await phase4.findAlternate(tx, {
+      tenantId,
+      bomId: wo.bomId,
+      componentProductId: component.productId,
+      substituteProductId: body.substituteProductId
+    });
     await postIssue(tx, {
       wo,
       component,
@@ -896,7 +936,8 @@ async function issueMaterial(tenantId, id, body, userId) {
       mode: 'MANUAL',
       lotNumber: body.lotNumber,
       serialNumber: serialText(body.serialNumber || body.serialNumbers),
-      userId
+      userId,
+      substitute
     });
     if (wo.status === 'RELEASED') {
       await tx.workOrder.update({ where: { id }, data: { status: 'IN_PROGRESS' } });
@@ -1004,12 +1045,25 @@ async function confirmOperation(tenantId, id, body, userId) {
 
     const labourMinutes = round4(Math.max(0, num(body.labourMinutes)));
     const machineMinutes = round4(Math.max(0, num(body.machineMinutes)));
-    const labourCost = round4((labourMinutes / 60) * num(wo.labourRatePerHour));
-    const machineCost = round4((machineMinutes / 60) * num(operation.machineRatePerHour));
+    const settings = await getSettings(tx, tenantId);
     const subcontractCost = operation.isSubcontract
       ? round4(num(operation.subcontractCostPerUnit) * (yieldQty + scrapQty))
       : 0;
-    const overheadCost = round4((labourCost + machineCost + subcontractCost) * num(wo.overheadPercent) / 100);
+    const absorbed = absorbCosts({
+      labourMinutes,
+      machineMinutes,
+      units: yieldQty + scrapQty,
+      labourRatePerHour: wo.labourRatePerHour,
+      machineRatePerHour: operation.machineRatePerHour,
+      subcontractCost,
+      overheadPercent: wo.overheadPercent,
+      overheadRate: settings.overheadRate,
+      labourBase: settings.labourAbsorptionBase,
+      overheadBase: settings.overheadAbsorptionBase
+    });
+    const labourCost = absorbed.labourCost;
+    const machineCost = absorbed.machineCost;
+    const overheadCost = absorbed.overheadCost;
 
     const confirmation = await tx.workOrderConfirmation.create({
       data: {
@@ -1129,19 +1183,68 @@ async function confirmOperation(tenantId, id, body, userId) {
     });
     await mirrorLegacy(tx, wo, 'IN_PROGRESS');
     await recomputeActuals(tx, wo);
+    if (isLast) {
+      await phase4.recordGenealogy(tx, wo, { fgLot: body.lotNumber || null, confirmationId: confirmation.id });
+      await phase4.flagAbnormalLoss(tx, wo.id);
+    }
+    await maybeAutoTeco(tx, tenantId, wo.id);
     const workOrder = await tx.workOrder.findFirst({ where: { id }, include: detailInclude });
     return { workOrder, confirmationId: confirmation.id };
   });
 }
 
+async function stampTeco(db, tenantId, id, { short = false } = {}) {
+  const settings = await getSettings(db, tenantId);
+  const grace = Number.isFinite(Number(settings.closeGraceDays)) ? Number(settings.closeGraceDays) : 3;
+  const tecoAt = new Date();
+  const closeDueAt = new Date(tecoAt);
+  closeDueAt.setDate(closeDueAt.getDate() + grace);
+  await db.workOrder.update({
+    where: { id },
+    data: { status: 'TECO', tecoAt, closeDueAt, ...(short ? { shortClosed: true } : {}) }
+  });
+}
+
+async function maybeAutoTeco(db, tenantId, id) {
+  const fresh = await db.workOrder.findFirst({
+    where: { id, tenantId },
+    include: { operations: true }
+  });
+  if (!fresh || !['RELEASED', 'IN_PROGRESS'].includes(fresh.status)) return fresh;
+  const last = [...fresh.operations].sort((a, b) => num(b.sequence) - num(a.sequence))[0];
+  if (!last || last.status !== 'COMPLETE') return fresh;
+  if (num(fresh.quantityReceipted) + 0.00005 < num(fresh.quantity)) return fresh;
+  await stampTeco(db, tenantId, id);
+  await mirrorLegacy(db, fresh, 'TECO');
+  return fresh;
+}
+
 async function technicallyComplete(tenantId, id) {
   const wo = await getWorkOrder(tenantId, id);
+  if (wo.status === 'TECO') return wo;
   if (!['RELEASED', 'IN_PROGRESS'].includes(wo.status)) {
     throw new ProductionError('Only released or in-progress work orders can be technically completed');
   }
-  await prisma.workOrder.update({ where: { id }, data: { status: 'TECO' } });
+  await stampTeco(prisma, tenantId, id);
   await mirrorLegacy(prisma, wo, 'TECO');
   return getWorkOrder(tenantId, id);
+}
+
+async function closeNow(tenantId, id, { short = false } = {}) {
+  const wo = await getWorkOrder(tenantId, id);
+  if (wo.status === 'CLOSED') return wo;
+  if (wo.status === 'CANCELLED' || wo.status === 'CREATED') {
+    throw new ProductionError('Release the work order before closing it');
+  }
+  if (wo.status !== 'TECO') {
+    const full = num(wo.quantityReceipted) + 0.00005 >= num(wo.quantity);
+    if (!full && !short) throw new ProductionError('Full quantity is not received. Use short close.');
+    await stampTeco(prisma, tenantId, id, { short: short || !full });
+    await mirrorLegacy(prisma, wo, 'TECO');
+  } else if (short) {
+    await prisma.workOrder.update({ where: { id }, data: { shortClosed: true } });
+  }
+  return closeWorkOrder(tenantId, id);
 }
 
 async function wipBalance(tx, tenantId, workOrderId) {
@@ -1456,6 +1559,7 @@ async function createDraftsForSalesOrder({ tenantId, userId, salesOrderId }) {
 
   for (const item of order.items) {
     if (!item.product || !item.product.bomApplicable) continue;
+    if (item.product.planningPolicy === 'MAKE_TO_STOCK') continue;
     const ordered = num(item.quantity);
     const alreadyShipped = takeQty(shipped, item.productId, ordered);
     const stillNeeded = round4(ordered - alreadyShipped);
@@ -1520,6 +1624,7 @@ module.exports = {
   clockOperation,
   confirmOperation,
   technicallyComplete,
+  closeNow,
   closeWorkOrder,
   cancelWorkOrder,
   getCost,

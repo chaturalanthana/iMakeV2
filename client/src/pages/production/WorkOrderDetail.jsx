@@ -117,6 +117,8 @@ export default function WorkOrderDetail() {
               {order.status === 'CREATED' && <button onClick={() => act('/release', 'Work order released')} style={{ ...BUTTON, background: 'var(--accent)', color: '#fff' }}>Release</button>}
               {['RELEASED', 'IN_PROGRESS'].includes(order.status) && <button onClick={() => act('/teco', 'Technically complete')} style={{ ...BUTTON, background: '#b45309', color: '#fff' }}>TECO</button>}
               {order.status === 'TECO' && <button onClick={() => act('/close', 'Work order closed')} style={{ ...BUTTON, background: '#15803d', color: '#fff' }}>Close</button>}
+              {['RELEASED', 'IN_PROGRESS', 'TECO'].includes(order.status) && <button onClick={() => act('/close-now', 'Work order closed')} style={{ ...BUTTON, background: '#15803d', color: '#fff' }}>Close now</button>}
+              {['RELEASED', 'IN_PROGRESS', 'TECO'].includes(order.status) && <button onClick={() => act('/short-close', 'Short closed')} style={{ ...BUTTON, background: '#fff', color: '#9a3412', border: '1px solid #fed7aa' }}>Short close</button>}
               {['CREATED', 'RELEASED'].includes(order.status) && <button onClick={() => act('/cancel', 'Work order cancelled')} style={{ ...BUTTON, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca' }}>Cancel</button>}
               <button onClick={() => navigate(recordPath('/production/shop-floor', order, 'orderNumber'))} style={{ ...BUTTON, background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0' }}>Shop floor</button>
             </div>

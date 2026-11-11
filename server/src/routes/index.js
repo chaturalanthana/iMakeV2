@@ -28,6 +28,7 @@ const productionJobRoutes = require('./productionJobRoutes');
 const productionOrderRoutes = require('./productionOrderRoutes');
 const workOrderRoutes = require('./workOrderRoutes');
 const costingRoutes = require('./costingRoutes');
+const productionPlanningRoutes = require('./productionPlanningRoutes');
 const mrpRoutes = require('./mrpRoutes');
 const workstationRoutes = require('./workstationRoutes');
 const machineRoutes = require('./machineRoutes');
@@ -81,6 +82,7 @@ router.use('/imports', ...secureAny(['products', 'sales', 'procurement', 'produc
 router.use('/labels', ...secureAny(['products', 'warehouse', 'production', 'sales', 'procurement']), labelRoutes);
 router.use('/uploads', ...secureModule('production'), uploadRoutes);
 router.use('/costing', ...secureModule('costing'), costingRoutes);
+router.use('/production', ...secureModule('production'), productionPlanningRoutes);
 
 router.use('/roles', ...secureModule('settings'), roleRoutes);
 router.use('/users', ...secureModule('settings'), userRoutes);

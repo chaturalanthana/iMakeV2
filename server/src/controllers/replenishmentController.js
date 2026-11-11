@@ -67,7 +67,11 @@ const approve = async (req, res) => {
 
 const tick = async (req, res) => {
   try {
-    res.json({ ran: await replenishment.runDueReplenishment() });
+    const { closeDueWorkOrders } = require('../services/production/phase4');
+    res.json({
+      ran: await replenishment.runDueReplenishment(),
+      closed: await closeDueWorkOrders()
+    });
   } catch (error) {
     send(res, error, 'Failed to run the replenishment schedule');
   }
