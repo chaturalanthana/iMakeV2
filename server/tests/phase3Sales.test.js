@@ -5,9 +5,8 @@ const jwt = require('jsonwebtoken');
 const { jwtSecret } = require('../src/config');
 const { postReceiptDocument } = require('../src/services/documentPosting');
 const { onHand } = require('../src/services/stockService');
-const { hashKey } = require('../src/middlewares/sfaAuth');
 
-describe('phase 3 sales, dispatch and SFA', () => {
+describe('phase 3 sales and dispatch', () => {
   let tenant;
   let token;
   let warehouse;
@@ -97,8 +96,6 @@ describe('phase 3 sales, dispatch and SFA', () => {
     await prisma.salesReservation.deleteMany({ where });
     await prisma.orderCancellation.deleteMany({ where });
     await prisma.customerPrice.deleteMany({ where });
-    await prisma.sfaMessage.deleteMany({ where });
-    await prisma.sfaApiKey.deleteMany({ where });
     await prisma.appNotification.deleteMany({ where });
     await prisma.bankFileExport.deleteMany({ where });
     await prisma.bankFileTemplate.deleteMany({ where });
@@ -320,59 +317,7 @@ describe('phase 3 sales, dispatch and SFA', () => {
     await balanced();
   });
 
-  test('SFA imports are idempotent, failures stay on the queue, and the bank file is configurable', async () => {
-    const key = await request(app).post('/api/sales/dispatch/sfa/keys').set(auth()).send({ name: 'iForce' });
-    expect(key.status).toBe(201);
-    const api = { 'x-api-key': key.body.apiKey };
-    const bad = await request(app).post('/api/sfa/v1/orders').set(api).send({
-      externalRef: 'ORD-1', customerRef: 'missing', items: [{ productCode: 'SOYA', quantity: 1 }]
-    });
-    expect(bad.status).toBe(400);
-    const queued = await prisma.sfaMessage.findFirst({ where: { tenantId: tenant.id, externalRef: 'ORD-1' } });
-    expect(queued.status).toBe('FAILED');
-
-    await request(app).post('/api/sfa/v1/customers').set(api).send({
-      externalRef: 'C-9', code: 'C-9', name: 'Field shop', channel: 'GENERAL_TRADE', creditLimit: 5000, allowCreditSales: true
-    }).expect(201);
-    const again = await request(app).post('/api/sfa/v1/customers').set(api).send({
-      externalRef: 'C-9', name: 'Field shop'
-    });
-    expect(again.status).toBe(200);
-    expect(again.body.duplicate).toBe(true);
-
-    const first = await request(app).post('/api/sfa/v1/orders').set(api).send({
-      externalRef: 'ORD-9', customerRef: 'C-9', warehouseCode: 'ELK', date: today,
-      items: [{ productCode: 'SOYA', quantity: 1 }]
-    });
-    expect(first.status).toBe(201);
-    const second = await request(app).post('/api/sfa/v1/orders').set(api).send({
-      externalRef: 'ORD-9', customerRef: 'C-9', items: [{ productCode: 'SOYA', quantity: 1 }]
-    });
-    expect(second.status).toBe(200);
-    expect(await prisma.salesOrder.count({ where: { tenantId: tenant.id, externalRef: 'ORD-9' } })).toBe(1);
-
-    const retry = await request(app).post(`/api/sales/dispatch/sfa/messages/${queued.id}/retry`).set(auth()).send({});
-    expect(retry.status).toBe(400);
-    await prisma.customer.update({ where: { id: customer.id }, data: { externalRef: 'missing' } });
-    const recovered = await request(app).post(`/api/sales/dispatch/sfa/messages/${queued.id}/retry`).set(auth()).send({});
-    expect(recovered.status).toBe(200);
-    expect(recovered.body.order.status).toBe('RELEASED');
-
-    const collected = await request(app).post('/api/sfa/v1/collections').set(api).send({
-      externalRef: 'COL-1', customerCode: 'C-9', amount: 10, date: today, method: 'CASH'
-    });
-    expect(collected.status).toBe(201);
-    const collectedAgain = await request(app).post('/api/sfa/v1/collections').set(api).send({
-      externalRef: 'COL-1', customerCode: 'C-9', amount: 10, date: today
-    });
-    expect(collectedAgain.status).toBe(200);
-    expect(await prisma.paymentReceipt.count({ where: { tenantId: tenant.id, reference: 'COL-1' } })).toBe(1);
-
-    const items = await request(app).get('/api/sfa/v1/items').set(api);
-    expect(items.body.some((row) => row.code === 'SOYA')).toBe(true);
-    const stock = await request(app).get('/api/sfa/v1/stock').set(api);
-    expect(stock.body.some((row) => row.productCode === 'SOYA' && row.quantity > 0)).toBe(true);
-
+  test('the bank collection file uses the configured columns', async () => {
     const file = await request(app).post('/api/sales/dispatch/bank-file/export').set(auth()).send({ from: today, to: today });
     expect(file.status).toBe(201);
     expect(file.body.body.split('\n')[0]).toBe('Date,Reference,Customer,Amount,Method,Invoice');
@@ -381,12 +326,5 @@ describe('phase 3 sales, dispatch and SFA', () => {
       columns: [{ key: 'reference', header: 'Ref' }, { key: 'amount', header: 'Amt' }]
     }).expect(200);
     await balanced();
-  });
-});
-
-describe('SFA key helper', () => {
-  test('hashes the same key to the same digest', () => {
-    expect(hashKey('ncc-demo-sfa-key')).toBe(hashKey('ncc-demo-sfa-key'));
-    expect(hashKey('ncc-demo-sfa-key')).not.toBe('ncc-demo-sfa-key');
   });
 });

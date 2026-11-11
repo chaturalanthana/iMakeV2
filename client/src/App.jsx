@@ -77,7 +77,7 @@ import NewInvoice from './pages/sales/NewInvoice';
 import CustomerOutstanding from './pages/sales/CustomerOutstanding';
 import {
   PriceRules, DispatchBoard, RoutePicks, Trips, CashSale, SalesReturns,
-  SfaQueue, BankFiles, DispatchSettings, NotificationsPage
+  BankFiles, DispatchSettings, NotificationsPage
 } from './pages/sales/phase3/pages';
 
 // Procurement Features
@@ -215,7 +215,6 @@ function App() {
               <Route path="/sales/trips" element={<Trips />} />
               <Route path="/sales/cash-sales" element={<CashSale />} />
               <Route path="/sales/returns" element={<SalesReturns />} />
-              <Route path="/sales/sfa" element={<SfaQueue />} />
               <Route path="/sales/bank-file" element={<BankFiles />} />
               <Route path="/sales/dispatch-settings" element={<DispatchSettings />} />
               <Route path="/sales/notifications" element={<NotificationsPage />} />

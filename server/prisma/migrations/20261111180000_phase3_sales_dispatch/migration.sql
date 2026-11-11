@@ -1,10 +1,8 @@
 -- AlterTable
-ALTER TABLE "customers" ADD COLUMN     "channel" TEXT DEFAULT 'GENERAL_TRADE',
-ADD COLUMN     "external_ref" TEXT;
+ALTER TABLE "customers" ADD COLUMN     "channel" TEXT DEFAULT 'GENERAL_TRADE';
 
 -- AlterTable
 ALTER TABLE "sales_invoices" ADD COLUMN     "channel" TEXT,
-ADD COLUMN     "external_ref" TEXT,
 ADD COLUMN     "sale_kind" TEXT DEFAULT 'CREDIT',
 ADD COLUMN     "stock_posted" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "warehouse_id" TEXT;
@@ -17,12 +15,10 @@ ADD COLUMN     "list_price" DECIMAL(19,4) NOT NULL DEFAULT 0;
 -- AlterTable
 ALTER TABLE "sales_orders" ADD COLUMN     "channel" TEXT NOT NULL DEFAULT 'GENERAL_TRADE',
 ADD COLUMN     "discount_percent" DECIMAL(9,4) NOT NULL DEFAULT 0,
-ADD COLUMN     "external_ref" TEXT,
 ADD COLUMN     "released_at" TIMESTAMP(3),
 ADD COLUMN     "released_by" TEXT,
 ADD COLUMN     "route_id" TEXT,
 ADD COLUMN     "ship_to_id" TEXT,
-ADD COLUMN     "source_system" TEXT,
 ADD COLUMN     "vehicle_id" TEXT,
 ADD COLUMN     "warehouse_id" TEXT;
 
@@ -34,15 +30,6 @@ CREATE TABLE "dispatch_settings" (
     "block_credit_over_limit" BOOLEAN NOT NULL DEFAULT true,
     "block_overdue" BOOLEAN NOT NULL DEFAULT true,
     "shortage_policy" TEXT NOT NULL DEFAULT 'ALLOW_PARTIAL',
-    "sfa_reservation" TEXT NOT NULL DEFAULT 'HARD',
-    "sfa_sync_minutes" INTEGER NOT NULL DEFAULT 15,
-    "sfa_import_orders" BOOLEAN NOT NULL DEFAULT true,
-    "sfa_import_customers" BOOLEAN NOT NULL DEFAULT true,
-    "sfa_import_collections" BOOLEAN NOT NULL DEFAULT true,
-    "sfa_export_items" BOOLEAN NOT NULL DEFAULT true,
-    "sfa_export_prices" BOOLEAN NOT NULL DEFAULT true,
-    "sfa_export_stock" BOOLEAN NOT NULL DEFAULT true,
-    "sfa_export_balances" BOOLEAN NOT NULL DEFAULT true,
     "gate_pass_required" BOOLEAN NOT NULL DEFAULT true,
     "invoice_before_dispatch" BOOLEAN NOT NULL DEFAULT true,
     "email_hook_enabled" BOOLEAN NOT NULL DEFAULT false,
@@ -292,37 +279,7 @@ CREATE TABLE "order_cancellations" (
     CONSTRAINT "order_cancellations_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "sfa_api_keys" (
-    "id" TEXT NOT NULL,
-    "tenant_id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "key_hash" TEXT NOT NULL,
-    "prefix" TEXT NOT NULL,
-    "active" BOOLEAN NOT NULL DEFAULT true,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "sfa_api_keys_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "sfa_messages" (
-    "id" TEXT NOT NULL,
-    "tenant_id" TEXT NOT NULL,
-    "direction" TEXT NOT NULL,
-    "entity" TEXT NOT NULL,
-    "external_ref" TEXT NOT NULL,
-    "payload" JSONB NOT NULL,
-    "status" TEXT NOT NULL,
-    "error" TEXT,
-    "attempts" INTEGER NOT NULL DEFAULT 0,
-    "result_id" TEXT,
-    "processed_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "sfa_messages_pkey" PRIMARY KEY ("id")
-);
 
 -- CreateTable
 CREATE TABLE "bank_file_templates" (
@@ -465,17 +422,9 @@ CREATE INDEX "order_cancellations_tenant_id_idx" ON "order_cancellations"("tenan
 -- CreateIndex
 CREATE INDEX "order_cancellations_order_id_idx" ON "order_cancellations"("order_id");
 
--- CreateIndex
-CREATE UNIQUE INDEX "sfa_api_keys_key_hash_key" ON "sfa_api_keys"("key_hash");
 
--- CreateIndex
-CREATE INDEX "sfa_api_keys_tenant_id_idx" ON "sfa_api_keys"("tenant_id");
 
--- CreateIndex
-CREATE INDEX "sfa_messages_tenant_id_status_idx" ON "sfa_messages"("tenant_id", "status");
 
--- CreateIndex
-CREATE UNIQUE INDEX "sfa_messages_tenant_id_direction_entity_external_ref_key" ON "sfa_messages"("tenant_id", "direction", "entity", "external_ref");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "bank_file_templates_tenant_id_key" ON "bank_file_templates"("tenant_id");
@@ -489,14 +438,8 @@ CREATE UNIQUE INDEX "bank_file_exports_tenant_id_number_key" ON "bank_file_expor
 -- CreateIndex
 CREATE INDEX "app_notifications_tenant_id_created_at_idx" ON "app_notifications"("tenant_id", "created_at");
 
--- CreateIndex
-CREATE UNIQUE INDEX "customers_tenant_id_external_ref_key" ON "customers"("tenant_id", "external_ref");
 
--- CreateIndex
-CREATE UNIQUE INDEX "sales_invoices_tenant_id_external_ref_key" ON "sales_invoices"("tenant_id", "external_ref");
 
--- CreateIndex
-CREATE UNIQUE INDEX "sales_orders_tenant_id_external_ref_key" ON "sales_orders"("tenant_id", "external_ref");
 
 -- AddForeignKey
 ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_ship_to_id_fkey" FOREIGN KEY ("ship_to_id") REFERENCES "ship_tos"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -663,11 +606,7 @@ ALTER TABLE "order_cancellations" ADD CONSTRAINT "order_cancellations_order_item
 -- AddForeignKey
 ALTER TABLE "order_cancellations" ADD CONSTRAINT "order_cancellations_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
-ALTER TABLE "sfa_api_keys" ADD CONSTRAINT "sfa_api_keys_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
-ALTER TABLE "sfa_messages" ADD CONSTRAINT "sfa_messages_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "bank_file_templates" ADD CONSTRAINT "bank_file_templates_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;

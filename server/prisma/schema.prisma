@@ -123,8 +123,6 @@ model Tenant {
   salesReturns                 SalesReturn[]
   salesReturnLines             SalesReturnLine[]
   orderCancellations           OrderCancellation[]
-  sfaApiKeys                   SfaApiKey[]
-  sfaMessages                  SfaMessage[]
   bankFileTemplate             BankFileTemplate?
   bankFileExports              BankFileExport[]
   appNotifications             AppNotification[]
@@ -277,7 +275,6 @@ model Customer {
   salesTerritory       String?           @map("sales_territory")
   taxGroup             String?           @map("tax_group")
   channel              String?           @default("GENERAL_TRADE")
-  externalRef          String?           @map("external_ref")
   accountsReceivable   Account?          @relation("CustomerARAccount", fields: [accountsReceivableId], references: [id])
   customerCategoryRel  CustomerCategory? @relation(fields: [customerCategoryId], references: [id])
   revenueAccount       Account?          @relation("CustomerRevenueAccount", fields: [revenueAccountId], references: [id])
@@ -292,7 +289,6 @@ model Customer {
   salesReturns         SalesReturn[]
   stockReturns         StockReturn[]
 
-  @@unique([tenantId, externalRef])
   @@index([tenantId])
   @@map("customers")
 }
@@ -702,8 +698,6 @@ model SalesOrder {
   routeId         String?          @map("route_id")
   vehicleId       String?          @map("vehicle_id")
   warehouseId     String?          @map("warehouse_id")
-  externalRef     String?          @map("external_ref")
-  sourceSystem    String?          @map("source_system")
   discountPercent Decimal          @default(0) @map("discount_percent") @db.Decimal(9, 4)
   releasedAt      DateTime?        @map("released_at")
   releasedBy      String?          @map("released_by")
@@ -723,7 +717,6 @@ model SalesOrder {
   cancellations   OrderCancellation[]
   routePickOrders RoutePickOrder[]
 
-  @@unique([tenantId, externalRef])
   @@index([tenantId])
   @@map("sales_orders")
 }
@@ -812,7 +805,6 @@ model SalesInvoice {
   channel             String?
   saleKind            String?              @default("CREDIT") @map("sale_kind")
   warehouseId         String?              @map("warehouse_id")
-  externalRef         String?              @map("external_ref")
   stockPosted         Boolean              @default(false) @map("stock_posted")
   paymentReceiptLines PaymentReceiptLine[]
   paymentReceipts     PaymentReceipt[]
@@ -825,7 +817,6 @@ model SalesInvoice {
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   salesReturns        SalesReturn[]
 
-  @@unique([tenantId, externalRef])
   @@index([tenantId])
   @@map("sales_invoices")
 }
@@ -2634,15 +2625,6 @@ model DispatchSetting {
   blockCreditOverLimit  Boolean  @default(true) @map("block_credit_over_limit")
   blockOverdue          Boolean  @default(true) @map("block_overdue")
   shortagePolicy        String   @default("ALLOW_PARTIAL") @map("shortage_policy")
-  sfaReservation        String   @default("HARD") @map("sfa_reservation")
-  sfaSyncMinutes        Int      @default(15) @map("sfa_sync_minutes")
-  sfaImportOrders       Boolean  @default(true) @map("sfa_import_orders")
-  sfaImportCustomers    Boolean  @default(true) @map("sfa_import_customers")
-  sfaImportCollections  Boolean  @default(true) @map("sfa_import_collections")
-  sfaExportItems        Boolean  @default(true) @map("sfa_export_items")
-  sfaExportPrices       Boolean  @default(true) @map("sfa_export_prices")
-  sfaExportStock        Boolean  @default(true) @map("sfa_export_stock")
-  sfaExportBalances     Boolean  @default(true) @map("sfa_export_balances")
   gatePassRequired      Boolean  @default(true) @map("gate_pass_required")
   invoiceBeforeDispatch Boolean  @default(true) @map("invoice_before_dispatch")
   emailHookEnabled      Boolean  @default(false) @map("email_hook_enabled")
@@ -2971,41 +2953,6 @@ model OrderCancellation {
   @@index([tenantId])
   @@index([orderId])
   @@map("order_cancellations")
-}
-
-model SfaApiKey {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  name      String
-  keyHash   String   @unique @map("key_hash")
-  prefix    String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@map("sfa_api_keys")
-}
-
-model SfaMessage {
-  id          String    @id @default(uuid())
-  tenantId    String    @map("tenant_id")
-  direction   String
-  entity      String
-  externalRef String    @map("external_ref")
-  payload     Json
-  status      String
-  error       String?
-  attempts    Int       @default(0)
-  resultId    String?   @map("result_id")
-  processedAt DateTime? @map("processed_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, direction, entity, externalRef])
-  @@index([tenantId, status])
-  @@map("sfa_messages")
 }
 
 model BankFileTemplate {

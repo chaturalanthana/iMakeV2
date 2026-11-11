@@ -56,7 +56,6 @@ async function postCashSale(db, input) {
         saleKind,
         warehouseId: warehouse.id,
         stockPosted: true,
-        externalRef: input.externalRef || null,
         createdBy: input.createdBy || null,
         items: { create: prepared.map((item) => ({ ...item, quantity: dec(item.quantity), unitPrice: dec(item.unitPrice), total: dec(item.total) })) }
       }
@@ -112,7 +111,7 @@ async function postCashSale(db, input) {
         amount: dec(invoice.total),
         date: new Date(input.date),
         method: 'CASH',
-        reference: input.externalRef || saleKind,
+        reference: saleKind,
         exchangeRate: rateOf(input.exchangeRate),
         createdBy: input.createdBy || null
       }
