@@ -1,0 +1,301 @@
+const crypto = require('crypto');
+const prisma = require('../lib/prisma');
+const { sendError } = require('../services/errors');
+const { deliverPending } = require('../services/phase3/notify');
+const { CONFIRMED_DEFAULTS } = require('../services/phase3/defaults');
+const { getSettings, saveSettings } = require('../services/phase3/settings');
+const { resolvePrice, savePriceRule } = require('../services/phase3/pricing');
+const dispatch = require('../services/phase3/dispatch');
+const { postCashSale } = require('../services/phase3/cashSale');
+const { postSalesReturn } = require('../services/phase3/returns');
+const sfa = require('../services/phase3/sfa');
+const bank = require('../services/phase3/bankFile');
+const { hashKey } = require('../middlewares/sfaAuth');
+
+async function finish(req, res, status, result) {
+  await deliverPending(prisma, req.tenantId);
+  return res.status(status).json(result);
+}
+
+function tx(req, res, work, fallback, status = 201) {
+  return prisma.$transaction((client) => work(client))
+    .then((result) => finish(req, res, status, result))
+    .catch((error) => sendError(res, error, fallback));
+}
+
+const actor = (req) => req.user?.userId || null;
+
+const getDefaults = (req, res) => res.json(CONFIRMED_DEFAULTS);
+const getSettingsRow = async (req, res) => {
+  try { res.json(await getSettings(prisma, req.tenantId)); }
+  catch (error) { sendError(res, error, 'Failed to load dispatch settings'); }
+};
+const putSettings = (req, res) => tx(req, res, (db) => saveSettings(db, req.tenantId, req.body), 'Failed to save dispatch settings', 200);
+
+const listRoutes = async (req, res) => {
+  const rows = await prisma.deliveryRoute.findMany({ where: { tenantId: req.tenantId }, include: { warehouse: true }, orderBy: { code: 'asc' } });
+  res.json(rows);
+};
+const createRoute = (req, res) => tx(req, res, (db) => db.deliveryRoute.create({
+  data: { tenantId: req.tenantId, code: req.body.code, name: req.body.name, warehouseId: req.body.warehouseId || null }
+}), 'Failed to save route');
+
+const listVehicles = async (req, res) => {
+  res.json(await prisma.vehicle.findMany({ where: { tenantId: req.tenantId }, include: { warehouse: true, route: true }, orderBy: { code: 'asc' } }));
+};
+const createVehicle = (req, res) => tx(req, res, (db) => db.vehicle.create({
+  data: {
+    tenantId: req.tenantId,
+    code: req.body.code,
+    registration: req.body.registration,
+    driverName: req.body.driverName || null,
+    kind: req.body.kind || 'TRUCK',
+    warehouseId: req.body.warehouseId || null,
+    routeId: req.body.routeId || null
+  }
+}), 'Failed to save vehicle');
+
+const listShipTos = async (req, res) => {
+  res.json(await prisma.shipTo.findMany({
+    where: { tenantId: req.tenantId, ...(req.query.customerId ? { customerId: req.query.customerId } : {}) },
+    include: { customer: true },
+    orderBy: { code: 'asc' }
+  }));
+};
+const createShipTo = (req, res) => tx(req, res, (db) => db.shipTo.create({
+  data: {
+    tenantId: req.tenantId,
+    customerId: req.body.customerId,
+    code: req.body.code,
+    name: req.body.name,
+    address: req.body.address || null,
+    isDefault: Boolean(req.body.isDefault)
+  }
+}), 'Failed to save ship-to');
+
+const listPrices = async (req, res) => {
+  res.json(await prisma.customerPrice.findMany({
+    where: { tenantId: req.tenantId },
+    include: { product: true, customer: true, category: true },
+    orderBy: { createdAt: 'desc' }
+  }));
+};
+const createPrice = (req, res) => tx(req, res, (db) => savePriceRule(db, { ...req.body, tenantId: req.tenantId, createdBy: actor(req) }), 'Failed to save price');
+
+const quote = async (req, res) => {
+  try {
+    const price = await resolvePrice(prisma, {
+      tenantId: req.tenantId,
+      customerId: req.query.customerId,
+      productId: req.query.productId,
+      channel: req.query.channel,
+      quantity: Number(req.query.quantity || 1),
+      currency: req.query.currency
+    });
+    res.json(price);
+  } catch (error) {
+    sendError(res, error, 'Failed to resolve price');
+  }
+};
+
+const getBoard = async (req, res) => {
+  try { res.json(await dispatch.board(prisma, req.tenantId)); }
+  catch (error) { sendError(res, error, 'Failed to load dispatch'); }
+};
+
+const release = (req, res) => tx(req, res, (db) => dispatch.releaseOrder(db, {
+  tenantId: req.tenantId, orderId: req.params.id, userId: actor(req), ...req.body
+}), 'Failed to release order', 200);
+
+const cancel = (req, res) => tx(req, res, (db) => dispatch.cancelOpen(db, {
+  tenantId: req.tenantId, orderId: req.params.id, userId: actor(req), ...req.body
+}), 'Failed to cancel order', 200);
+
+const listPicks = async (req, res) => {
+  const picks = await prisma.routePick.findMany({
+    where: { tenantId: req.tenantId },
+    include: { lines: { include: { product: true } }, route: true, vehicle: true },
+    orderBy: { date: 'desc' }
+  });
+  res.json(picks.map((pick) => dispatch.withSummary(pick)));
+};
+const createPick = (req, res) => tx(req, res, (db) => dispatch.createRoutePick(db, {
+  tenantId: req.tenantId, userId: actor(req), ...req.body
+}), 'Failed to create pick list');
+const advance = (req, res) => tx(req, res, (db) => dispatch.advancePick(db, {
+  tenantId: req.tenantId, pickId: req.params.id, ...req.body
+}), 'Failed to update pick list', 200);
+const deliver = (req, res) => tx(req, res, (db) => dispatch.createDeliveryNotes(db, {
+  tenantId: req.tenantId, pickId: req.params.id, userId: actor(req), date: req.body.date
+}), 'Failed to create delivery notes');
+
+const listTrips = async (req, res) => {
+  res.json(await prisma.tripSheet.findMany({
+    where: { tenantId: req.tenantId },
+    include: { vehicle: true, route: true, gatePass: true, deliveries: { include: { delivery: true } } },
+    orderBy: { date: 'desc' }
+  }));
+};
+const createTrip = (req, res) => tx(req, res, (db) => dispatch.createTrip(db, {
+  tenantId: req.tenantId, userId: actor(req), ...req.body
+}), 'Failed to create trip sheet');
+const invoiceTrip = (req, res) => tx(req, res, (db) => dispatch.invoiceDeliveries(db, {
+  tenantId: req.tenantId, tripId: req.params.id, userId: actor(req), date: req.body.date
+}), 'Failed to issue invoices');
+const gatePass = (req, res) => tx(req, res, (db) => dispatch.issueGatePass(db, {
+  tenantId: req.tenantId, tripId: req.params.id, userId: actor(req), ...req.body
+}), 'Failed to issue gate pass');
+const depart = (req, res) => tx(req, res, (db) => dispatch.departTrip(db, {
+  tenantId: req.tenantId, tripId: req.params.id, userId: actor(req)
+}), 'Failed to depart', 200);
+const returnTrip = (req, res) => tx(req, res, (db) => dispatch.returnTrip(db, {
+  tenantId: req.tenantId, tripId: req.params.id
+}), 'Failed to record the return', 200);
+
+const recordProof = (req, res) => tx(req, res, (db) => dispatch.recordProof(db, {
+  tenantId: req.tenantId, userId: actor(req), ...req.body
+}), 'Failed to record proof of delivery');
+const creditProof = async (req, res) => {
+  try {
+    const created = await dispatch.creditRejected(prisma, {
+      tenantId: req.tenantId, proofId: req.params.id, userId: actor(req), ...req.body
+    });
+    return finish(req, res, 201, created);
+  } catch (error) {
+    return sendError(res, error, 'Failed to credit the rejection');
+  }
+};
+
+const listReturns = async (req, res) => {
+  res.json(await prisma.salesReturn.findMany({
+    where: { tenantId: req.tenantId },
+    include: { customer: true, invoice: true, lines: { include: { product: true } } },
+    orderBy: { date: 'desc' }
+  }));
+};
+const createReturn = async (req, res) => {
+  try {
+    const created = await postSalesReturn(prisma, { ...req.body, tenantId: req.tenantId, createdBy: actor(req) });
+    return finish(req, res, 201, created);
+  } catch (error) {
+    return sendError(res, error, 'Failed to post the return');
+  }
+};
+
+const cashSale = async (req, res) => {
+  try {
+    const invoice = await postCashSale(prisma, { ...req.body, tenantId: req.tenantId, createdBy: actor(req) });
+    return finish(req, res, 201, invoice);
+  } catch (error) {
+    return sendError(res, error, 'Failed to post the cash sale');
+  }
+};
+
+const listNotes = async (req, res) => {
+  res.json(await prisma.appNotification.findMany({
+    where: { tenantId: req.tenantId },
+    orderBy: { createdAt: 'desc' },
+    take: 100
+  }));
+};
+const readNote = async (req, res) => {
+  const note = await prisma.appNotification.updateMany({
+    where: { id: req.params.id, tenantId: req.tenantId },
+    data: { readAt: new Date() }
+  });
+  res.json({ updated: note.count });
+};
+
+const createKey = async (req, res) => {
+  try {
+    const raw = crypto.randomBytes(24).toString('hex');
+    const saved = await prisma.sfaApiKey.create({
+      data: { tenantId: req.tenantId, name: req.body.name, keyHash: hashKey(raw), prefix: raw.slice(0, 8) }
+    });
+    res.status(201).json({ id: saved.id, name: saved.name, prefix: saved.prefix, apiKey: raw });
+  } catch (error) {
+    sendError(res, error, 'Failed to create API key');
+  }
+};
+const listKeys = async (req, res) => {
+  const keys = await prisma.sfaApiKey.findMany({
+    where: { tenantId: req.tenantId },
+    select: { id: true, name: true, prefix: true, active: true, createdAt: true }
+  });
+  res.json(keys);
+};
+const listMessages = async (req, res) => {
+  const where = { tenantId: req.tenantId };
+  if (req.query.status) where.status = req.query.status;
+  if (req.query.direction) where.direction = req.query.direction;
+  res.json(await prisma.sfaMessage.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 }));
+};
+const retry = async (req, res) => {
+  try {
+    const result = await sfa.retryMessage(prisma, req.tenantId, req.params.id);
+    return finish(req, res, 200, result);
+  } catch (error) {
+    return sendError(res, error, 'Failed to retry the message');
+  }
+};
+const sync = async (req, res) => {
+  try { res.json(await sfa.runSync(prisma, req.tenantId)); }
+  catch (error) { sendError(res, error, 'Failed to run sync'); }
+};
+
+const getBank = async (req, res) => {
+  try { res.json(await bank.templateFor(prisma, req.tenantId)); }
+  catch (error) { sendError(res, error, 'Failed to load the bank file'); }
+};
+const putBank = (req, res) => tx(req, res, (db) => bank.saveTemplate(db, req.tenantId, req.body), 'Failed to save the bank file', 200);
+const exportBank = async (req, res) => {
+  try {
+    const file = await bank.exportCollections(prisma, { tenantId: req.tenantId, userId: actor(req), ...req.body });
+    res.status(201).json(file);
+  } catch (error) {
+    sendError(res, error, 'Failed to export the bank file');
+  }
+};
+
+const publicHandler = (work) => async (req, res) => {
+  try {
+    const result = await work(req);
+    const status = result?.duplicate ? 200 : 201;
+    res.status(status).json(result);
+  } catch (error) {
+    sendError(res, error, 'SFA message failed');
+  }
+};
+
+module.exports = {
+  getDefaults, getSettingsRow, putSettings,
+  listRoutes, createRoute, listVehicles, createVehicle, listShipTos, createShipTo,
+  listPrices, createPrice, quote, getBoard, release, cancel,
+  listPicks, createPick, advance, deliver,
+  listTrips, createTrip, invoiceTrip, gatePass, depart, returnTrip,
+  recordProof, creditProof, listReturns, createReturn, cashSale,
+  listNotes, readNote, createKey, listKeys, listMessages, retry, sync,
+  getBank, putBank, exportBank, publicHandler,
+  importOrder: publicHandler((req) => sfa.importOrder(prisma, { ...req.body, tenantId: req.tenantId })),
+  importCustomer: publicHandler((req) => sfa.importCustomer(prisma, { ...req.body, tenantId: req.tenantId })),
+  importCollection: publicHandler((req) => sfa.importCollection(prisma, { ...req.body, tenantId: req.tenantId })),
+  importReturn: publicHandler((req) => sfa.importReturn(prisma, { ...req.body, tenantId: req.tenantId })),
+  importRoute: publicHandler((req) => sfa.importRoute(prisma, { ...req.body, tenantId: req.tenantId })),
+  importVisit: publicHandler((req) => sfa.importVisit(prisma, { ...req.body, tenantId: req.tenantId })),
+  exportItems: async (req, res) => {
+    try { res.json(await sfa.exportItems(prisma, req.tenantId)); }
+    catch (error) { sendError(res, error, 'Failed to export items'); }
+  },
+  exportPrices: async (req, res) => {
+    try { res.json(await sfa.exportPrices(prisma, req.tenantId, req.query.customerRef)); }
+    catch (error) { sendError(res, error, 'Failed to export prices'); }
+  },
+  exportStock: async (req, res) => {
+    try { res.json(await sfa.exportStock(prisma, req.tenantId)); }
+    catch (error) { sendError(res, error, 'Failed to export stock'); }
+  },
+  exportBalances: async (req, res) => {
+    try { res.json(await sfa.exportBalances(prisma, req.tenantId, req.query.customerRef)); }
+    catch (error) { sendError(res, error, 'Failed to export balances'); }
+  }
+};

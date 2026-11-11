@@ -68,6 +68,10 @@ import NewDelivery from './pages/sales/NewDelivery';
 import Invoices from './pages/sales/Invoices';
 import NewInvoice from './pages/sales/NewInvoice';
 import CustomerOutstanding from './pages/sales/CustomerOutstanding';
+import {
+  PriceRules, DispatchBoard, RoutePicks, Trips, CashSale, SalesReturns,
+  SfaQueue, BankFiles, DispatchSettings, NotificationsPage
+} from './pages/sales/phase3/pages';
 
 // Procurement Features
 import Suppliers from './pages/procurement/Suppliers';
@@ -185,6 +189,16 @@ function App() {
               <Route path="/sales/invoices/new" element={<NewInvoice />} />
               <Route path="/sales/invoices/*" element={<NewInvoice />} />
               <Route path="/sales/invoices" element={<Invoices />} />
+              <Route path="/sales/prices" element={<PriceRules />} />
+              <Route path="/sales/dispatch" element={<DispatchBoard />} />
+              <Route path="/sales/picks" element={<RoutePicks />} />
+              <Route path="/sales/trips" element={<Trips />} />
+              <Route path="/sales/cash-sales" element={<CashSale />} />
+              <Route path="/sales/returns" element={<SalesReturns />} />
+              <Route path="/sales/sfa" element={<SfaQueue />} />
+              <Route path="/sales/bank-file" element={<BankFiles />} />
+              <Route path="/sales/dispatch-settings" element={<DispatchSettings />} />
+              <Route path="/sales/notifications" element={<NotificationsPage />} />
               <Route path="/sales/outstanding" element={<CustomerOutstanding />} />
               <Route path="/sales/customers/:id/statement" element={<PartyStatement kind="customer" />} />
 

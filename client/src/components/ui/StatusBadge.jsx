@@ -34,7 +34,18 @@ const COLORS = {
   BLOCK: '#dc2626',
   WARN: '#d97706',
   MANUAL: '#475569',
-  BACKFLUSH: '#0369a1'
+  BACKFLUSH: '#0369a1',
+  ISSUED: '#059669',
+  PACKED: '#7c3aed',
+  PICKED: '#0369a1',
+  LOADED: '#7c3aed',
+  DEPARTED: '#0369a1',
+  RETURNED: '#d97706',
+  FAILED: '#dc2626',
+  REJECTED: '#dc2626',
+  PROCESSED: '#059669',
+  PARTIALLY_DELIVERED: '#d97706',
+  PENDING_APPROVAL: '#d97706'
 };
 
 export default function StatusBadge({ status, label }) {

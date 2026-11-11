@@ -8,6 +8,7 @@
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const prisma = require('../src/lib/prisma');
 const { seedTenantRoles } = require('../src/permissions/catalog');
@@ -35,6 +36,24 @@ function refuseUnsafeDatabase() {
 
 async function wipe(tenantId) {
   const where = { tenantId };
+  await prisma.proofLine.deleteMany({ where });
+  await prisma.proofOfDelivery.deleteMany({ where });
+  await prisma.salesReturnLine.deleteMany({ where });
+  await prisma.salesReturn.deleteMany({ where });
+  await prisma.gatePass.deleteMany({ where });
+  await prisma.tripDelivery.deleteMany({ where });
+  await prisma.tripSheet.deleteMany({ where });
+  await prisma.routePickLine.deleteMany({ where });
+  await prisma.routePickOrder.deleteMany({ where });
+  await prisma.routePick.deleteMany({ where });
+  await prisma.salesReservation.deleteMany({ where });
+  await prisma.orderCancellation.deleteMany({ where });
+  await prisma.customerPrice.deleteMany({ where });
+  await prisma.sfaMessage.deleteMany({ where });
+  await prisma.sfaApiKey.deleteMany({ where });
+  await prisma.appNotification.deleteMany({ where });
+  await prisma.bankFileExport.deleteMany({ where });
+  await prisma.bankFileTemplate.deleteMany({ where });
   await prisma.replenishmentLine.deleteMany({ where });
   await prisma.replenishmentRun.deleteMany({ where });
   await prisma.itemWarehousePolicy.deleteMany({ where });
@@ -95,6 +114,10 @@ async function wipe(tenantId) {
   await prisma.salesDelivery.deleteMany({ where });
   await prisma.salesOrderItem.deleteMany({ where: { order: where } });
   await prisma.salesOrder.deleteMany({ where });
+  await prisma.vehicle.deleteMany({ where });
+  await prisma.shipTo.deleteMany({ where });
+  await prisma.deliveryRoute.deleteMany({ where });
+  await prisma.dispatchSetting.deleteMany({ where });
   await prisma.salesQuotationItem.deleteMany({ where: { quotation: where } });
   await prisma.salesQuotation.deleteMany({ where });
   await prisma.gRNItem.deleteMany({ where: { grn: where } });
@@ -360,6 +383,112 @@ async function main() {
     }
   });
 
+  const elakanda = await prisma.warehouse.create({
+    data: { tenantId, code: 'ELK', name: 'Elakanda distribution', address: 'Elakanda, Wattala' }
+  });
+  const vanStore = await prisma.warehouse.create({
+    data: { tenantId, code: 'VAN-01', name: 'Van 01 stock', address: 'Mobile' }
+  });
+  const factory = await prisma.warehouse.create({
+    data: { tenantId, code: 'FAC-CASH', name: 'Factory cash counter', address: 'Peliyagoda' }
+  });
+  const route = await prisma.deliveryRoute.create({
+    data: { tenantId, code: 'GT-NORTH', name: 'General trade north', warehouseId: elakanda.id }
+  });
+  await prisma.vehicle.create({
+    data: {
+      tenantId, code: 'TRUCK-1', registration: 'WP-LD-2041', driverName: 'Ranjith',
+      kind: 'TRUCK', routeId: route.id
+    }
+  });
+  await prisma.vehicle.create({
+    data: {
+      tenantId, code: 'VAN-01', registration: 'WP-CAB-1188', driverName: 'Nadeesha',
+      kind: 'VAN', warehouseId: vanStore.id, routeId: route.id
+    }
+  });
+  const hotel = await prisma.customer.findFirst({ where: { tenantId, code: 'CUS-HOTEL' } });
+  const cafe = await prisma.customer.findFirst({ where: { tenantId, code: 'CUS-CAFE' } });
+  await prisma.customer.update({ where: { id: hotel.id }, data: { channel: 'GENERAL_TRADE' } });
+  await prisma.customer.update({ where: { id: cafe.id }, data: { channel: 'MODERN_TRADE' } });
+  const group = await prisma.customerCategory.create({
+    data: { tenantId, code: 'GT', name: 'General trade', allowCreditSales: true, creditLimit: 500000, creditPeriod: 30 }
+  });
+  await prisma.customer.update({ where: { id: hotel.id }, data: { customerCategoryId: group.id } });
+  await prisma.shipTo.create({
+    data: { tenantId, customerId: hotel.id, code: 'FORT', name: 'Galle Fort', address: 'Lighthouse Street, Galle Fort', isDefault: true }
+  });
+  await prisma.customerPrice.create({
+    data: { tenantId, scope: 'CUSTOMER', customerId: hotel.id, productId: chair.id, currency: 'LKR', minQty: 1, price: 17500 }
+  });
+  await prisma.customerPrice.create({
+    data: { tenantId, scope: 'GROUP', customerCategoryId: group.id, productId: table.id, currency: 'LKR', minQty: 1, price: 22000 }
+  });
+  await prisma.customerPrice.create({
+    data: { tenantId, scope: 'CHANNEL', channel: 'MODERN_TRADE', productId: chair.id, currency: 'LKR', minQty: 1, price: 18000 }
+  });
+  await prisma.dispatchSetting.create({ data: { tenantId } });
+  const demoKey = 'ncc-demo-sfa-key';
+  await prisma.sfaApiKey.create({
+    data: {
+      tenantId,
+      name: 'iForce demo',
+      prefix: demoKey.slice(0, 8),
+      keyHash: crypto.createHash('sha256').update(demoKey).digest('hex')
+    }
+  });
+  await prisma.$transaction(async (tx) => {
+    await postReceiptDocument(tx, {
+      tenantId,
+      warehouseId: elakanda.id,
+      referenceType: 'OPENING',
+      referenceId: `${tenantId}-fg`,
+      date: new Date(),
+      description: 'Finished goods for dispatch',
+      creditKey: 'OPENING_EQUITY',
+      items: [
+        { productId: chair.id, quantity: 12, unitPrice: 9000 },
+        { productId: table.id, quantity: 6, unitPrice: 12000 }
+      ]
+    });
+    await postReceiptDocument(tx, {
+      tenantId,
+      warehouseId: vanStore.id,
+      referenceType: 'OPENING',
+      referenceId: `${tenantId}-van`,
+      date: new Date(),
+      description: 'Van stock',
+      creditKey: 'OPENING_EQUITY',
+      items: [{ productId: chair.id, quantity: 4, unitPrice: 9000 }]
+    });
+    await postReceiptDocument(tx, {
+      tenantId,
+      warehouseId: factory.id,
+      referenceType: 'OPENING',
+      referenceId: `${tenantId}-factory`,
+      date: new Date(),
+      description: 'Factory cash counter stock',
+      creditKey: 'OPENING_EQUITY',
+      items: [{ productId: table.id, quantity: 3, unitPrice: 12000 }]
+    });
+  });
+  await prisma.salesOrder.create({
+    data: {
+      tenantId,
+      customerId: hotel.id,
+      orderNumber: 'SO/DEMO/00001',
+      date: new Date(),
+      status: 'PENDING',
+      total: 35000,
+      channel: 'GENERAL_TRADE',
+      routeId: route.id,
+      warehouseId: elakanda.id,
+      items: {
+        create: [{ productId: chair.id, quantity: 2, unitPrice: 17500, total: 35000, listPrice: 17500 }]
+      }
+    }
+  });
+
   console.log('Demo tenant ready.');
   console.log('  Company   Ceylon Woodworks (Pvt) Ltd');
   console.log(`  Sign in   ${EMAIL}`);
@@ -367,6 +496,8 @@ async function main() {
   console.log('  Stores    MAIN — teak, screws, varnish, fabric, glue');
   console.log('  Buy       reorder teak and screws. Chairs and tables are planned in MRP.');
   console.log('  Make      CHAIR and TABLE, routed across SAW, ASM, and FIN');
+  console.log('  Dispatch  Elakanda stock, GT-NORTH, pending hotel order for 2 chairs');
+  console.log('  SFA key   ncc-demo-sfa-key');
 }
 
 main()
