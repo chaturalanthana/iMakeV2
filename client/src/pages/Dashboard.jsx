@@ -648,7 +648,7 @@ export default function Dashboard() {
                         }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>{ws.code}</strong>
-                            <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', backgroundColor: badge.bg, color: badge.color }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: badge.color }}>
                               {badge.label}
                             </span>
                           </div>

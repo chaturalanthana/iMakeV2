@@ -166,35 +166,15 @@ export default function Currencies() {
       header: 'Base Currency',
       accessor: 'isBase',
       align: 'center',
-      render: (row) => row.isBase ? (
+      render: (row) => (
         <span style={{ 
-          display: 'inline-flex', 
-          alignItems: 'center', 
-          padding: '0.25rem 0.75rem', 
-          borderRadius: '50px', 
-          backgroundColor: 'rgba(59, 130, 246, 0.1)', 
-          color: 'var(--accent)', 
+          color: row.isBase ? 'var(--accent)' : 'var(--text-muted)', 
           fontWeight: 700, 
           fontSize: '0.75rem',
           textTransform: 'uppercase',
-          letterSpacing: '0.025em'
+          letterSpacing: '0.02em'
         }}>
-          Base
-        </span>
-      ) : (
-        <span style={{ 
-          display: 'inline-flex', 
-          alignItems: 'center', 
-          padding: '0.25rem 0.75rem', 
-          borderRadius: '50px', 
-          backgroundColor: '#f1f5f9', 
-          color: '#64748b', 
-          fontWeight: 600, 
-          fontSize: '0.75rem',
-          textTransform: 'uppercase',
-          letterSpacing: '0.025em'
-        }}>
-          Secondary
+          {row.isBase ? 'BASE' : 'SECONDARY'}
         </span>
       )
     },

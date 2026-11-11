@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Users as UsersIcon, X, Save, Lock } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Users as UsersIcon, X, Save, Lock, Trash2, AlertTriangle, RefreshCw, UserCheck } from 'lucide-react';
 import AppLayout from '../../components/layout/AppLayout';
 import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
 
 export default function Users() {
   const { addToast } = useToast();
@@ -11,6 +13,30 @@ export default function Users() {
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [showFlushModal, setShowFlushModal] = useState(false);
+  const [flushing, setFlushing] = useState(false);
+
+  const handleFlushSystemData = async () => {
+    setFlushing(true);
+    try {
+      const res = await fetch('/api/system/flush', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to flush system data');
+      addToast(data.message || 'System data flushed. Retained Admin account.', 'success');
+      setShowFlushModal(false);
+      await fetchData();
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setFlushing(false);
+    }
+  };
   
   // form state
   const [formData, setFormData] = useState({
@@ -145,7 +171,7 @@ export default function Users() {
       header: 'Role',
       accessor: 'role.name',
       render: (row) => (
-        <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '12px', backgroundColor: '#f1f5f9', color: '#475569', fontWeight: 600 }}>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 500 }}>
           {row.role?.name || 'No Role'}
         </span>
       )
@@ -153,32 +179,44 @@ export default function Users() {
     {
       header: 'Status',
       accessor: 'status',
-      render: (row) => (
-        <span style={{ 
-          fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
-          backgroundColor: row.status === 'ACTIVE' ? '#dcfce7' : '#fee2e2',
-          color: row.status === 'ACTIVE' ? '#166534' : '#991b1b'
-        }}>
-          {row.status}
-        </span>
-      )
+      render: (row) => <StatusBadge status={row.status} />
     }
   ];
 
   const extraActions = (
-    <button
-      onClick={() => openForm()}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '0.5rem',
-        backgroundColor: 'var(--accent)', color: 'white',
-        border: 'none', padding: '0.6rem 1.2rem',
-        borderRadius: '8px', cursor: 'pointer', fontWeight: 600,
-        boxShadow: '0 4px 6px -1px rgba(99, 102, 241, 0.2)'
-      }}
-    >
-      <Plus size={18} />
-      Create User
-    </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+      <button
+        type="button"
+        onClick={() => setShowFlushModal(true)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          backgroundColor: '#ffffff', color: '#dc2626',
+          border: '1px solid #fecaca', padding: '0.55rem 0.95rem',
+          borderRadius: '8px', cursor: 'pointer', fontWeight: 600,
+          fontSize: '0.875rem',
+          boxShadow: 'none'
+        }}
+        title="Flush operational data and keep only Admin account"
+      >
+        <Trash2 size={15} />
+        System Data Flush
+      </button>
+
+      <button
+        onClick={() => openForm()}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          backgroundColor: 'var(--accent)', color: '#ffffff',
+          border: '1px solid var(--accent)', padding: '0.55rem 1rem',
+          borderRadius: '8px', cursor: 'pointer', fontWeight: 600,
+          fontSize: '0.875rem',
+          boxShadow: 'none'
+        }}
+      >
+        <Plus size={16} />
+        Create User
+      </button>
+    </div>
   );
 
   return (
@@ -303,6 +341,117 @@ export default function Users() {
           extraActions={extraActions}
           onRowClick={(row) => openForm(row)}
         />
+
+        {showFlushModal && createPortal(
+          <div className="modal-backdrop">
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '440px',
+                padding: '1.5rem',
+                backgroundColor: '#ffffff',
+                border: '1px solid var(--border-color)',
+                borderRadius: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
+              }}
+            >
+              {/* Modal Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#dc2626' }}>
+                  <AlertTriangle size={20} />
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                    System Data Flush
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFlushModal(false)}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px', display: 'flex' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Icon Driven Action Cards */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: '8px', padding: '0.75rem' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #fecaca', color: '#dc2626', padding: '0.4rem', borderRadius: '6px', display: 'flex' }}>
+                    <Trash2 size={16} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#991b1b' }}>Purge Operational Data</div>
+                    <div style={{ fontSize: '0.75rem', color: '#b91c1c' }}>Orders, inventory, products & staff accounts</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#f0fdf4', border: '1px solid #dcfce7', borderRadius: '8px', padding: '0.75rem' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #bbf7d0', color: '#16a34a', padding: '0.4rem', borderRadius: '6px', display: 'flex' }}>
+                    <UserCheck size={16} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#166534' }}>Retain Admin Account</div>
+                    <div style={{ fontSize: '0.75rem', color: '#15803d' }}>Only your primary administrator account is kept</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  disabled={flushing}
+                  onClick={() => setShowFlushModal(false)}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: '#ffffff',
+                    color: 'var(--text-main)',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: flushing ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={flushing}
+                  onClick={handleFlushSystemData}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid #dc2626',
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: flushing ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem'
+                  }}
+                >
+                  {flushing ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" />
+                      Flushing...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={15} />
+                      Flush System Data
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     </AppLayout>
   );

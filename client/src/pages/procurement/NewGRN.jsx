@@ -290,7 +290,7 @@ export default function NewGRN() {
                 </h2>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Receive physical goods into stock</span>
-                  {poNumber && <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', backgroundColor: '#e0e7ff', color: '#4338ca', borderRadius: '4px', fontWeight: 600 }}>Ref: {poNumber}</span>}
+                  {poNumber && <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600 }}>Ref: {poNumber}</span>}
                 </div>
               </div>
             </div>

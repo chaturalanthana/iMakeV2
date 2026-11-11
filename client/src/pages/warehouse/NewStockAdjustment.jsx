@@ -8,6 +8,7 @@ import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
+import StatusBadge from '../../components/ui/StatusBadge';
 import ActivityPanel from '../../components/ui/ActivityPanel';
 import { ArrowUpRight, ArrowLeft, Plus, Trash2, Briefcase, Package, Printer, Save, CheckCircle, Calendar, FileText } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -259,11 +260,9 @@ export default function NewStockAdjustment() {
                 <ArrowLeft size={18} />
               </button>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <h2 style={{ margin: 0, fontWeight: 800, color: 'var(--text-main)', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   {routeKey ? adjNumber : 'New Stock Adjustment (ADJ)'}
-                  <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '12px', background: isReadOnly ? '#ecfdf5' : '#fef3c7', color: isReadOnly ? '#059669' : '#d97706', fontWeight: 700, border: `1px solid ${isReadOnly ? '#a7f3d0' : '#fde68a'}` }}>
-                    {status}
-                  </span>
+                  <StatusBadge status={status} />
                 </h2>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Audit or reconcile actual physical stock vs system stock</span>

@@ -6,7 +6,6 @@ import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
 import ConfirmModal from '../../components/ui/ConfirmModal';
-import FilterBar from '../../components/ui/FilterBar';
 import FormModal from '../../components/ui/FormModal';
 import FormField, { TextControl, SelectControl } from '../../components/ui/FormField';
 import ActionButton from '../../components/ui/ActionButton';
@@ -25,7 +24,6 @@ export default function WorkOrders() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [orders, setOrders] = useState([]);
-  const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
@@ -44,12 +42,8 @@ export default function WorkOrders() {
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersRes, settingsRes] = await Promise.all([
-        axios.get('/api/work-orders', authConfig()),
-        axios.get('/api/work-orders/settings', authConfig())
-      ]);
-      setOrders(ordersRes.data);
-      setSettings(settingsRes.data);
+      const res = await axios.get('/api/work-orders', authConfig());
+      setOrders(res.data);
     } catch (err) {
       showToast('Failed to load work orders', 'error');
     } finally {
@@ -118,15 +112,6 @@ export default function WorkOrders() {
   const bomOptions = boms
     .filter((bom) => bom.productId === form.productId)
     .map((bom) => ({ label: `${bom.code} (v${bom.version})`, value: bom.id }));
-
-  const saveSetting = async (patch) => {
-    try {
-      const res = await axios.put('/api/work-orders/settings', patch, authConfig());
-      setSettings(res.data);
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to save production settings', 'error');
-    }
-  };
 
   const handleDelete = async (id) => {
     try {
@@ -198,26 +183,6 @@ export default function WorkOrders() {
     <AppLayout title="Work Orders" icon={ClipboardList}>
       {isInitialLoad ? <PageSkeleton type="table" /> : (
         <>
-          <FilterBar>
-            <FormField label="Material check" width="240px">
-              <SelectControl
-                value={settings?.materialCheck || 'WARN'}
-                onChange={(event) => saveSetting({ materialCheck: event.target.value })}
-              >
-                <option value="WARN">Warn and release</option>
-                <option value="BLOCK">Block when short</option>
-              </SelectControl>
-            </FormField>
-            <FormField label="Issue" width="240px">
-              <SelectControl
-                value={settings?.issueMode || 'BACKFLUSH'}
-                onChange={(event) => saveSetting({ issueMode: event.target.value })}
-              >
-                <option value="BACKFLUSH">Backflush on confirm</option>
-                <option value="MANUAL">Manual issue</option>
-              </SelectControl>
-            </FormField>
-          </FilterBar>
           <DataTable
             columns={columns}
             data={rows}
@@ -271,7 +236,7 @@ export default function WorkOrders() {
           </FormField>
           <FormField label="Issue" width="200px">
             <SelectControl value={form.issueMode} onChange={(event) => setForm((prev) => ({ ...prev, issueMode: event.target.value }))}>
-              <option value="">Settings default</option>
+              <option value="">Backflush (Default)</option>
               <option value="BACKFLUSH">Backflush</option>
               <option value="MANUAL">Manual</option>
             </SelectControl>

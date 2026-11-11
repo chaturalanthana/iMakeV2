@@ -81,7 +81,7 @@ export default function LoanManagement() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
         <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid #e2e8f0' }}>
           <button type="button" style={tabStyle('active')} onClick={() => setActiveTab('active')}>
-            Active Loans <span style={{ background: '#e0e7ff', color: '#4338ca', borderRadius: '10px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 700 }}>{loans.filter(l => l.status === 'ACTIVE').length}</span>
+            Active Loans <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)' }}>({loans.filter(l => l.status === 'ACTIVE').length})</span>
           </button>
           <button type="button" style={tabStyle('closed')} onClick={() => setActiveTab('closed')}>
             Closed Loans
@@ -114,7 +114,7 @@ export default function LoanManagement() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <span style={{ fontWeight: 800, color: '#1e293b', fontSize: '0.95rem' }}>{loan.employee?.firstName} {loan.employee?.lastName}</span>
                       <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>{loan.loanNumber}</span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: loan.status === 'ACTIVE' ? '#dcfce7' : '#f1f5f9', color: loan.status === 'ACTIVE' ? '#16a34a' : '#64748b' }}>{loan.status}</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: loan.status === 'ACTIVE' ? '#16a34a' : '#64748b' }}>{loan.status}</span>
                     </div>
                     {/* Progress Bar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.4rem' }}>

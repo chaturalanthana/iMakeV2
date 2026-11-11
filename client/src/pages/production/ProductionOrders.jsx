@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { recordPath } from '../../utils/recordPath';
 import AppLayout from '../../components/layout/AppLayout';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { ClipboardList, Plus, Search, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { confirmDialog } from '../../components/ui/appDialog';
@@ -109,9 +110,7 @@ export default function ProductionOrders() {
                   <td><strong>{parseFloat(o.quantity)}</strong></td>
                   <td>{o.bom ? `${o.bom.code} (v${o.bom.version})` : 'None'}</td>
                   <td>
-                    <span style={{ backgroundColor: tag.bg, color: tag.text, fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '12px', textTransform: 'uppercase' }}>
-                      {o.status}
-                    </span>
+                    <StatusBadge status={o.status} />
                   </td>
                   <td>{o.startDate ? new Date(o.startDate).toLocaleDateString() : '-'}</td>
                   <td>{o.endDate ? new Date(o.endDate).toLocaleDateString() : '-'}</td>

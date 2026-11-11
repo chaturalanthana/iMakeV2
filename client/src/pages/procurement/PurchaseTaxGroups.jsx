@@ -6,6 +6,7 @@ import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { Landmark, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -105,17 +106,7 @@ export default function PurchaseTaxGroups() {
       header: 'Status', 
       accessor: 'status', 
       fontWeight: 600, 
-      render: (row) => (
-        <span style={{
-          padding: '3px 8px',
-          borderRadius: '12px',
-          fontSize: '0.75rem',
-          backgroundColor: row.status === 'ACTIVE' ? '#e2fbe8' : '#fee2e2',
-          color: row.status === 'ACTIVE' ? '#15803d' : '#b91c1c'
-        }}>
-          {row.status}
-        </span>
-      )
+      render: (row) => <StatusBadge status={row.status} />
     },
     {
       header: 'Actions',

@@ -3,6 +3,7 @@ const { respondList } = require('../services/listQuery');
 const { writeAudit } = require('../services/auditService');
 const { DocumentError, sendError } = require('../services/errors');
 const { prepareItem, SENSITIVE_BULK, OPERATIONAL_BULK } = require('../services/inventory/itemMaster');
+const { ensureProductTypes } = require('../services/productTypes');
 
 function planningFields(body) {
   const data = {};
@@ -130,7 +131,7 @@ const getAttributes = async (req, res) => {
         select: { id: true, name: true, parentId: true } 
       }),
       prisma.unitOfMeasure.findMany({ where: { tenantId: req.tenantId }, select: { id: true, name: true } }),
-      prisma.productType.findMany({ where: { tenantId: req.tenantId }, select: { id: true, name: true } }),
+      ensureProductTypes(prisma, req.tenantId),
       prisma.supplier.findMany({ where: { tenantId: req.tenantId }, select: { id: true, name: true } }),
       prisma.account.findMany({ 
         where: { tenantId: req.tenantId }, 

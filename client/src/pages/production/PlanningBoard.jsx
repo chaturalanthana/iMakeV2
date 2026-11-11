@@ -1419,7 +1419,7 @@ export default function PlanningBoard() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#dc2626' }}>{job.jobNumber}</span>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 700, backgroundColor: '#f1f5f9', color: '#475569', padding: '1px 4px', borderRadius: '3px' }}>{job.priority}</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#475569' }}>{job.priority}</span>
                     </div>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {job.product?.name}

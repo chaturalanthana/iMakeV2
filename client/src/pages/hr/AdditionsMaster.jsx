@@ -82,7 +82,7 @@ export default function AdditionsMaster() {
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', background: group.bg, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <PlusCircle size={18} color={group.color} />
               <span style={{ fontWeight: 800, color: group.color, fontSize: '0.9rem' }}>{group.label}</span>
-              <span style={{ marginLeft: 'auto', background: group.color, color: '#fff', borderRadius: '20px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700 }}>{group.data.length}</span>
+              <span style={{ marginLeft: 'auto', color: group.color, fontSize: '0.85rem', fontWeight: 700 }}>{group.data.length}</span>
             </div>
             {loading ? (
               <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading...</div>

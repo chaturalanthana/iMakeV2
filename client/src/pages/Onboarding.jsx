@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, Sparkles, MapPin, CircleDollarSign } from 'lucide-react';
+import { Building2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, Sparkles, MapPin, CircleDollarSign, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 export default function Onboarding() {
@@ -29,16 +29,11 @@ export default function Onboarding() {
       // Auto-login on success
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
-      
-      showToast('Registration successful! Setting up workspace...', 'success');
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 1000);
+      window.location.href = '/dashboard';
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Registration failed';
       setError(errorMsg);
       showToast(errorMsg, 'error');
-    } finally {
       setLoading(false);
     }
   };
@@ -183,9 +178,29 @@ export default function Onboarding() {
               </>
             )}
 
-            <button type="submit" disabled={loading} className="btn-primary" style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-              {step === 1 ? 'Continue to Admin Profile' : (loading ? 'Initializing Workspace...' : 'Create Tenant & Sign In')}
-              {!loading && step === 1 && <ArrowRight size={20} />}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary"
+              style={{
+                marginTop: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.625rem'
+              }}
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>{step === 1 ? 'Loading...' : 'Initializing Workspace...'}</span>
+                </>
+              ) : (
+                <>
+                  <span>{step === 1 ? 'Continue to Admin Profile' : 'Create Tenant & Sign In'}</span>
+                  {step === 1 && <ArrowRight size={20} />}
+                </>
+              )}
             </button>
           </form>
           

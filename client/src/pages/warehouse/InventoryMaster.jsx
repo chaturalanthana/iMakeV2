@@ -266,28 +266,6 @@ const MASTERS = {
         }
       })
     ]
-  },
-  templates: {
-    title: 'UOM Templates',
-    endpoint: '/api/inventory/uom-templates',
-    ensure: '/api/inventory/uom-templates/ensure',
-    button: '',
-    modalTitle: 'Templates',
-    subtitle: 'Weight, volume and count conversions.',
-    search: 'Search templates...',
-    keys: ['code', 'name', 'baseCode'],
-    empty: () => ({ code: '', name: '' }),
-    validate: () => ({ code: 'Use Load defaults for the standard templates.' }),
-    payload: (form) => form,
-    fields: [
-      { key: 'code', label: 'Code', required: true }
-    ],
-    columns: () => [
-      { header: 'Code', accessor: 'code', fontWeight: 700 },
-      { header: 'Name', accessor: 'name' },
-      { header: 'Base', accessor: 'baseCode' },
-      { header: 'Units', accessor: 'lines', render: (row) => (row.lines || []).map((line) => `${line.uomCode}×${Number(line.factorToBase)}`).join(', ') }
-    ]
   }
 };
 

@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, RotateCcw, Bell, ScrollText, Briefcase, Boxes
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, RotateCcw, Bell, ScrollText, Briefcase, Boxes, Trash2, AlertTriangle
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -55,15 +55,10 @@ export default function Sidebar() {
         { name: 'Costing', icon: DollarSign, path: '/production/costing' },
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
-        { name: 'Production Reports', icon: BarChart2, path: '/production/reports' },
-        { name: 'Abnormal losses', icon: BarChart2, path: '/production/losses' },
-        { name: 'Contract Manufacturing', icon: Truck, path: '/production/contracts' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
-        { name: 'Product Types', icon: Layers, path: '/registries/product-types' },
         { name: 'Brands', icon: Tag, path: '/registries/brands' },
         { name: 'Categories', icon: Layers, path: '/registries/categories' },
         { name: 'UOMs', icon: RefreshCw, path: '/registries/uoms' },
-        { name: 'UOM Templates', icon: RefreshCw, path: '/registries/uom-templates' },
       ]
     },
     { 
@@ -179,6 +174,19 @@ export default function Sidebar() {
         { name: 'EPF / ETF', icon: Landmark, path: '/hr/statutory' },
       ]
     },
+    {
+      name: 'Reports',
+      icon: BarChart2,
+      subItems: [
+        { name: 'All Reports', icon: LayoutDashboard, path: '/reports' },
+        { name: 'Production Reports', icon: BarChart2, path: '/production/reports' },
+        { name: 'Abnormal losses', icon: AlertTriangle, path: '/production/losses' },
+        { name: 'Stock Reports', icon: FileText, path: '/warehouse/stock-reports' },
+        { name: 'Inventory Report', icon: Layers, path: '/warehouse/inventory-report' },
+        { name: 'Finance Reports', icon: TrendingUp, path: '/finance/reports' },
+        { name: 'VAT Report', icon: FileText, path: '/finance/vat' },
+      ]
+    },
   ];
 
   const systemItems = [
@@ -192,6 +200,7 @@ export default function Sidebar() {
         { name: 'Fiscal periods', icon: CalendarDays, path: '/settings/periods' },
         { name: 'Audit log', icon: ScrollText, path: '/settings/audit' },
         { name: 'Data import', icon: Upload, path: '/settings/import' },
+        { name: 'System Flush', icon: Trash2, path: '/settings/system' },
       ] 
     }
   ];

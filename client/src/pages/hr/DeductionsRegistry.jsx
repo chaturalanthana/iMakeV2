@@ -86,7 +86,7 @@ export default function DeductionsRegistry() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <group.icon size={18} color={group.color} />
                 <span style={{ fontWeight: 800, color: group.color, fontSize: '0.9rem' }}>{group.label}</span>
-                <span style={{ marginLeft: 'auto', background: group.color, color: '#fff', borderRadius: '20px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700 }}>{group.data.length}</span>
+                <span style={{ marginLeft: 'auto', color: group.color, fontSize: '0.85rem', fontWeight: 700 }}>{group.data.length}</span>
               </div>
               <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: group.color, opacity: 0.75 }}>{group.desc}</p>
             </div>
@@ -103,7 +103,7 @@ export default function DeductionsRegistry() {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.9rem' }}>{d.name}</span>
-                        {d.isStatutory && <span style={{ fontSize: '0.65rem', fontWeight: 700, background: '#fee2e2', color: '#dc2626', borderRadius: '10px', padding: '2px 7px' }}>STATUTORY</span>}
+                        {d.isStatutory && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#dc2626' }}>STATUTORY</span>}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Default: ${parseFloat(d.defaultAmount).toFixed(2)} · {d.type}</div>
                     </div>

@@ -165,7 +165,7 @@ export default function NewSupplierInvoice() {
             title={saved?.invoiceNumber ? `View Supplier Invoice` : 'Create Supplier Invoice'}
             subtitle={saved ? saved.status : 'Created from the goods receipt'}
             extra={saved?.invoiceNumber ? (
-              <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', backgroundColor: '#e0e7ff', color: '#4338ca', borderRadius: '4px', fontWeight: 600 }}>#{saved.invoiceNumber}</span>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>#{saved.invoiceNumber}</span>
             ) : null}
             actions={!readOnly && (
               <>

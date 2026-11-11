@@ -310,13 +310,13 @@ export default function Roles() {
               
               <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #f1f5f9' }}>
                 <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Access Level</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
                   {role.permissions?.all ? (
-                    <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '12px', backgroundColor: '#e0e7ff', color: '#4f46e5', fontWeight: 600 }}>Full System Access</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>Full System Access</span>
                   ) : (
                     Object.entries(role.permissions).map(([mod, actions]) => (
                       actions.length > 0 && (
-                        <span key={mod} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '12px', backgroundColor: '#f1f5f9', color: '#475569', fontWeight: 500, textTransform: 'capitalize' }}>
+                        <span key={mod} style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500, textTransform: 'capitalize' }}>
                           {mod} ({actions.join(', ')})
                         </span>
                       )

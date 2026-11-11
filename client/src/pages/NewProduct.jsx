@@ -877,7 +877,7 @@ export default function NewProduct() {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '6px' }}>
                           <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 600 }}>1</span>
-                          <span style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
                             {attributes.uoms?.find(u => u.value === formData.purchaseUomId)?.label || 'Purchase UOM'}
                           </span>
                           <span style={{ fontSize: '1rem', color: '#64748b', fontWeight: 'bold' }}>=</span>
@@ -922,7 +922,7 @@ export default function NewProduct() {
                               textAlign: 'center' 
                             }}
                           />
-                          <span style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
                             {attributes.uoms?.find(u => u.value === formData.stockUomId)?.label || 'Stock UOM'}
                           </span>
                         </div>
@@ -937,7 +937,7 @@ export default function NewProduct() {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '6px' }}>
                           <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 600 }}>1</span>
-                          <span style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
                             {attributes.uoms?.find(u => u.value === formData.salesUomId)?.label || 'Sales UOM'}
                           </span>
                           <span style={{ fontSize: '1rem', color: '#64748b', fontWeight: 'bold' }}>=</span>
@@ -982,7 +982,7 @@ export default function NewProduct() {
                               textAlign: 'center' 
                             }}
                           />
-                          <span style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
                             {attributes.uoms?.find(u => u.value === formData.stockUomId)?.label || 'Stock UOM'}
                           </span>
                         </div>

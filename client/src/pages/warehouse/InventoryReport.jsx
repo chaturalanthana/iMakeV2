@@ -175,7 +175,7 @@ export default function InventoryReport() {
                         <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>{item.code}</td>
                         <td style={{ padding: '1rem', fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: 700 }}>{item.name}</td>
                         <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          <span style={{ backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px' }}>{item.category}</span>
+                          {item.category || '-'}
                         </td>
                         <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{item.brand}</td>
                         <td style={{ padding: '1rem', fontSize: '0.95rem', fontWeight: 800, color: item.currentStock < 0 ? '#ef4444' : item.currentStock > 0 ? '#10b981' : 'var(--text-muted)', textAlign: 'right' }}>
