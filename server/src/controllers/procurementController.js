@@ -13,6 +13,7 @@ const {
   supplierAging,
   supplierStatement
 } = require('../services/documentPosting');
+const { assertPoGuards, saveTradeProfile, copyClassification } = require('../services/phase2/procurement');
 
 // --- PURCHASE ORDERS ---
 const getPurchaseOrders = async (req, res) => {
@@ -38,16 +39,28 @@ const createPurchaseOrder = async (req, res) => {
     const { supplierId, date, status, items, currencyId, exchangeRate, prId } = req.body;
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
+    const tradeType = req.body.tradeType === 'IMPORT' ? 'IMPORT' : (req.body.tradeType === 'LOCAL' ? 'LOCAL' : null);
 
     const poNumber = await generateDocumentNumber(
       req.tenantId,
       'purchaseOrder',
-      'PO',
+      tradeType === 'IMPORT' ? 'IPO' : 'PO',
       'poNumber'
     );
 
     const order = await prisma.$transaction(async (tx) => {
       if (prId) await assertPrQuantity(tx, { tenantId: req.tenantId, prId, items: items || [] });
+      const guards = await assertPoGuards(tx, {
+        tenantId: req.tenantId,
+        supplierId,
+        date,
+        items: items || [],
+        exchangeRate,
+        currencyId,
+        tradeType,
+        acknowledgeVariance: req.body.acknowledgeVariance,
+        varianceReason: req.body.varianceReason
+      });
       const created = await tx.purchaseOrder.create({
         data: {
           tenantId: req.tenantId,
@@ -70,7 +83,24 @@ const createPurchaseOrder = async (req, res) => {
           items: { include: { product: true } }
         }
       });
-      if (prId) await refreshPrStatus(tx, prId);
+      if (prId) {
+        await refreshPrStatus(tx, prId);
+        await copyClassification(tx, req.tenantId, prId, created.id);
+      }
+      if (tradeType) {
+        await saveTradeProfile(tx, {
+          tenantId: req.tenantId,
+          documentType: 'PO',
+          documentId: created.id,
+          tradeType,
+          shipmentRef: req.body.shipmentRef,
+          exchangeRate,
+          currencyCode: tradeType === 'IMPORT' ? 'USD' : 'LKR'
+        });
+      }
+      for (const row of guards.exceptions) {
+        await tx.priceException.create({ data: { tenantId: req.tenantId, poId: created.id, ...row } });
+      }
       return created;
     });
 
@@ -165,10 +195,17 @@ const createGrn = async (req, res) => {
       return res.status(400).json({ error: 'Warehouse is required' });
     }
 
+    let grnPrefix = 'GRN';
+    if (poId) {
+      const profile = await prisma.tradeProfile.findFirst({
+        where: { tenantId: req.tenantId, documentType: 'PO', documentId: poId }
+      });
+      if (profile?.tradeType === 'IMPORT') grnPrefix = 'IGRN';
+    }
     const grnNumber = await generateDocumentNumber(
       req.tenantId,
       'gRN',
-      'GRN',
+      grnPrefix,
       'grnNumber'
     );
 

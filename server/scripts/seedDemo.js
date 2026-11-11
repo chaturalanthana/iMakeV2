@@ -16,6 +16,9 @@ const { postReceiptDocument } = require('../src/services/documentPosting');
 const { syncRoutingForBom } = require('../src/services/production/routing');
 const { ensureReasonCodes } = require('../src/services/production/workOrders');
 const { ensureProductTypes } = require('../src/services/productTypes');
+const { createContract, createRfq, addQuotation, selectQuotation } = require('../src/services/phase2/procurement');
+const { openPeriod } = require('../src/services/phase2/close');
+const { openPettyCash, issueIou } = require('../src/services/phase2/treasury');
 
 const SLUG = 'ceylon-woodworks';
 const EMAIL = 'nimal@ceylonwood.lk';
@@ -35,6 +38,43 @@ function refuseUnsafeDatabase() {
 
 async function wipe(tenantId) {
   const where = { tenantId };
+  await prisma.depreciationLine.deleteMany({ where });
+  await prisma.assetEvent.deleteMany({ where });
+  await prisma.depreciationRun.deleteMany({ where });
+  await prisma.fixedAsset.deleteMany({ where });
+  await prisma.fixedAssetClass.deleteMany({ where });
+  await prisma.landedCostAllocation.deleteMany({ where });
+  await prisma.landedCostCharge.deleteMany({ where });
+  await prisma.landedCost.deleteMany({ where });
+  await prisma.iouSettlement.deleteMany({ where });
+  await prisma.iouAdvance.deleteMany({ where });
+  await prisma.pettyCashFund.deleteMany({ where });
+  await prisma.cheque.deleteMany({ where });
+  await prisma.collectionActivity.deleteMany({ where });
+  await prisma.collectionCase.deleteMany({ where });
+  await prisma.partyNote.deleteMany({ where });
+  await prisma.quotationSelection.deleteMany({ where });
+  await prisma.supplierQuotationLine.deleteMany({ where });
+  await prisma.supplierQuotation.deleteMany({ where });
+  await prisma.rfqInvitation.deleteMany({ where });
+  await prisma.rfqLine.deleteMany({ where });
+  await prisma.requestForQuotation.deleteMany({ where });
+  await prisma.priceException.deleteMany({ where });
+  await prisma.contractPrice.deleteMany({ where });
+  await prisma.approvedSupplierItem.deleteMany({ where });
+  await prisma.tradeProfile.deleteMany({ where });
+  await prisma.purchaseClassification.deleteMany({ where });
+  await prisma.documentDimension.deleteMany({ where });
+  await prisma.itemMeasure.deleteMany({ where });
+  await prisma.allocationRuleLine.deleteMany({ where });
+  await prisma.allocationRule.deleteMany({ where });
+  await prisma.budget.deleteMany({ where });
+  await prisma.capitalProject.deleteMany({ where });
+  await prisma.orgCenter.deleteMany({ where });
+  await prisma.financeSetting.deleteMany({ where });
+  await prisma.periodCloseStep.deleteMany({ where });
+  await prisma.periodClose.deleteMany({ where });
+  await prisma.recurringJournal.deleteMany({ where });
   await prisma.qaRetest.deleteMany({ where });
   await prisma.cycleCountLine.deleteMany({ where });
   await prisma.cycleCount.deleteMany({ where });
@@ -422,6 +462,70 @@ async function main() {
       department: 'Finishing', designation: 'Finisher', dateOfJoining: new Date('2021-08-15'), basicSalary: 78000
     }
   });
+
+  const hotel = await prisma.customer.findFirst({ where: { tenantId, code: 'CUS-HOTEL' } });
+  const centers = {};
+  for (const [code, name, admin] of [
+    ['SOYA', 'Soya Manufacturing', false],
+    ['PASTA', 'Pasta Manufacturing', false],
+    ['SAUCE', 'Sauce Manufacturing', false],
+    ['TURKEY', 'Turkey Import', false],
+    ['CONTRACT', 'Contract Manufacturing', false],
+    ['ADMIN', 'Administration', true]
+  ]) {
+    centers[code] = await prisma.orgCenter.create({
+      data: { tenantId, code, name, kind: 'BOTH', isAdministration: admin }
+    });
+  }
+  await prisma.financeSetting.create({ data: { tenantId } });
+  await prisma.currency.create({
+    data: { tenantId, code: 'USD', name: 'US Dollar', symbol: '$', exchangeRate: 305, isBase: false }
+  });
+  const adminExpense = await prisma.account.findFirst({ where: { tenantId, code: '5600' } });
+  await prisma.allocationRule.create({
+    data: {
+      tenantId,
+      name: 'Administration to operations',
+      sourceAccountId: adminExpense.id,
+      sourceCenterId: centers.ADMIN.id,
+      lines: {
+        create: ['SOYA', 'PASTA', 'SAUCE', 'TURKEY', 'CONTRACT'].map((code) => ({
+          tenantId, targetCostCenterId: centers[code].id, percent: 20
+        }))
+      }
+    }
+  });
+  await prisma.capitalProject.create({
+    data: { tenantId, code: 'PACK-1', name: 'Packing line', budgetAmount: 2500000, costCenterId: centers.SOYA.id }
+  });
+  await prisma.budget.create({
+    data: { tenantId, kind: 'OPEX', year: new Date().getFullYear(), month: 0, accountId: adminExpense.id, costCenterId: centers.ADMIN.id, amount: 480000 }
+  });
+  await createContract(prisma, {
+    tenantId, supplierId: timber.id, productId: teak.id, unitPrice: 4500, currencyCode: 'LKR', validFrom: '2026-01-01', tolerancePercent: 2
+  });
+  const rfq = await createRfq(prisma, {
+    tenantId, date: new Date(), supplierIds: [timber.id, hardware.id],
+    lines: [{ productId: teak.id, quantity: 20 }]
+  });
+  const low = await addQuotation(prisma, {
+    tenantId, rfqId: rfq.id, supplierId: timber.id, date: new Date(), currencyCode: 'LKR', exchangeRate: 1, leadTimeDays: 7,
+    lines: [{ productId: teak.id, quantity: 20, unitPrice: 4500 }]
+  });
+  await addQuotation(prisma, {
+    tenantId, rfqId: rfq.id, supplierId: hardware.id, date: new Date(), currencyCode: 'LKR', exchangeRate: 1, leadTimeDays: 10,
+    lines: [{ productId: teak.id, quantity: 20, unitPrice: 4900 }]
+  });
+  await selectQuotation(prisma, { tenantId, rfqId: rfq.id, quotationId: low.id, reason: 'Lower price and the agreed lead time' });
+  await prisma.collectionCase.create({
+    data: { tenantId, customerId: hotel.id, disputeStatus: 'NONE', promisedDate: new Date('2026-11-20'), notes: 'Will pay after the Galle function', collector: 'Nimal' }
+  });
+  await prisma.fixedAssetClass.create({
+    data: { tenantId, code: 'PLANT', name: 'Plant and machinery', accountingMethod: 'SL', accountingLifeMonths: 60, taxMethod: 'RB', taxRate: 20 }
+  });
+  await openPeriod(prisma, { tenantId, year: 2026, month: 11 });
+  const fund = await openPettyCash(prisma, { tenantId, name: 'Malabe tin', amount: 15000, date: new Date(), custodian: 'Nimal Perera' });
+  await issueIou(prisma, { tenantId, date: new Date(), employeeName: 'Kumari Silva', department: 'Assembly', amount: 2500, fundId: fund.id });
 
   console.log('Demo tenant ready.');
   console.log('  Company   Ceylon Woodworks (Pvt) Ltd');

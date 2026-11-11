@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, Briefcase
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -67,6 +67,10 @@ export default function Sidebar() {
         { name: 'Purchase Orders', icon: ShoppingBag, path: '/procurement/purchase-orders' },
         { name: 'GRNs', icon: Package, path: '/procurement/grn' },
         { name: 'Supplier Invoices', icon: FileText, path: '/procurement/supplier-invoices' },
+        { name: 'RFQs', icon: ClipboardList, path: '/procurement/rfqs' },
+        { name: 'Contract Prices', icon: DollarSign, path: '/procurement/contracts' },
+        { name: 'Landed Cost', icon: Receipt, path: '/procurement/landed-costs' },
+        { name: 'Capex Request', icon: Briefcase, path: '/procurement/capex/new' },
       ]
     },
     { 
@@ -114,6 +118,16 @@ export default function Sidebar() {
         { name: 'Tax Groups', icon: Percent, path: '/finance/tax-groups' },
         { name: 'VAT Report', icon: FileText, path: '/finance/vat' },
         { name: 'Bank Reconciliation', icon: Landmark, path: '/finance/reconciliation' },
+        { name: 'Cost Centers', icon: Network, path: '/finance/centers' },
+        { name: 'Budgets', icon: Scale, path: '/finance/budgets' },
+        { name: 'Capital Projects', icon: Briefcase, path: '/finance/projects' },
+        { name: 'Fixed Assets', icon: Landmark, path: '/finance/assets' },
+        { name: 'Credit and Debit Notes', icon: Receipt, path: '/finance/notes' },
+        { name: 'Collections', icon: Wallet, path: '/finance/collections' },
+        { name: 'Cheques', icon: CreditCard, path: '/finance/cheques' },
+        { name: 'IOU and Petty Cash', icon: Banknote, path: '/finance/ious' },
+        { name: 'Period Close', icon: CalendarDays, path: '/finance/period-close' },
+        { name: 'Finance Reports', icon: FileText, path: '/finance/reports' },
       ]
     },
     {

@@ -1,5 +1,7 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { sendError } = require('../services/errors');
+const { classifyPurchase } = require('../services/phase2/procurement');
 
 // Fetch all purchase requisitions
 const getPurchaseRequisitions = async (req, res) => {
@@ -70,37 +72,55 @@ const createPurchaseRequisition = async (req, res) => {
       'prNumber'
     );
 
-    const requisition = await prisma.purchaseRequisition.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId: supplierId || null,
-        prNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        total: totalAmount,
-        currencyId: currencyId || null,
-        exchangeRate: parseFloat(exchangeRate) || 1.0,
-        createdBy: req.user.userId,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice),
-            total: parseFloat(item.total)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        currency: true,
-        items: { include: { product: true } }
+    const requisition = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseRequisition.create({
+        data: {
+          tenantId: req.tenantId,
+          supplierId: supplierId || null,
+          prNumber,
+          date: new Date(date),
+          status: status || 'PENDING',
+          total: totalAmount,
+          currencyId: currencyId || null,
+          exchangeRate: parseFloat(exchangeRate) || 1.0,
+          createdBy: req.user.userId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice),
+              total: parseFloat(item.total)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          currency: true,
+          items: { include: { product: true } }
+        }
+      });
+      if (req.body.spendClass) {
+        await classifyPurchase(tx, {
+          tenantId: req.tenantId,
+          documentType: 'PR',
+          documentId: created.id,
+          spendClass: req.body.spendClass,
+          glAccountId: req.body.glAccountId,
+          costCenterId: req.body.costCenterId,
+          profitCenterId: req.body.profitCenterId,
+          capitalProjectId: req.body.capitalProjectId,
+          amountBase: totalAmount * (parseFloat(exchangeRate) || 1),
+          date,
+          executiveOverride: req.body.executiveOverride,
+          overrideReason: req.body.overrideReason
+        });
       }
+      return created;
     });
 
     res.status(201).json(requisition);
   } catch (error) {
-    console.error('Failed to create PR:', error);
-    res.status(500).json({ error: 'Failed to create purchase requisition' });
+    return sendError(res, error, 'Failed to create purchase requisition');
   }
 };
 

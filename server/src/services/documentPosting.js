@@ -4,6 +4,7 @@ const { ensureGlMap, postJournal, reverseJournal } = require('./glService');
 const { slabsFor, applySlabs, sumBucket } = require('./taxService');
 const { DocumentError } = require('./errors');
 const { num, money, dec, rateOf, addDays } = require('./money');
+const { capitalDebitKey, recordCwipReceipt } = require('./phase2/capitalTreatment');
 
 function requireWarehouse(warehouseId) {
   if (!warehouseId) {
@@ -212,6 +213,7 @@ async function grnUnitPrice(tx, { poId, productId, item }) {
 
 async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, createdBy }) {
   const rate = rateOf(grn.exchangeRate);
+  const debitKey = await capitalDebitKey(tx, tenantId, grn.poId);
   if (grn.poId) {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: grn.poId, tenantId },
@@ -251,6 +253,10 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
       where: { id: item.id },
       data: { unitPrice: dec(unitPrice) }
     });
+    if (debitKey === 'CWIP') {
+      inventoryValue = money(inventoryValue + money(qty * baseUnitCost));
+      continue;
+    }
     const damaged = money(item.damagedQty || 0);
     const rejected = money(item.rejectedQty || 0);
     if (damaged + rejected - qty > 0.0001) {
@@ -302,10 +308,13 @@ async function postGrn(tx, { tenantId, grn, items, overReceiptTolerance = 0, cre
     referenceType: 'GRN',
     referenceId: grn.id,
     description: `Goods receipt ${grn.grnNumber}`,
-    debitKey: 'INVENTORY',
+    debitKey,
     creditKey: 'GRNI',
     amount: inventoryValue
   });
+  if (debitKey === 'CWIP') {
+    await recordCwipReceipt(tx, { tenantId, grn, amount: inventoryValue, createdBy });
+  }
   await refreshPoReceiptStatus(tx, grn.poId);
   return inventoryValue;
 }
