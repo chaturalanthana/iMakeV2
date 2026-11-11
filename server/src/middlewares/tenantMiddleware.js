@@ -14,5 +14,6 @@ const enforceTenantContext = (req, res, next) => {
 const requireTenant = [authenticateToken, enforceTenantContext];
 
 module.exports = {
+  enforceTenantContext,
   requireTenant
 };

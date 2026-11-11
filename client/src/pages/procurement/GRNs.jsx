@@ -90,6 +90,9 @@ export default function GRNs() {
       sortable: false,
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <button onClick={(e) => { e.stopPropagation(); navigate(`/procurement/supplier-invoices/new?grnId=${row.id}`); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#eef2ff', color: '#4338ca', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+              Supplier Invoice
+            </button>
           {!row.poId && (
             <button onClick={(e) => { e.stopPropagation(); navigate(`/finance/vouchers/new`); }} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', borderRadius: '4px', backgroundColor: '#fdf4ff', color: '#c026d3', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
               Issue Payment

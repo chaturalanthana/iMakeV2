@@ -64,8 +64,16 @@ export default function Categories() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!String(formData.name || '').trim()) {
+      setFieldErrors({ name: 'Category name is required.' });
+      showToast('Category name is required.', 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };

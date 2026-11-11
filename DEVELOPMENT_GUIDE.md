@@ -9,7 +9,7 @@ Welcome to the internal development guide for **iMake**, a production-ready, mul
 *   **Backend:** Node.js backend using Express.js.
 *   **Frontend:** React.js powered by Vite (Port 3000).
 *   **Styling:** Vanilla CSS leveraging CSS Variables for centralized theming (Light Theme / Glassmorphism).
-*   **Authentication:** Stateless JWT (JSON Web Tokens).
+*   **Authentication:** Stateless JWT. `JWT_SECRET` comes from the environment.
 
 ---
 
@@ -36,10 +36,12 @@ Built to strict UI/UX consistency standards.
 ## 📂 Backend Directory Structure (`/server`)
 
 *   **`prisma/schema.prisma`**: The declarative schema containing all tables (`Tenants`, `Users`, `JournalEntries`, `PurchaseOrders`, etc.).
-*   **`src/app.js`**: The Express configuration, setting up CORS, JSON parsing, and generic error handling.
-*   **`src/routes/`**: API endpoints. `index.js` mounts all sub-routers (like `authRoutes.js`).
-*   **`src/controllers/`**: Executes business logic and database mutations.
-*   **`src/middlewares/`**: Contains security walls (`authMiddleware.js`, `tenantMiddleware.js`).
+*   **`src/app.js`**: The Express configuration, setting up CORS, JSON parsing, and generic error handling. Uploaded files are not public.
+*   **`src/routes/`**: API endpoints. `index.js` mounts each module behind `secureModule`, which checks the signed-in user's role.
+*   **`src/permissions/catalog.js`**: Module list and the roles seeded for a new tenant.
+*   **`src/validation/`**: Zod request checks for masters, purchasing, inventory, and sales. Failures return `{ error, fields }`.
+*   **`src/controllers/`**: Executes business logic and database mutations. Stock posting runs inside a Prisma transaction.
+*   **`src/middlewares/`**: Contains security walls (`authMiddleware.js`, `tenantMiddleware.js`, `rbacMiddleware.js`).
 *   **`src/lib/prisma.js`**: Reusable singleton for the connected Prisma Client.
 
 ---
@@ -48,11 +50,17 @@ Built to strict UI/UX consistency standards.
 
 Currently, the setup requires both the Backend and Frontend to run concurrently along with a resilient PostgreSQL background service.
 
+Copy `.env.example` to `.env` and `server/.env.example` to `server/.env`, then set `POSTGRES_PASSWORD`, `DATABASE_URL`, and `JWT_SECRET`. The API refuses to start when `JWT_SECRET` or `DATABASE_URL` is missing. Do not reuse the old public password or JWT fallback; rotate them.
+
 **1. Database Deployment**
-If the schema updates (`schema.prisma` changes), sync it immediately to the local Postgres instance:
+Schema changes are applied with Prisma Migrate:
 ```bash
 cd server
-npx prisma db push
+npx prisma migrate dev
+```
+A database that was previously created with `prisma db push` and already matches this schema can be baselined once with:
+```bash
+npx prisma migrate resolve --applied 20261110120000_baseline
 ```
 
 **2. Start the Backend API**

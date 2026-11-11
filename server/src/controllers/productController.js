@@ -173,7 +173,7 @@ const createProduct = async (req, res) => {
     if (type && !['PRODUCT', 'SERVICE'].includes(type)) {
       return res.status(400).json({ error: 'Invalid product type. Must be PRODUCT or SERVICE' });
     }
-    if (costingMethod && !['FIFO', 'LIFO', 'Moving Average', 'Standard Cost'].includes(costingMethod)) {
+    if (costingMethod && !['FIFO'].includes(costingMethod)) {
       return res.status(400).json({ error: 'Invalid costing method' });
     }
     if (activeStatus && !['ACTIVE', 'INACTIVE'].includes(activeStatus)) {
@@ -389,7 +389,7 @@ const updateProduct = async (req, res) => {
     if (type !== undefined && !['PRODUCT', 'SERVICE'].includes(type)) {
       return res.status(400).json({ error: 'Invalid product type. Must be PRODUCT or SERVICE' });
     }
-    if (costingMethod !== undefined && !['FIFO', 'LIFO', 'Moving Average', 'Standard Cost'].includes(costingMethod)) {
+    if (costingMethod !== undefined && !['FIFO'].includes(costingMethod)) {
       return res.status(400).json({ error: 'Invalid costing method' });
     }
     if (activeStatus !== undefined && !['ACTIVE', 'INACTIVE'].includes(activeStatus)) {
@@ -775,7 +775,7 @@ const batchUpdateProducts = async (req, res) => {
         if (!row) return res.status(400).json({ error: 'Invalid Tax Group' });
         data.taxGroup = row.name;
       } else if (key === 'costingMethod') {
-        if (!['FIFO', 'LIFO', 'Moving Average', 'Standard Cost'].includes(value)) {
+        if (!['FIFO'].includes(value)) {
           return res.status(400).json({ error: 'Invalid Costing Method' });
         }
         data.costingMethod = value;

@@ -7,7 +7,9 @@ export default function SupplierSearchDropdown({
   value, 
   onChange, 
   placeholder = "Search or select supplier...",
-  style = {}
+  style = {},
+  invalid = false,
+  error = ''
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -76,6 +78,7 @@ export default function SupplierSearchDropdown({
       <div 
         ref={triggerRef}
         onClick={() => setIsOpen(!isOpen)}
+        className={invalid ? 'field-invalid' : undefined}
         style={{ 
           position: 'relative', 
           cursor: 'pointer',
@@ -114,6 +117,7 @@ export default function SupplierSearchDropdown({
           }} 
         />
       </div>
+      {error ? <span className="field-error-text">{error}</span> : null}
 
       {isOpen && createPortal(
         <div 

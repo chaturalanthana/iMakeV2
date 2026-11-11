@@ -13,6 +13,8 @@ const SYSTEM_MODULES = [
   { id: 'finance', name: 'Finance & Accounts' },
   { id: 'hr', name: 'Human Resources' },
   { id: 'warehouse', name: 'Inventory & Warehousing' },
+  { id: 'production', name: 'Production & Manufacturing' },
+  { id: 'costing', name: 'Costing' },
 ];
 
 export default function Roles() {
@@ -84,8 +86,16 @@ export default function Roles() {
     });
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!String(formData.name || '').trim()) {
+      setFieldErrors({ name: 'Role name is required.' });
+      addToast('Role name is required.', 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const url = currentRole ? `/api/roles/${currentRole.id}` : '/api/roles';
       const method = currentRole ? 'PUT' : 'POST';

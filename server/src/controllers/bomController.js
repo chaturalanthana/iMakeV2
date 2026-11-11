@@ -1,6 +1,16 @@
 const prisma = require('../lib/prisma');
 const path = require('path');
 const fs = require('fs');
+const { syncRoutingForBom } = require('../services/production/routing');
+
+const rememberRouting = async (bomId) => {
+  if (!bomId) return;
+  try {
+    await syncRoutingForBom(bomId);
+  } catch (error) {
+    console.error('Sync routing error:', error);
+  }
+};
 
 const mapProductTypeName = (name) => {
   if (!name) return 'Raw Material';
@@ -279,6 +289,7 @@ const createBOM = async (req, res) => {
       return newBom;
     });
 
+    await rememberRouting(result?.id);
     res.status(201).json(result);
   } catch (error) {
     console.error('Create BOM error:', error);
@@ -428,6 +439,7 @@ const updateBOM = async (req, res) => {
       return updated;
     });
 
+    await rememberRouting(result?.id);
     res.json(result);
   } catch (error) {
     console.error('Update BOM error:', error);
@@ -1138,6 +1150,7 @@ const duplicateBOM = async (req, res) => {
       return newBom;
     });
 
+    await rememberRouting(duplicatedBOM?.id);
     res.status(201).json(duplicatedBOM);
   } catch (error) {
     console.error('Duplicate BOM error:', error);

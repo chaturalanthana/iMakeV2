@@ -5,7 +5,7 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Boxes, Upload, Scale
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -26,9 +26,14 @@ export default function Sidebar() {
       subItems: [
         { name: 'Products', icon: Archive, path: '/products' },
         { name: 'Bill of Materials (BOM)', icon: ClipboardList, path: '/production/boms' },
+        { name: 'Work Orders', icon: ClipboardList, path: '/production/work-orders' },
+        { name: 'Shop Floor', icon: Factory, path: '/production/shop-floor' },
         { name: 'Planning', icon: Sliders, path: '/production/planning' },
+        { name: 'Calendar', icon: CalendarDays, path: '/production/calendar' },
+        { name: 'Costing', icon: DollarSign, path: '/production/costing' },
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
+        { name: 'Replenishment', icon: Boxes, path: '/production/replenishment' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
         { name: 'Product Types', icon: Layers, path: '/registries/product-types' },
         { name: 'Brands', icon: Tag, path: '/registries/brands' },
@@ -61,6 +66,7 @@ export default function Sidebar() {
         { name: 'Purchase Requisitions', icon: ClipboardList, path: '/procurement/purchase-requisitions' },
         { name: 'Purchase Orders', icon: ShoppingBag, path: '/procurement/purchase-orders' },
         { name: 'GRNs', icon: Package, path: '/procurement/grn' },
+        { name: 'Supplier Invoices', icon: FileText, path: '/procurement/supplier-invoices' },
       ]
     },
     { 
@@ -73,6 +79,7 @@ export default function Sidebar() {
         { name: 'Stock Transfers', icon: RefreshCw, path: '/warehouse/transfers' },
         { name: 'Stock Adjustments', icon: BarChart2, path: '/warehouse/adjustments' },
         { name: 'Inventory Report', icon: FileText, path: '/warehouse/inventory-report' },
+        { name: 'Labels', icon: Tag, path: '/warehouse/labels' },
         { name: 'Stock Ledger', icon: Layers, path: '/warehouse/movements' },
       ]
     },
@@ -82,6 +89,7 @@ export default function Sidebar() {
       subItems: [
         { name: 'Chart of Accounts', icon: Network, path: '/finance/accounts' },
         { name: 'General Ledger', icon: Landmark, path: '/finance/ledger' },
+        { name: 'Trial Balance', icon: Scale, path: '/finance/trial-balance' },
         { name: 'Profit & Loss', icon: TrendingUp, path: '/finance/pnl' },
         { name: 'Cash Flow', icon: Landmark, path: '/finance/cashflow' },
         { name: 'Balance Sheet', icon: Landmark, path: '/finance/balancesheet' },
@@ -110,6 +118,7 @@ export default function Sidebar() {
         { name: 'Salary Process', icon: DollarSign, path: '/hr/salary-process' },
         { name: 'Pay Slips', icon: FileText, path: '/hr/payslips' },
         { name: 'Holiday Calendar', icon: CalendarDays, path: '/hr/holidays' },
+        { name: 'EPF / ETF', icon: Landmark, path: '/hr/statutory' },
       ]
     },
   ];
@@ -121,6 +130,7 @@ export default function Sidebar() {
       subItems: [
         { name: 'Users', icon: Users, path: '/settings/users' },
         { name: 'Roles', icon: Layers, path: '/settings/roles' },
+        { name: 'Data import', icon: Upload, path: '/settings/import' },
       ] 
     }
   ];
@@ -133,6 +143,10 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
+    if (window.matchMedia('(max-width: 720px)').matches) {
+      setExpandedMenu(null);
+      return;
+    }
     const currentActive = menuItems.find(m => isMenuPartiallyActive(m)) || systemItems.find(m => isMenuPartiallyActive(m));
     if (currentActive && !expandedMenu) {
       setExpandedMenu(currentActive);
@@ -243,6 +257,15 @@ export default function Sidebar() {
           .slim-sidebar:hover .bottom-nav {
             align-items: flex-start !important;
             padding: 0;
+          }
+          @media (max-width: 720px) {
+            .sub-panel {
+              position: fixed !important;
+              left: 76px;
+              top: 0;
+              height: 100vh;
+              z-index: 60;
+            }
           }
         `}
       </style>
@@ -363,7 +386,7 @@ export default function Sidebar() {
       {/* 
         Layer 2: Sub Section Side Panel (Collapsible)
       */}
-      <aside style={{
+      <aside className="sub-panel" style={{
         width: showSubPanel ? '240px' : '0px',
         opacity: showSubPanel ? 1 : 0,
         backgroundColor: '#f8fafc', /* Very light gray bg */

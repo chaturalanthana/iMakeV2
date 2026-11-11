@@ -6,14 +6,16 @@ const {
   deleteCustomerCategory 
 } = require('../controllers/customerCategoryController');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
+const { validateBody } = require('../validation/validate');
+const schemas = require('../validation/schemas');
 
 const router = express.Router();
 
 router.use(requireTenant);
 
 router.get('/', getCustomerCategories);
-router.post('/', createCustomerCategory);
-router.put('/:id', updateCustomerCategory);
+router.post('/', validateBody(schemas.customerCategory), createCustomerCategory);
+router.put('/:id', validateBody(schemas.customerCategoryUpdate), updateCustomerCategory);
 router.delete('/:id', deleteCustomerCategory);
 
 module.exports = router;

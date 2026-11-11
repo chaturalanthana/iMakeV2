@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronUp, ChevronDown, ChevronDown as CaretDown } from 'lucide-react';
 
-export default function DatePicker({ value, onChange, placeholder = "Select Date", style = {}, disabled = false }) {
+export default function DatePicker({ value, onChange, placeholder = "Select Date", style = {}, disabled = false, invalid = false, error = '' }) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentDate, setCurrentDate] = useState(value ? new Date(value) : new Date());
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 260 });
@@ -168,6 +168,7 @@ export default function DatePicker({ value, onChange, placeholder = "Select Date
       <div 
         ref={triggerRef}
         onClick={toggleDropdown}
+        className={invalid ? 'field-invalid' : undefined}
         style={{ 
           display: 'flex',
           alignItems: 'center',
@@ -187,6 +188,7 @@ export default function DatePicker({ value, onChange, placeholder = "Select Date
         <span>{formattedValue || placeholder}</span>
         <CalendarIcon size={16} color="var(--text-muted)" />
       </div>
+      {error ? <span className="field-error-text">{error}</span> : null}
 
       {isOpen && createPortal(
         <div 

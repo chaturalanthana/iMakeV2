@@ -33,10 +33,36 @@ export default function NewPaymentVoucher() {
   const [lines, setLines] = useState([
     { id: Date.now(), accountId: '', description: '', amount: '' }
   ]);
+  const [openInvoices, setOpenInvoices] = useState([]);
+  const [allocations, setAllocations] = useState({});
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const loadInvoices = async () => {
+      if (!supplierId) {
+        setOpenInvoices([]);
+        setAllocations({});
+        return;
+      }
+      try {
+        const token = localStorage.getItem('token');
+        const config = { headers: { Authorization: `Bearer ${token}` } };
+        const res = await axios.get(`/api/procurement/supplier-invoices?supplierId=${supplierId}&open=1`, config);
+        setOpenInvoices(res.data || []);
+        const next = {};
+        (res.data || []).forEach((invoice) => {
+          next[invoice.id] = Math.max(0, Number(invoice.total) - Number(invoice.amountPaid || 0)).toFixed(2);
+        });
+        setAllocations(next);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    loadInvoices();
+  }, [supplierId]);
 
   const fetchData = async () => {
     try {
@@ -75,15 +101,19 @@ export default function NewPaymentVoucher() {
     setLines(lines.filter(line => line.id !== id));
   };
 
-  const totalAmount = lines.reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
+  const allocatedTotal = Object.values(allocations).reduce((sum, amount) => sum + (parseFloat(amount) || 0), 0);
+  const lineTotal = lines.reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
+  const payingInvoices = allocatedTotal > 0;
+  const totalAmount = payingInvoices ? allocatedTotal : lineTotal;
 
   const handleSubmit = async () => {
     if (!supplierId || !voucherNumber || !date) return showToast("Please fill required header fields.", "error");
-    for (let line of lines) {
-      if (!line.accountId) return showToast("All lines must have an account selected.", "error");
-      if (!line.amount || parseFloat(line.amount) <= 0) return showToast("All lines must have a valid amount.", "error");
+    if (!payingInvoices) {
+      for (let line of lines) {
+        if (!line.accountId) return showToast("All lines must have an account selected.", "error");
+        if (!line.amount || parseFloat(line.amount) <= 0) return showToast("All lines must have a valid amount.", "error");
+      }
     }
-    
     if (totalAmount <= 0) return showToast("Total voucher amount must be greater than 0.", "error");
 
     setLoading(true);
@@ -99,11 +129,17 @@ export default function NewPaymentVoucher() {
         reference,
         bankName,
         chequeNumber,
-        lines: lines.map(l => ({
-          accountId: l.accountId,
-          description: l.description,
-          amount: parseFloat(l.amount || 0)
-        }))
+        ...(payingInvoices ? {
+          allocations: openInvoices
+            .map((invoice) => ({ supplierInvoiceId: invoice.id, amount: parseFloat(allocations[invoice.id] || 0) }))
+            .filter((row) => row.amount > 0)
+        } : {
+          lines: lines.map(l => ({
+            accountId: l.accountId,
+            description: l.description,
+            amount: parseFloat(l.amount || 0)
+          }))
+        })
       };
       await axios.post('/api/finance/payment-vouchers', payload, config);
       
@@ -291,6 +327,32 @@ export default function NewPaymentVoucher() {
                   autoComplete="off"
                 />
               </div>
+            </div>
+          )}
+
+          {openInvoices.length > 0 && (
+            <div style={{ marginTop: '1.5rem' }}>
+              <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem' }}>Allocate to open invoices</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+                <thead>
+                  <tr>
+                    {['Invoice', 'Outstanding', 'Pay now'].map((heading) => (
+                      <th key={heading} style={{ textAlign: heading === 'Invoice' ? 'left' : 'right', padding: '0.6rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.75rem' }}>{heading}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {openInvoices.map((invoice) => (
+                    <tr key={invoice.id}>
+                      <td style={{ padding: '0.6rem' }}>{invoice.invoiceNumber}</td>
+                      <td style={{ padding: '0.6rem', textAlign: 'right' }}>{(Number(invoice.total) - Number(invoice.amountPaid || 0)).toFixed(2)}</td>
+                      <td style={{ padding: '0.6rem', textAlign: 'right' }}>
+                        <input value={allocations[invoice.id] || ''} onChange={(event) => setAllocations({ ...allocations, [invoice.id]: event.target.value })} style={{ width: 120, textAlign: 'right' }} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 

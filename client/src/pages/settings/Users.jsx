@@ -78,8 +78,19 @@ export default function Users() {
     setCurrentUser(null);
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const errors = {};
+    if (!String(formData.email || '').trim()) errors.email = 'Email is required.';
+    if (!currentUser && !String(formData.password || '').trim()) errors.password = 'Password is required.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      addToast(Object.values(errors)[0], 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const url = currentUser ? `/api/users/${currentUser.id}` : '/api/users';
       const method = currentUser ? 'PUT' : 'POST';

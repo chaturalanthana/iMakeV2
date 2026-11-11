@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import SupplierModal from '../../components/ui/SupplierModal';
@@ -22,6 +23,7 @@ export default function NewGRN() {
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   
@@ -33,6 +35,7 @@ export default function NewGRN() {
   const [supplierId, setSupplierId] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [warehouseName, setWarehouseName] = useState('');
   const [status, setStatus] = useState('RECEIVED');
   
@@ -49,6 +52,27 @@ export default function NewGRN() {
   ]);
 
   const isCompleted = !!grnId; // A GRN is considered read-only if it's already created/saved.
+
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => {
+        const merged = mergeScannedProduct(current, hit.product, 'quantityReceived', { onlyExisting: !!poId });
+        if (merged.error) {
+          showToast(merged.error, 'error');
+          return current;
+        }
+        return merged.items;
+      });
+      if (hit.lotNumber) showToast(`Lot ${hit.lotNumber}`, 'success');
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -70,6 +94,7 @@ export default function NewGRN() {
       
       setSuppliers(supRes.data);
       setProducts(prodRes.data);
+      setPurchaseOrders(poRes.data || []);
       setWarehouses(whRes.data);
       setCurrencies(curRes.data);
 
@@ -118,7 +143,8 @@ export default function NewGRN() {
                productId: qi.productId,
                productName: qi.product?.name || '',
                quantityOrdered: parseFloat(qi.quantity),
-               quantityReceived: parseFloat(qi.quantity) // Default receive all
+               unitPrice: parseFloat(qi.unitPrice || 0),
+               quantityReceived: Math.max(parseFloat(qi.quantity) - (order.grns || []).reduce((sum, grn) => sum + (grn.status === 'CANCELLED' ? 0 : (grn.items || []).filter(line => line.productId === qi.productId).reduce((qty, line) => qty + parseFloat(line.quantityReceived || 0), 0)), 0), 0)
              })));
            }
         }
@@ -161,11 +187,21 @@ export default function NewGRN() {
   const totalReceived = items.reduce((sum, item) => sum + (parseFloat(item.quantityReceived) || 0), 0);
 
   const handleSubmit = async () => {
-    if (!supplierId || !date || !warehouseId) return showToast("Please fill required header fields including Warehouse.", "error");
+    const errors = {};
+    if (!supplierId) errors.supplierId = 'Supplier is required.';
+    if (!date) errors.date = 'Date is required.';
+    if (!warehouseId) errors.warehouseId = 'Warehouse is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     for (let item of validLines) {
       if (parseFloat(item.quantityReceived) <= 0) return showToast("All product lines must have a received quantity greater than 0.", "error");
+      if (!poId && !(parseFloat(item.unitPrice) > 0)) return showToast(`Enter a price for ${item.productName || 'the product'}.`, "error");
     }
     
     setLoading(true);
@@ -183,7 +219,8 @@ export default function NewGRN() {
         items: validLines.map(l => ({
           productId: l.productId,
           quantityReceived: parseFloat(l.quantityReceived),
-          quantityOrdered: parseFloat(l.quantityOrdered || l.quantityReceived)
+          quantityOrdered: parseFloat(l.quantityOrdered || l.quantityReceived),
+          unitPrice: parseFloat(l.unitPrice || 0)
         }))
       };
 
@@ -269,6 +306,8 @@ export default function NewGRN() {
             </div>
           </div>
 
+          {!isCompleted && <ScanCapture onScan={onScan} placeholder="Scan item or lot" />}
+
           {/* Tabs */}
           <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
             <button onClick={() => setActiveTab('primary')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'primary' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'primary' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -278,6 +317,24 @@ export default function NewGRN() {
 
           {activeTab === 'primary' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
+              {!id && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '350px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Purchase order</label>
+                  <select
+                    value={poId || ''}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      if (next) navigate(`/procurement/grn/new?poId=${next}`);
+                    }}
+                    style={{ width: '100%', height: '42px', padding: '0 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9rem' }}
+                  >
+                    <option value="">{poNumber || 'Choose an open purchase order'}</option>
+                    {purchaseOrders.filter((order) => !['RECEIVED', 'CANCELLED'].includes(order.status)).map((order) => (
+                      <option key={order.id} value={order.id}>{order.poNumber} — {order.supplier?.name || 'Supplier'}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '350px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '20px' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}><Truck size={14} /> Supplier Name</label>
@@ -290,6 +347,8 @@ export default function NewGRN() {
                 <div style={{ pointerEvents: (isCompleted || poId) ? 'none' : 'auto', opacity: (isCompleted || poId) ? 0.7 : 1 }}>
                   <SupplierSearchDropdown 
                     suppliers={suppliers}
+                    invalid={!!fieldErrors.supplierId}
+                    error={fieldErrors.supplierId || ''}
                     value={supplierName}
                     onChange={(name, sup) => {
                       setSupplierName(name);
@@ -306,6 +365,8 @@ export default function NewGRN() {
                 </div>
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <DatePicker 
+                    invalid={!!fieldErrors.date}
+                    error={fieldErrors.date || ''}
                     value={date} 
                     onChange={setDate} 
                     placeholder="Select Date" 
@@ -320,6 +381,8 @@ export default function NewGRN() {
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <WarehouseSearchDropdown
                     warehouses={warehouses}
+                    invalid={!!fieldErrors.warehouseId}
+                    error={fieldErrors.warehouseId || ''}
                     value={warehouseName}
                     onChange={(name, wh) => {
                       setWarehouseName(name);
@@ -403,7 +466,8 @@ export default function NewGRN() {
                           value={item.productName}
                           onChange={(product) => handleItemChange(item.id, {
                             productId: product.id,
-                            productName: product.name
+                            productName: product.name,
+                            unitPrice: parseFloat(product.costPrice) || 0
                           })}
                           placeholder="Search product..."
                           className="spreadsheet-input"

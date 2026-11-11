@@ -10,6 +10,7 @@ import CustomerModal from '../../components/ui/CustomerModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DeliveryPrintModal from '../../components/ui/DeliveryPrintModal';
 import TransactionalTable from '../../components/ui/TransactionalTable';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import { Truck, ArrowLeft, Plus, Trash2, Search, Filter, Calendar, User, Package, Calculator, UserPlus, Printer } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -53,6 +54,7 @@ export default function NewDelivery() {
   const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [warehouseName, setWarehouseName] = useState('');
 
   // Lines
@@ -257,9 +259,18 @@ export default function NewDelivery() {
 
 
   const handleSubmit = async (finalStatus = 'DELIVERED') => {
-    if (!customerId || !date || !warehouseId) return showToast("Please fill required header fields including Warehouse.", "error");
+    const errors = {};
+    if (!customerId) errors.customerId = 'Customer is required.';
+    if (!date) errors.date = 'Date is required.';
+    if (!warehouseId) errors.warehouseId = 'Warehouse is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setLoading(true);
     try {
@@ -425,6 +436,8 @@ export default function NewDelivery() {
                   <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                     <CustomerSearchDropdown 
                       customers={customers}
+                      invalid={!!fieldErrors.customerId}
+                      error={fieldErrors.customerId || ''}
                       value={customerName}
                       onChange={(name, cus) => {
                         setCustomerName(name);
@@ -450,6 +463,8 @@ export default function NewDelivery() {
                 ) : (
                   <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                     <DatePicker 
+                      invalid={!!fieldErrors.date}
+                      error={fieldErrors.date || ''}
                       value={date} 
                       onChange={setDate} 
                       placeholder="Select Date" 
@@ -470,6 +485,8 @@ export default function NewDelivery() {
                   <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                     <WarehouseSearchDropdown
                       warehouses={warehouses}
+                      invalid={!!fieldErrors.warehouseId}
+                      error={fieldErrors.warehouseId || ''}
                       value={warehouseName}
                       onChange={(name, wh) => {
                         setWarehouseName(name);
@@ -488,6 +505,31 @@ export default function NewDelivery() {
                 )}
               </div>
             </div>
+          )}
+
+          {!isCompleted && (
+            <ScanCapture
+              onScan={async (code) => {
+                try {
+                  const hit = await lookupScan(code);
+                  if (!hit.product) {
+                    showToast('Scan an item or a lot.', 'error');
+                    return;
+                  }
+                  setItems((current) => {
+                    const merged = mergeScannedProduct(current, hit.product, 'quantity', { onlyExisting: !!baseOrderId });
+                    if (merged.error) {
+                      showToast(merged.error, 'error');
+                      return current;
+                    }
+                    return merged.items;
+                  });
+                } catch (error) {
+                  showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+                }
+              }}
+              placeholder="Scan item or lot to deliver"
+            />
           )}
 
           {/* Product Section Header */}

@@ -1,6 +1,8 @@
 const express = require('express');
 const { getProductTypes, createProductType, updateProductType, deleteProductType } = require('../controllers/productTypeController');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
+const { validateBody } = require('../validation/validate');
+const schemas = require('../validation/schemas');
 
 const router = express.Router();
 
@@ -8,8 +10,8 @@ const router = express.Router();
 router.use(requireTenant);
 
 router.get('/', getProductTypes);
-router.post('/', createProductType);
-router.put('/:id', updateProductType);
+router.post('/', validateBody(schemas.productType), createProductType);
+router.put('/:id', validateBody(schemas.productType), updateProductType);
 router.delete('/:id', deleteProductType);
 
 module.exports = router;

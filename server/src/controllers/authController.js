@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
 const { jwtSecret } = require('../config');
+const { seedTenantRoles } = require('../permissions/catalog');
+const { seedTenantFinance } = require('../services/glService');
 
 // Resolves email to tenant during authentication
 const login = async (req, res) => {
@@ -96,18 +98,14 @@ const register = async (req, res) => {
           name: tenantName,
           slug,
           address: address || null,
-          currency: currency || 'USD'
+          currency: currency || 'LKR'
         }
       });
 
-      const role = await tx.role.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'Super Admin',
-          description: 'Default System Administrator with full access.',
-          permissions: { all: true },
-          isSystem: true
-        }
+      await seedTenantRoles(tx, tenant.id);
+      await seedTenantFinance(tx, tenant.id, currency || 'LKR');
+      const role = await tx.role.findUnique({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'Super Admin' } }
       });
 
       // Seed default product types for the new tenant

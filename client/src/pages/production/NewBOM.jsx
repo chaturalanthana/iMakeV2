@@ -37,6 +37,34 @@ export default function NewBOM() {
     return val.toString().replace(/,/g, '');
   };
 
+  const openProtectedUpload = async (filePath, downloadName) => {
+    try {
+      const token = localStorage.getItem('token');
+      const normalized = filePath.startsWith('/api/')
+        ? filePath
+        : `/api${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+      const response = await fetch(normalized, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!response.ok) throw new Error('Unable to open this file');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (downloadName) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      showToast(error.message || 'Unable to open this file', 'error');
+    }
+  };
+
   const formatCost = (val) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
@@ -77,6 +105,7 @@ export default function NewBOM() {
   };
 
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -622,14 +651,16 @@ export default function NewBOM() {
 
   const handleSubmit = async (e, shouldRedirect = true) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!formData.productId) {
-      showToast('Parent product is required', 'error');
+    const errors = {};
+    if (!formData.productId) errors.productId = 'Parent product is required';
+    if (formData.items.length === 0) errors.items = 'At least one component is required in the BOM';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
       return;
     }
-    if (formData.items.length === 0) {
-      showToast('At least one component is required in the BOM', 'error');
-      return;
-    }
+    setFieldErrors({});
     if (formData.items.some(item => item.productId === formData.productId)) {
       showToast('A BOM component cannot be the same as the parent product', 'error');
       return;
@@ -1232,6 +1263,7 @@ export default function NewBOM() {
                     <LiveSearchDropdown
                       options={bomApplicableProducts}
                       value={formData.productId}
+                      invalid={!!fieldErrors.productId}
                       onChange={handleParentProductChange}
                       placeholder="Select Finished Good Product..."
                       style={{ input: inputStyle }}
@@ -2659,7 +2691,7 @@ function BOMResourceManager({ bomId, isLocked = false, routingSteps = [] }) {
                   return (
                     <tr key={res.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>
-                        <a href={res.filePath} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <a href={res.filePath} target="_blank" rel="noreferrer" onClick={(event) => { event.preventDefault(); openProtectedUpload(res.filePath); }} style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                           <File size={16} style={{ color: '#64748b', flexShrink: 0 }} />
                           <span>{res.fileName}</span>
                         </a>
@@ -2688,6 +2720,7 @@ function BOMResourceManager({ bomId, isLocked = false, routingSteps = [] }) {
                           href={res.filePath} 
                           download 
                           title="Download"
+                          onClick={(event) => { event.preventDefault(); openProtectedUpload(res.filePath, res.fileName); }}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',

@@ -7,6 +7,8 @@ const {
   deletePriceList 
 } = require('../controllers/priceListController');
 const { requireTenant } = require('../middlewares/tenantMiddleware');
+const { validateBody } = require('../validation/validate');
+const schemas = require('../validation/schemas');
 
 const router = express.Router();
 
@@ -14,8 +16,8 @@ router.use(requireTenant);
 
 router.get('/', getPriceLists);
 router.get('/:id', getPriceListById);
-router.post('/', createPriceList);
-router.put('/:id', updatePriceList);
+router.post('/', validateBody(schemas.priceList), createPriceList);
+router.put('/:id', validateBody(schemas.priceList), updatePriceList);
 router.delete('/:id', deletePriceList);
 
 module.exports = router;

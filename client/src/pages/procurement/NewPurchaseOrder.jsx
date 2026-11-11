@@ -53,6 +53,7 @@ export default function NewPurchaseOrder() {
   // Form State
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [supplierId, setSupplierId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [supplierName, setSupplierName] = useState('');
 
   // Lines
@@ -169,7 +170,20 @@ export default function NewPurchaseOrder() {
             setDate(new Date(prData.date).toISOString().split('T')[0]);
             
             if (prData.items && prData.items.length > 0) {
-              setItems(prData.items.map(item => ({
+              const openLines = prData.items
+                .map(item => {
+                  const remaining = item.remainingQuantity != null ? parseFloat(item.remainingQuantity) : parseFloat(item.quantity);
+                  return {
+                    id: item.id,
+                    productId: item.productId,
+                    productName: item.product?.name || '',
+                    quantity: remaining,
+                    unitPrice: parseFloat(item.unitPrice),
+                    total: remaining * parseFloat(item.unitPrice || 0)
+                  };
+                })
+                .filter(item => item.quantity > 0);
+              setItems(openLines.length ? openLines : prData.items.map(item => ({
                 id: item.id,
                 productId: item.productId,
                 productName: item.product?.name || '',
@@ -257,9 +271,17 @@ export default function NewPurchaseOrder() {
   const isCompleted = status !== 'PENDING';
 
   const handleSubmit = async (finalStatus = 'PENDING') => {
-    if (!supplierId || !date) return showToast("Please fill required header fields.", "error");
+    const errors = {};
+    if (!supplierId) errors.supplierId = 'Supplier is required.';
+    if (!date) errors.date = 'Date is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setLoading(true);
     try {
@@ -418,6 +440,8 @@ export default function NewPurchaseOrder() {
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <SupplierSearchDropdown 
                     suppliers={suppliers}
+                    invalid={!!fieldErrors.supplierId}
+                    error={fieldErrors.supplierId || ''}
                     value={supplierName}
                     onChange={(name, sup) => {
                       setSupplierName(name);
@@ -437,6 +461,8 @@ export default function NewPurchaseOrder() {
                 </div>
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <DatePicker 
+                    invalid={!!fieldErrors.date}
+                    error={fieldErrors.date || ''}
                     value={date} 
                     onChange={setDate} 
                     placeholder="Select Date" 

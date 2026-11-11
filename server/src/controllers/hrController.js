@@ -1,4 +1,5 @@
 const prisma = require('../lib/prisma');
+const { getRates, applyStatutory, postPayrollJournal } = require('../services/payrollStatutory');
 
 // ============================================================
 // EMPLOYEES
@@ -414,49 +415,57 @@ const createSalaryRun = async (req, res) => {
       return res.status(400).json({ error: 'No employee data provided for the salary run.' });
     }
 
-    // Build line data
+    const rates = await getRates(prisma, req.tenantId);
     const linesData = employeeData.map(emp => {
-      const gross = emp.additions.reduce((s, a) => s + parseFloat(a.amount || 0), 0);
-      const totalDeductions = emp.deductions.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
-      const net = gross - totalDeductions;
+      const statutory = applyStatutory(emp.additions || [], emp.deductions || [], rates);
       return {
         employeeId: emp.employeeId,
-        grossEarnings: gross,
-        totalDeductions,
-        netPay: net,
-        additions: { create: emp.additions.map(a => ({ additionId: a.additionId || null, name: a.name, amount: parseFloat(a.amount || 0) })) },
-        deductions: { create: emp.deductions.map(d => ({ deductionId: d.deductionId || null, name: d.name, amount: parseFloat(d.amount || 0), type: d.type || 'DEDUCTION' })) }
+        grossEarnings: statutory.gross,
+        totalDeductions: statutory.totalDeductions,
+        netPay: statutory.netPay,
+        epfEmployee: statutory.epfEmployee,
+        epfEmployer: statutory.epfEmployer,
+        etfEmployer: statutory.etfEmployer,
+        additions: { create: (emp.additions || []).map(a => ({ additionId: a.additionId || null, name: a.name, amount: parseFloat(a.amount || 0) })) },
+        deductions: { create: statutory.deductions.map(d => ({ deductionId: d.deductionId || null, name: d.name, amount: parseFloat(d.amount || 0), type: d.type || 'DEDUCTION' })) }
       };
     });
 
-    const run = await prisma.salaryRun.create({
-      data: {
-        tenantId: req.tenantId,
-        runNumber,
-        month: parseInt(month),
-        year: parseInt(year),
-        status: 'PROCESSED',
-        createdBy: req.user.userId,
-        lines: {
-          create: linesData.map(l => ({
-            employeeId: l.employeeId,
-            grossEarnings: l.grossEarnings,
-            totalDeductions: l.totalDeductions,
-            netPay: l.netPay,
-            additions: l.additions,
-            deductions: l.deductions
-          }))
-        }
-      },
-      include: {
-        lines: {
-          include: {
-            employee: true,
-            additions: true,
-            deductions: true
+    const run = await prisma.$transaction(async (tx) => {
+      const created = await tx.salaryRun.create({
+        data: {
+          tenantId: req.tenantId,
+          runNumber,
+          month: parseInt(month),
+          year: parseInt(year),
+          status: 'PROCESSED',
+          createdBy: req.user.userId,
+          lines: {
+            create: linesData.map(l => ({
+              employeeId: l.employeeId,
+              grossEarnings: l.grossEarnings,
+              totalDeductions: l.totalDeductions,
+              netPay: l.netPay,
+              epfEmployee: l.epfEmployee,
+              epfEmployer: l.epfEmployer,
+              etfEmployer: l.etfEmployer,
+              additions: l.additions,
+              deductions: l.deductions
+            }))
+          }
+        },
+        include: {
+          lines: {
+            include: {
+              employee: true,
+              additions: true,
+              deductions: true
+            }
           }
         }
-      }
+      });
+      await postPayrollJournal(tx, { tenantId: req.tenantId, run: created, createdBy: req.user.userId });
+      return created;
     });
 
     // Update loan outstanding for EMI payments
@@ -541,10 +550,11 @@ const getPayrollPreview = async (req, res) => {
     const m = parseInt(month);
     const y = parseInt(year);
 
-    const [employees, additions, deductions] = await Promise.all([
+    const [employees, additions, deductions, rates] = await Promise.all([
       prisma.employee.findMany({ where: { tenantId: req.tenantId, status: 'ACTIVE' }, orderBy: { empCode: 'asc' } }),
       prisma.hrAddition.findMany({ where: { tenantId: req.tenantId } }),
-      prisma.hrDeduction.findMany({ where: { tenantId: req.tenantId } })
+      prisma.hrDeduction.findMany({ where: { tenantId: req.tenantId } }),
+      getRates(prisma, req.tenantId)
     ]);
 
     const preview = await Promise.all(employees.map(async (emp) => {
@@ -556,9 +566,10 @@ const getPayrollPreview = async (req, res) => {
         empAdditions.push({ additionId: a.id, name: a.name, amount: parseFloat(a.defaultAmount) });
       }
 
-      // Build deductions
+      // Build deductions. EPF is calculated from gross at the statutory rate.
       const empDeductions = [];
       for (const d of deductions) {
+        if (/^epf\b/i.test(d.name)) continue;
         empDeductions.push({ deductionId: d.id, name: d.name, amount: parseFloat(d.defaultAmount), type: 'DEDUCTION' });
       }
 
@@ -577,6 +588,7 @@ const getPayrollPreview = async (req, res) => {
         }
       }
 
+      const statutory = applyStatutory(empAdditions, empDeductions, rates);
       return {
         employeeId: emp.id,
         empCode: emp.empCode,
@@ -584,7 +596,11 @@ const getPayrollPreview = async (req, res) => {
         department: emp.department || '',
         designation: emp.designation || '',
         additions: empAdditions,
-        deductions: empDeductions
+        deductions: statutory.deductions,
+        epfEmployee: statutory.epfEmployee,
+        epfEmployer: statutory.epfEmployer,
+        etfEmployer: statutory.etfEmployer,
+        rates
       };
     }));
 

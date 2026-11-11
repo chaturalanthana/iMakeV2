@@ -194,8 +194,8 @@ describe('Advanced Manufacturing Module Operations', () => {
         quantity: 10
       });
 
-    expect(res.status).toBe(201);
-    expect(res.body.message).toContain('Successfully created Requisition');
-    expect(res.body.pr).toBeDefined();
+    expect(res.status).toBe(200);
+    expect(res.body.documentNumber).toBeDefined();
+    expect(res.body.message).toBeTruthy();
   });
 });

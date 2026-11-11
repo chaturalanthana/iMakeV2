@@ -1,4 +1,15 @@
 const prisma = require('../lib/prisma');
+const { sendError } = require('../services/errors');
+const { num, money } = require('../services/money');
+const { receive, issue, movementEffect, valuation } = require('../services/stockService');
+const { receiveLayer, issueFifo } = require('../services/production/fifo');
+const {
+  postReceiptDocument,
+  postIssueDocument,
+  postAdjustmentDocument,
+  postTransferDocument,
+  cancelStockAndJournal
+} = require('../services/documentPosting');
 
 const getStockLedger = async (req, res) => {
   try {
@@ -22,9 +33,7 @@ const getStockLedger = async (req, res) => {
         where: priorWhere
       });
       
-      openingBalance = priorMovements.reduce((acc, m) => {
-        return m.type === 'GI' ? acc - parseFloat(m.quantity) : acc + parseFloat(m.quantity);
-      }, 0);
+      openingBalance = priorMovements.reduce((acc, m) => acc + movementEffect(m), 0);
     }
 
     const whereClause = {
@@ -68,6 +77,12 @@ const getStockLedger = async (req, res) => {
         } else if (m.referenceType === 'ST' && m.referenceId) {
           const doc = await prisma.stockTransfer.findUnique({ where: { id: m.referenceId }});
           if (doc) readableReference = doc.transferNumber;
+        } else if (m.referenceType === 'SALES_DELIVERY' && m.referenceId) {
+          const doc = await prisma.salesDelivery.findUnique({ where: { id: m.referenceId }});
+          if (doc) readableReference = doc.deliveryNumber;
+        } else if (m.referenceType === 'GRN' && m.referenceId) {
+          const doc = await prisma.gRN.findUnique({ where: { id: m.referenceId }});
+          if (doc) readableReference = doc.grnNumber;
         }
       } catch (err) {
         // Fallback to original referenceId if lookup fails
@@ -118,31 +133,45 @@ const createStockMovement = async (req, res) => {
       return res.status(400).json({ error: 'Invalid movement type.' });
     }
 
-    const createdMovements = [];
-
-    // Create a movement for each item
-    for (const item of items) {
-      const movement = await prisma.stockMovement.create({
-        data: {
-          tenantId: req.tenantId,
-          productId: item.productId,
-          type: type,
-          // For GI, we generally store positive quantity but subtract in aggregations, 
-          // or we can store positive quantity consistently for all movements. 
-          // We will store positive quantity in DB.
-          quantity: parseFloat(item.quantity),
-          referenceType: referenceType || (type === 'GI' ? 'MANUAL_ISSUE' : 'MANUAL_ADJ'),
-          referenceId: referenceId || description || '', // Storing description in referenceId if available
-          createdBy: req.user.userId
+    const createdMovements = await prisma.$transaction(async (tx) => {
+      const rows = [];
+      for (const item of items) {
+        const qty = parseFloat(item.quantity);
+        const reference = referenceType || (type === 'GI' ? 'MANUAL_ISSUE' : type === 'GR' ? 'MANUAL_RECEIPT' : 'MANUAL_ADJ');
+        if (type === 'GR' || (type === 'ADJ' && qty >= 0)) {
+          const result = await receive(tx, {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            warehouseId: item.warehouseId || null,
+            quantity: Math.abs(qty),
+            unitCost: item.unitCost || item.unitPrice || 0,
+            referenceType: reference,
+            referenceId: referenceId || description || null,
+            movementType: type,
+            createdBy: req.user.userId
+          });
+          rows.push(result.movement);
+        } else {
+          const result = await issue(tx, {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            warehouseId: item.warehouseId || null,
+            quantity: Math.abs(qty),
+            referenceType: reference,
+            referenceId: referenceId || description || null,
+            movementType: type,
+            quantitySign: type === 'ADJ' ? -1 : 1,
+            createdBy: req.user.userId
+          });
+          rows.push(result.movement);
         }
-      });
-      createdMovements.push(movement);
-    }
+      }
+      return rows;
+    });
 
     res.status(201).json(createdMovements);
   } catch (error) {
-    console.error('Failed to create stock movement:', error);
-    res.status(500).json({ error: 'Failed to create stock movement' });
+    return sendError(res, error, 'Failed to create stock movement');
   }
 };
 
@@ -185,52 +214,51 @@ const createGoodsIssue = async (req, res) => {
       'giNumber'
     );
 
-    const issue = await prisma.goodsIssue.create({
-      data: {
-        tenantId: req.tenantId,
-        supplierId: supplierId || null,
-        giNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        reason: reason || null,
-        total: totalAmount,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        items: { include: { product: true } }
-      }
-    });
+    const issue = await prisma.$transaction(async (tx) => {
+      const created = await tx.goodsIssue.create({
+        data: {
+          tenantId: req.tenantId,
+          supplierId: supplierId || null,
+          giNumber,
+          date: new Date(date),
+          status: status || 'PENDING',
+          reason: reason || null,
+          total: totalAmount,
+          warehouseId: req.body.warehouseId || null,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    // Generate StockMovements IF COMPLETED/ISSUED
-    if (issue.status === 'COMPLETED' || issue.status === 'ISSUED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'GI',
-            referenceId: issue.id,
-            createdBy: req.user?.userId || null
-          }
+      if (created.status === 'COMPLETED' || created.status === 'ISSUED') {
+        await postIssueDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: created.warehouseId,
+          items,
+          referenceType: 'GI',
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null,
+          description: `Goods issue ${giNumber}`
         });
       }
-    }
+      return created;
+    });
 
     res.status(201).json(issue);
   } catch (error) {
-    console.error('Failed to create Goods Issue:', error);
-    res.status(500).json({ error: 'Failed to create Goods Issue' });
+    return sendError(res, error, 'Failed to create Goods Issue');
   }
 };
 
@@ -250,53 +278,53 @@ const updateGoodsIssue = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    await prisma.goodsIssueItem.deleteMany({
-      where: { giId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.goodsIssueItem.deleteMany({
+        where: { giId: id }
+      });
 
-    const updated = await prisma.goodsIssue.update({
-      where: { id },
-      data: {
-        supplierId: supplierId || null,
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        total: totalAmount,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        supplier: true,
-        items: { include: { product: true } }
-      }
-    });
+      const saved = await tx.goodsIssue.update({
+        where: { id },
+        data: {
+          supplierId: supplierId || null,
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          total: totalAmount,
+          warehouseId: req.body.warehouseId !== undefined ? req.body.warehouseId : existing.warehouseId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          supplier: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (updated.status === 'COMPLETED' || updated.status === 'ISSUED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'GI',
-            referenceId: updated.id,
-            createdBy: req.user?.userId || null
-          }
+      if (saved.status === 'COMPLETED' || saved.status === 'ISSUED') {
+        await postIssueDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: saved.warehouseId,
+          items,
+          referenceType: 'GI',
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null,
+          description: `Goods issue ${existing.giNumber}`
         });
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update GI:', error);
-    res.status(500).json({ error: 'Failed to update Goods Issue' });
+    return sendError(res, error, 'Failed to update Goods Issue');
   }
 };
 
@@ -338,53 +366,49 @@ const createStockAdjustment = async (req, res) => {
       'adjNumber'
     );
 
-    const adj = await prisma.stockAdjustment.create({
-      data: {
-        tenantId: req.tenantId,
-        adjNumber,
-        date: new Date(date),
-        status: status || 'PENDING',
-        reason: reason || null,
-        total: totalAmount,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            systemQty: parseFloat(item.systemQty || 0),
-            actualQty: parseFloat(item.actualQty || 0),
-            diffQty: parseFloat(item.diffQty || 0),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        items: { include: { product: true } }
-      }
-    });
-
-    if (adj.status === 'COMPLETED') {
-      for (const item of items) {
-        if (parseFloat(item.diffQty) !== 0) {
-          await prisma.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
+    const adj = await prisma.$transaction(async (tx) => {
+      const created = await tx.stockAdjustment.create({
+        data: {
+          tenantId: req.tenantId,
+          adjNumber,
+          date: new Date(date),
+          status: status || 'PENDING',
+          reason: reason || null,
+          total: totalAmount,
+          warehouseId: req.body.warehouseId || null,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
               productId: item.productId,
-              type: 'ADJ',
-              quantity: parseFloat(item.diffQty),
-              referenceType: 'ADJ',
-              referenceId: adj.id,
-              createdBy: req.user?.userId || null
-            }
-          });
+              systemQty: parseFloat(item.systemQty || 0),
+              actualQty: parseFloat(item.actualQty || 0),
+              diffQty: parseFloat(item.diffQty || 0),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          items: { include: { product: true } }
         }
+      });
+
+      if (created.status === 'COMPLETED') {
+        await postAdjustmentDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: created.warehouseId,
+          items,
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null
+        });
       }
-    }
+      return created;
+    });
 
     res.status(201).json(adj);
   } catch (error) {
-    console.error('Failed to create ADJ:', error);
-    res.status(500).json({ error: 'Failed to create Stock Adjustment' });
+    return sendError(res, error, 'Failed to create Stock Adjustment');
   }
 };
 
@@ -404,55 +428,51 @@ const updateStockAdjustment = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    await prisma.stockAdjustmentItem.deleteMany({
-      where: { adjId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockAdjustmentItem.deleteMany({
+        where: { adjId: id }
+      });
 
-    const updated = await prisma.stockAdjustment.update({
-      where: { id },
-      data: {
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        total: totalAmount,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            systemQty: parseFloat(item.systemQty || 0),
-            actualQty: parseFloat(item.actualQty || 0),
-            diffQty: parseFloat(item.diffQty || 0),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        items: { include: { product: true } }
-      }
-    });
-
-    if (updated.status === 'COMPLETED') {
-      for (const item of items) {
-        if (parseFloat(item.diffQty) !== 0) {
-          await prisma.stockMovement.create({
-            data: {
-              tenantId: req.tenantId,
+      const saved = await tx.stockAdjustment.update({
+        where: { id },
+        data: {
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          total: totalAmount,
+          warehouseId: req.body.warehouseId !== undefined ? req.body.warehouseId : existing.warehouseId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
               productId: item.productId,
-              type: 'ADJ',
-              quantity: parseFloat(item.diffQty),
-              referenceType: 'ADJ',
-              referenceId: updated.id,
-              createdBy: req.user?.userId || null
-            }
-          });
+              systemQty: parseFloat(item.systemQty || 0),
+              actualQty: parseFloat(item.actualQty || 0),
+              diffQty: parseFloat(item.diffQty || 0),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          items: { include: { product: true } }
         }
+      });
+
+      if (saved.status === 'COMPLETED') {
+        await postAdjustmentDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: saved.warehouseId,
+          items,
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null
+        });
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update ADJ:', error);
-    res.status(500).json({ error: 'Failed to update Stock Adjustment' });
+    return sendError(res, error, 'Failed to update Stock Adjustment');
   }
 };
 
@@ -494,26 +514,20 @@ const getInventoryReport = async (req, res) => {
       }
     });
 
-    // Aggregate movements
     const stockMap = {};
-    for (const m of movements) {
-      if (!stockMap[m.productId]) {
-        stockMap[m.productId] = 0;
-      }
-      const qty = parseFloat(m.quantity);
-      if (m.type === 'GR' || (m.type === 'ADJ' && qty > 0)) {
-        stockMap[m.productId] += Math.abs(qty);
-      } else if (m.type === 'GI' || (m.type === 'ADJ' && qty < 0)) {
-        stockMap[m.productId] -= Math.abs(qty);
-      }
+    for (const movement of movements) {
+      stockMap[movement.productId] = (stockMap[movement.productId] || 0) + movementEffect(movement);
     }
+    const valued = await valuation(prisma, { tenantId: req.tenantId, warehouseId });
+    const layerByProduct = new Map(valued.rows.map((row) => [row.productId, row]));
 
-    // Combine
     const report = products.map(p => {
-      const currentStock = stockMap[p.id] || 0;
+      const layer = layerByProduct.get(p.id);
+      const currentStock = layer ? layer.quantity : (stockMap[p.id] || 0);
       const costPrice = parseFloat(p.costPrice || 0);
       const sellingPrice = parseFloat(p.sellingPrice || 0);
-      
+      const totalCostValue = layer ? layer.value : currentStock * costPrice;
+
       return {
         id: p.id,
         code: p.code,
@@ -524,7 +538,7 @@ const getInventoryReport = async (req, res) => {
         currentStock,
         costPrice,
         sellingPrice,
-        totalCostValue: currentStock * costPrice,
+        totalCostValue,
         totalRetailValue: currentStock * sellingPrice
       };
     });
@@ -566,52 +580,51 @@ const createStockReceipt = async (req, res) => {
       'receiptNumber'
     );
 
-    const receipt = await prisma.stockReceipt.create({
-      data: {
-        tenantId: req.tenantId,
-        receiptNumber,
-        date: new Date(date),
-        status: status || 'DRAFT',
-        reason: reason || null,
-        total: totalAmount,
-        warehouseId: warehouseId || null,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        warehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+    const receipt = await prisma.$transaction(async (tx) => {
+      const created = await tx.stockReceipt.create({
+        data: {
+          tenantId: req.tenantId,
+          receiptNumber,
+          date: new Date(date),
+          status: status || 'DRAFT',
+          reason: reason || null,
+          total: totalAmount,
+          warehouseId: warehouseId || null,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          warehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (receipt.status === 'COMPLETED' || receipt.status === 'ISSUED' || receipt.status === 'RECEIVED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'SR',
-            referenceId: receipt.id,
-            warehouseId: warehouseId || null,
-            createdBy: req.user?.userId || null
-          }
+      if (created.status === 'COMPLETED' || created.status === 'ISSUED' || created.status === 'RECEIVED') {
+        await postReceiptDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: created.warehouseId,
+          items,
+          referenceType: 'SR',
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null,
+          description: `Stock receipt ${receiptNumber}`,
+          creditKey: 'STOCK_ADJUSTMENT'
         });
       }
-    }
+      return created;
+    });
 
     res.status(201).json(receipt);
   } catch (error) {
-    console.error('Failed to create Stock Receipt:', error);
-    res.status(500).json({ error: 'Failed to create Stock Receipt' });
+    return sendError(res, error, 'Failed to create Stock Receipt');
   }
 };
 
@@ -631,54 +644,53 @@ const updateStockReceipt = async (req, res) => {
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
 
-    await prisma.stockReceiptItem.deleteMany({
-      where: { receiptId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockReceiptItem.deleteMany({
+        where: { receiptId: id }
+      });
 
-    const updated = await prisma.stockReceipt.update({
-      where: { id },
-      data: {
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        total: totalAmount,
-        warehouseId: warehouseId !== undefined ? warehouseId : existing.warehouseId,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity),
-            unitPrice: parseFloat(item.unitPrice || 0),
-            total: parseFloat(item.total || 0)
-          }))
-        } : undefined
-      },
-      include: {
-        warehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+      const saved = await tx.stockReceipt.update({
+        where: { id },
+        data: {
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          total: totalAmount,
+          warehouseId: warehouseId !== undefined ? warehouseId : existing.warehouseId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              unitPrice: parseFloat(item.unitPrice || 0),
+              total: parseFloat(item.total || 0)
+            }))
+          } : undefined
+        },
+        include: {
+          warehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (updated.status === 'COMPLETED' || updated.status === 'RECEIVED') {
-      for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'SR',
-            referenceId: updated.id,
-            warehouseId: updated.warehouseId || null,
-            createdBy: req.user?.userId || null
-          }
+      if (saved.status === 'COMPLETED' || saved.status === 'RECEIVED') {
+        await postReceiptDocument(tx, {
+          tenantId: req.tenantId,
+          warehouseId: saved.warehouseId,
+          items,
+          referenceType: 'SR',
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null,
+          description: `Stock receipt ${existing.receiptNumber}`,
+          creditKey: 'STOCK_ADJUSTMENT'
         });
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update Stock Receipt:', error);
-    res.status(500).json({ error: 'Failed to update Stock Receipt' });
+    return sendError(res, error, 'Failed to update Stock Receipt');
   }
 };
 
@@ -721,65 +733,48 @@ const createStockTransfer = async (req, res) => {
       'transferNumber'
     );
 
-    const transfer = await prisma.stockTransfer.create({
-      data: {
-        tenantId: req.tenantId,
-        transferNumber,
-        date: new Date(date),
-        status: status || 'DRAFT',
-        reason: reason || null,
-        fromWarehouseId: fromWarehouseId || null,
-        toWarehouseId: toWarehouseId || null,
-        createdBy: req.user?.userId || null,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity)
-          }))
-        } : undefined
-      },
-      include: {
-        fromWarehouse: true,
-        toWarehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+    const transfer = await prisma.$transaction(async (tx) => {
+      const created = await tx.stockTransfer.create({
+        data: {
+          tenantId: req.tenantId,
+          transferNumber,
+          date: new Date(date),
+          status: status || 'DRAFT',
+          reason: reason || null,
+          fromWarehouseId: fromWarehouseId || null,
+          toWarehouseId: toWarehouseId || null,
+          createdBy: req.user?.userId || null,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity)
+            }))
+          } : undefined
+        },
+        include: {
+          fromWarehouse: true,
+          toWarehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (transfer.status === 'COMPLETED' || transfer.status === 'ISSUED' || transfer.status === 'RECEIVED') {
-      for (const item of items) {
-        // GI out of source warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: transfer.id,
-            warehouseId: fromWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
-        // GR into target warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: transfer.id,
-            warehouseId: toWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
+      if (created.status === 'COMPLETED' || created.status === 'ISSUED' || created.status === 'RECEIVED') {
+        await postTransferDocument(tx, {
+          tenantId: req.tenantId,
+          fromWarehouseId,
+          toWarehouseId,
+          items,
+          referenceId: created.id,
+          date,
+          createdBy: req.user?.userId || null
         });
       }
-    }
+      return created;
+    });
 
     res.status(201).json(transfer);
   } catch (error) {
-    console.error('Failed to create Stock Transfer:', error);
-    res.status(500).json({ error: 'Failed to create Stock Transfer' });
+    return sendError(res, error, 'Failed to create Stock Transfer');
   }
 };
 
@@ -796,67 +791,50 @@ const updateStockTransfer = async (req, res) => {
       return res.status(400).json({ error: 'Cannot modify a completed stock movement.' });
     }
 
-    await prisma.stockTransferItem.deleteMany({
-      where: { transferId: id }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.stockTransferItem.deleteMany({
+        where: { transferId: id }
+      });
 
-    const updated = await prisma.stockTransfer.update({
-      where: { id },
-      data: {
-        date: date ? new Date(date) : existing.date,
-        status: status || existing.status,
-        reason: reason !== undefined ? reason : existing.reason,
-        fromWarehouseId: fromWarehouseId !== undefined ? fromWarehouseId : existing.fromWarehouseId,
-        toWarehouseId: toWarehouseId !== undefined ? toWarehouseId : existing.toWarehouseId,
-        items: items && items.length > 0 ? {
-          create: items.map(item => ({
-            productId: item.productId,
-            quantity: parseFloat(item.quantity)
-          }))
-        } : undefined
-      },
-      include: {
-        fromWarehouse: true,
-        toWarehouse: true,
-        items: { include: { product: true } }
-      }
-    });
+      const saved = await tx.stockTransfer.update({
+        where: { id },
+        data: {
+          date: date ? new Date(date) : existing.date,
+          status: status || existing.status,
+          reason: reason !== undefined ? reason : existing.reason,
+          fromWarehouseId: fromWarehouseId !== undefined ? fromWarehouseId : existing.fromWarehouseId,
+          toWarehouseId: toWarehouseId !== undefined ? toWarehouseId : existing.toWarehouseId,
+          items: items && items.length > 0 ? {
+            create: items.map(item => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity)
+            }))
+          } : undefined
+        },
+        include: {
+          fromWarehouse: true,
+          toWarehouse: true,
+          items: { include: { product: true } }
+        }
+      });
 
-    if (updated.status === 'COMPLETED') {
-      for (const item of items) {
-        // GI out of source warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GI',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: updated.id,
-            warehouseId: updated.fromWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
-        });
-        // GR into target warehouse
-        await prisma.stockMovement.create({
-          data: {
-            tenantId: req.tenantId,
-            productId: item.productId,
-            type: 'GR',
-            quantity: parseFloat(item.quantity),
-            referenceType: 'ST',
-            referenceId: updated.id,
-            warehouseId: updated.toWarehouseId || null,
-            createdBy: req.user?.userId || null
-          }
+      if (saved.status === 'COMPLETED') {
+        await postTransferDocument(tx, {
+          tenantId: req.tenantId,
+          fromWarehouseId: saved.fromWarehouseId,
+          toWarehouseId: saved.toWarehouseId,
+          items,
+          referenceId: saved.id,
+          date: saved.date,
+          createdBy: req.user?.userId || null
         });
       }
-    }
+      return saved;
+    });
 
     res.json(updated);
   } catch (error) {
-    console.error('Failed to update Stock Transfer:', error);
-    res.status(500).json({ error: 'Failed to update Stock Transfer' });
+    return sendError(res, error, 'Failed to update Stock Transfer');
   }
 };
 
@@ -867,6 +845,55 @@ const deleteStockTransfer = async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete Stock Transfer' });
+  }
+};
+
+const getValuation = async (req, res) => {
+  try {
+    const report = await valuation(prisma, {
+      tenantId: req.tenantId,
+      warehouseId: req.query.warehouseId,
+      productId: req.query.productId
+    });
+    res.json(report);
+  } catch (error) {
+    return sendError(res, error, 'Failed to value stock');
+  }
+};
+
+const costingReceive = async (req, res) => {
+  try {
+    const layer = await prisma.$transaction((tx) => receiveLayer(tx, {
+      tenantId: req.tenantId,
+      productId: req.body.productId,
+      warehouseId: req.body.warehouseId,
+      quantity: req.body.quantity,
+      unitCost: req.body.unitCost,
+      sourceType: req.body.referenceType,
+      sourceId: req.body.referenceId || null,
+      receivedAt: req.body.receivedAt || null
+    }));
+    res.status(201).json(layer);
+  } catch (error) {
+    return sendError(res, error, 'Failed to receive cost layer');
+  }
+};
+
+const costingIssue = async (req, res) => {
+  try {
+    const fifo = await prisma.$transaction(async (tx) => {
+      const result = await issueFifo(tx, {
+        tenantId: req.tenantId,
+        productId: req.body.productId,
+        warehouseId: req.body.warehouseId,
+        quantity: req.body.quantity,
+        strictWarehouse: true
+      });
+      return result;
+    });
+    res.status(201).json(fifo);
+  } catch (error) {
+    return sendError(res, error, 'Failed to issue FIFO cost');
   }
 };
 
@@ -884,6 +911,9 @@ module.exports = {
   updateStockAdjustment,
   deleteStockAdjustment,
   getInventoryReport,
+  getValuation,
+  costingReceive,
+  costingIssue,
   
   // New Stock Receipts & Transfers
   getStockReceipts,

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -27,6 +28,7 @@ export default function NewStockTransfer() {
   const [fromWarehouseId, setFromWarehouseId] = useState('');
   const [fromWarehouseName, setFromWarehouseName] = useState('');
   const [toWarehouseId, setToWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [toWarehouseName, setToWarehouseName] = useState('');
   const [reason, setReason] = useState('');
 
@@ -110,10 +112,19 @@ export default function NewStockTransfer() {
   const totalQty = items.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
 
   const handleSubmit = async (submitStatus = 'DRAFT') => {
-    if (!fromWarehouseId || !toWarehouseId) return showToast("Both source and destination warehouses are required.", "error");
-    if (fromWarehouseId === toWarehouseId) return showToast("Source and destination warehouses cannot be the same.", "error");
+    const errors = {};
+    if (!date) errors.date = 'Date is required.';
+    if (!fromWarehouseId) errors.fromWarehouseId = 'Source warehouse is required.';
+    if (!toWarehouseId) errors.toWarehouseId = 'Destination warehouse is required.';
+    if (fromWarehouseId && fromWarehouseId === toWarehouseId) errors.toWarehouseId = 'Source and destination warehouses cannot be the same.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     if (submitStatus === 'COMPLETED') {
       for (let item of validLines) {
         if (parseFloat(item.quantity) <= 0) return showToast("All product lines must have a positive transfer quantity before completing.", "error");
@@ -155,6 +166,19 @@ export default function NewStockTransfer() {
 
   const isReadOnly = status === 'COMPLETED';
   const isCompleted = isReadOnly;
+
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => mergeScannedProduct(current, hit.product, 'quantity').items);
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
 
   return (
     <AppLayout title={id ? `Stock Transfer - ${transferNumber}` : "New Stock Transfer"} icon={RefreshCw}>
@@ -199,6 +223,8 @@ export default function NewStockTransfer() {
             </div>
           </div>
 
+          {!isReadOnly && <ScanCapture onScan={onScan} placeholder="Scan item or lot to transfer" />}
+
           {/* Header Details */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '220px' }}>
@@ -207,6 +233,8 @@ export default function NewStockTransfer() {
               </div>
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <DatePicker 
+                  invalid={!!fieldErrors.date}
+                  error={fieldErrors.date || ''}
                   value={date} 
                   onChange={setDate} 
                   placeholder="Select Date" 
@@ -222,6 +250,8 @@ export default function NewStockTransfer() {
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <WarehouseSearchDropdown
                   warehouses={warehouses}
+                  invalid={!!fieldErrors.fromWarehouseId}
+                  error={fieldErrors.fromWarehouseId || ''}
                   value={fromWarehouseName}
                   onChange={(name, wh) => {
                     setFromWarehouseName(name);
@@ -242,6 +272,8 @@ export default function NewStockTransfer() {
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <WarehouseSearchDropdown
                   warehouses={warehouses}
+                  invalid={!!fieldErrors.toWarehouseId}
+                  error={fieldErrors.toWarehouseId || ''}
                   value={toWarehouseName}
                   onChange={(name, wh) => {
                     setToWarehouseName(name);

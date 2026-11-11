@@ -47,8 +47,16 @@ export default function Uoms() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!String(formData.name || '').trim()) {
+      setFieldErrors({ name: 'UOM name is required.' });
+      showToast('UOM name is required.', 'error');
+      return;
+    }
+    setFieldErrors({});
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
@@ -69,6 +77,7 @@ export default function Uoms() {
       fetchUoms();
     } catch (error) {
       console.error('Failed to save UOM:', error);
+      setFieldErrors(error.response?.data?.fields || {});
       showToast(error.response?.data?.error || 'Failed to save Unit of Measure', 'error');
     }
   };
@@ -198,9 +207,10 @@ export default function Uoms() {
                     value={formData.name} 
                     onChange={handleInputChange} 
                     placeholder="e.g. PCS, BOX, KG" 
-                    style={{ width: '100%', padding: '0.7rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.9rem', backgroundColor: '#fff' }} 
+                    style={{ width: '100%', padding: '0.7rem 0.85rem', borderRadius: '8px', border: fieldErrors.name ? '1px solid var(--error)' : '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.9rem', backgroundColor: '#fff' }} 
                     required 
                   />
+                  {fieldErrors.name && <div style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '0.35rem' }}>{fieldErrors.name}</div>}
                 </div>
               </div>
 

@@ -47,6 +47,7 @@ export default function NewQuotation() {
   // Form State
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [customerId, setCustomerId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [customerName, setCustomerName] = useState('');
   const [status, setStatus] = useState('DRAFT');
 
@@ -216,9 +217,17 @@ export default function NewQuotation() {
 
 
   const handleSubmit = async (finalStatus = 'COMPLETED') => {
-    if (!customerId || !date) return showToast("Please fill required header fields.", "error");
+    const errors = {};
+    if (!customerId) errors.customerId = 'Customer is required.';
+    if (!date) errors.date = 'Date is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setLoading(true);
     try {
@@ -374,6 +383,8 @@ export default function NewQuotation() {
                 <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                   <CustomerSearchDropdown 
                     customers={customers}
+                    invalid={!!fieldErrors.customerId}
+                    error={fieldErrors.customerId || ''}
                     value={customerName}
                     onChange={(name, cus) => {
                       setCustomerName(name);
@@ -399,6 +410,8 @@ export default function NewQuotation() {
               ) : (
                 <div style={{ pointerEvents: 'auto', opacity: 1 }}>
                   <DatePicker 
+                    invalid={!!fieldErrors.date}
+                    error={fieldErrors.date || ''}
                     value={date} 
                     onChange={setDate} 
                     placeholder="Select Date" 

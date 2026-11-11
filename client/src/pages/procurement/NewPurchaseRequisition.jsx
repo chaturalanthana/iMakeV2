@@ -49,6 +49,7 @@ export default function NewPurchaseRequisition() {
   // Form State
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [supplierId, setSupplierId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [supplierName, setSupplierName] = useState('');
 
   // Lines
@@ -224,8 +225,16 @@ export default function NewPurchaseRequisition() {
   const isCompleted = status === 'CONVERTED';
 
   const handleSubmit = async (finalStatus = 'PENDING') => {
+    const errors = {};
+    if (!date) errors.date = 'Date is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setLoading(true);
     try {
@@ -388,6 +397,8 @@ export default function NewPurchaseRequisition() {
                 </div>
                 <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                   <DatePicker 
+                    invalid={!!fieldErrors.date}
+                    error={fieldErrors.date || ''}
                     value={date} 
                     onChange={setDate} 
                     placeholder="Select Date" 

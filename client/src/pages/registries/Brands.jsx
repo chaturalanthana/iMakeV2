@@ -25,6 +25,7 @@ export default function Brands() {
     name: '',
     parentId: ''
   });
+  const [nameError, setNameError] = useState('');
 
   const [confirmConfig, setConfirmConfig] = useState({ 
     isOpen: false, 
@@ -65,6 +66,12 @@ export default function Brands() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!String(formData.name || '').trim()) {
+      setNameError('Brand Name is required.');
+      showToast('Brand Name is required.', 'error');
+      return;
+    }
+    setNameError('');
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
@@ -640,9 +647,11 @@ export default function Brands() {
                         onChange={handleInputChange} 
                         placeholder="e.g. Apple, Sony, Nike" 
                         style={{ width: '100%', padding: '0.7rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.9rem', backgroundColor: '#fff' }} 
+                        className={nameError ? 'field-invalid' : undefined}
                         required 
                         autoFocus
                       />
+                      {nameError && <span className="field-error-text">{nameError}</span>}
                     </div>
 
                     {/* Parent Brand Info (Read-only) */}

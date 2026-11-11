@@ -96,7 +96,7 @@ export default function PaymentReceipts() {
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>{rec.receiptNumber}</td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-main)' }}>{rec.customer?.name || '-'}</td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{rec.method}</td>
-                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--success)', textAlign: 'right' }}>+${rec.amount.toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--success)', textAlign: 'right' }}>Rs {Number(rec.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                       <tr>

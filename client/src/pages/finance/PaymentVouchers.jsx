@@ -93,10 +93,15 @@ export default function PaymentVouchers() {
                       ) : paginated.map(vouch => (
                         <tr key={vouch.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor='#f8fafc'} onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem' }}>{new Date(vouch.date).toLocaleDateString()}</td>
-                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>{vouch.voucherNumber}</td>
+                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                            {vouch.voucherNumber}
+                            {Number(vouch.whtAmount) > 0 && (
+                              <button type="button" onClick={() => navigate(`/finance/vouchers/${vouch.id}/wht`)} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem' }}>WHT</button>
+                            )}
+                          </td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-main)' }}>{vouch.supplier?.name || '-'}</td>
                           <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>{vouch.method}</td>
-                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--error)', textAlign: 'right' }}>-${vouch.amount.toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--error)', textAlign: 'right' }}>Rs {Number(vouch.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                       <tr>

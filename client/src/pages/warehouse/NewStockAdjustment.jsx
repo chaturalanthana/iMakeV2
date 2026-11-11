@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '../../components/layout/AppLayout';
 import ProductSearchDropdown from '../../components/ui/ProductSearchDropdown';
+import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
@@ -26,6 +27,7 @@ export default function NewStockAdjustment() {
   const [adjNumber, setAdjNumber] = useState('');
   const [date, setDate] = useState(new Date());
   const [warehouseId, setWarehouseId] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [warehouseName, setWarehouseName] = useState('');
   const [reason, setReason] = useState('');
 
@@ -148,9 +150,17 @@ export default function NewStockAdjustment() {
   const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
 
   const handleSubmit = async (submitStatus = 'DRAFT') => {
-    if (!warehouseId) return showToast("Warehouse is required.", "error");
+    const errors = {};
+    if (!date) errors.date = 'Date is required.';
+    if (!warehouseId) errors.warehouseId = 'Warehouse is required.';
     const validLines = items.filter(l => l.productId);
-    if (validLines.length === 0) return showToast("Please add at least one product.", "error");
+    if (validLines.length === 0) errors.items = 'Add at least one product.';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     
     setLoading(true);
     try {
@@ -189,6 +199,45 @@ export default function NewStockAdjustment() {
 
   const isReadOnly = status === 'COMPLETED';
   const isCompleted = isReadOnly;
+
+  const onScan = async (code) => {
+    try {
+      const hit = await lookupScan(code);
+      if (!hit.product) {
+        showToast('Scan an item or a lot.', 'error');
+        return;
+      }
+      setItems((current) => {
+        const existing = current.find((item) => item.productId === hit.product.id);
+        if (existing) {
+          return current.map((item) => {
+            if (item.productId !== hit.product.id) return item;
+            const actual = (parseFloat(item.actualQty) || 0) + 1;
+            const system = parseFloat(item.systemQty) || 0;
+            const price = parseFloat(item.unitPrice) || 0;
+            return { ...item, actualQty: actual, diffQty: actual - system, total: (actual - system) * price };
+          });
+        }
+        const system = getSystemQty(hit.product.id);
+        const price = parseFloat(hit.product.costPrice) || 0;
+        const row = {
+          id: Date.now() + Math.random(),
+          productId: hit.product.id,
+          productName: hit.product.name,
+          systemQty: system,
+          actualQty: 1,
+          diffQty: 1 - system,
+          unitPrice: price,
+          total: (1 - system) * price
+        };
+        const blank = current.find((item) => !item.productId);
+        if (blank) return current.map((item) => (item.id === blank.id ? { ...row, id: blank.id } : item));
+        return [...current, row];
+      });
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Nothing matched that scan', 'error');
+    }
+  };
 
   return (
     <AppLayout title={id ? `Stock Adjustment - ${adjNumber}` : "New Stock Adjustment"} icon={ArrowUpRight}>
@@ -235,6 +284,8 @@ export default function NewStockAdjustment() {
             </div>
           </div>
 
+          {!isReadOnly && <ScanCapture onScan={onScan} placeholder="Scan item or lot to count" />}
+
           {/* Header Details */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '220px' }}>
@@ -243,6 +294,8 @@ export default function NewStockAdjustment() {
               </div>
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <DatePicker 
+                  invalid={!!fieldErrors.date}
+                  error={fieldErrors.date || ''}
                   value={date} 
                   onChange={setDate} 
                   placeholder="Select Date" 
@@ -258,6 +311,8 @@ export default function NewStockAdjustment() {
               <div style={{ pointerEvents: isCompleted ? 'none' : 'auto', opacity: isCompleted ? 0.7 : 1 }}>
                 <WarehouseSearchDropdown
                   warehouses={warehouses}
+                  invalid={!!fieldErrors.warehouseId}
+                  error={fieldErrors.warehouseId || ''}
                   value={warehouseName}
                   onChange={(name, wh) => {
                     setWarehouseName(name);
