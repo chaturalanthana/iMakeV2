@@ -72,6 +72,18 @@ model Tenant {
   bankReconciliations          BankReconciliation[]
   bankStatementLines           BankStatementLine[]
   bankReconciliationMatches    BankReconciliationMatch[]
+  routings                     Routing[]
+  routingOperations            RoutingOperation[]
+  workOrders                   WorkOrder[]
+  workOrderComponents          WorkOrderComponent[]
+  workOrderOperations          WorkOrderOperation[]
+  materialReservations         MaterialReservation[]
+  workOrderIssues              WorkOrderIssue[]
+  workOrderConfirmations       WorkOrderConfirmation[]
+  reasonCodes                  ReasonCode[]
+  productionSetting            ProductionSetting?
+  costLayers                   CostLayer[]
+  operationTimeLogs            OperationTimeLog[]
 
   @@map("tenants")
 }
@@ -346,6 +358,9 @@ model Product {
   bomComponents         BOMItem[]              @relation("BOMComponentProducts")
   productionJobs        ProductionJob[]
   productionOrders      ProductionOrder[]      @relation("ProductProductionOrders")
+  workOrders            WorkOrder[]            @relation("WorkOrderProduct")
+  workOrderComponents   WorkOrderComponent[]
+  costLayers            CostLayer[]
 
   @@index([tenantId])
   @@map("products")
@@ -433,6 +448,8 @@ model StockMovement {
   updatedAt     DateTime   @updatedAt @map("updated_at")
   createdBy     String?    @map("created_by")
   warehouseId   String?    @map("warehouse_id")
+  lotNumber     String?    @map("lot_number")
+  serialNumber  String?    @map("serial_number")
   product       Product    @relation(fields: [productId], references: [id])
   tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   warehouse     Warehouse? @relation(fields: [warehouseId], references: [id])
@@ -501,6 +518,7 @@ model SalesOrder {
   customer      Customer         @relation(fields: [customerId], references: [id])
   quotation     SalesQuotation?  @relation(fields: [quotationId], references: [id])
   tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrders    WorkOrder[]
 
   @@index([tenantId])
   @@map("sales_orders")
@@ -513,8 +531,9 @@ model SalesOrderItem {
   quantity  Decimal    @db.Decimal(19, 4)
   unitPrice Decimal    @map("unit_price") @db.Decimal(19, 4)
   total     Decimal    @db.Decimal(19, 4)
-  order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product    @relation(fields: [productId], references: [id])
+  order      SalesOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product     @relation(fields: [productId], references: [id])
+  workOrders WorkOrder[] @relation("WorkOrderSalesItem")
 
   @@index([orderId])
   @@index([productId])
@@ -849,6 +868,7 @@ model Warehouse {
   stockReceipts    StockReceipt[]
   transfersFrom    StockTransfer[]   @relation("FromWarehouse")
   transfersTo      StockTransfer[]   @relation("ToWarehouse")
+  workOrders       WorkOrder[]
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -1470,6 +1490,8 @@ model BOM {
   resources    BOMResource[]
   productionJobs ProductionJob[]
   productionOrders ProductionOrder[]
+  routing      Routing?
+  workOrders   WorkOrder[]
 
   @@unique([tenantId, productId, code])
   @@unique([tenantId, productId, version])
@@ -1572,6 +1594,7 @@ model ProductionJob {
   tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   product        Product    @relation(fields: [productId], references: [id])
   bom            BOM?       @relation(fields: [bomId], references: [id], onDelete: SetNull)
+  workOrder      WorkOrder?
 
   @@unique([tenantId, jobNumber])
   @@index([tenantId])
@@ -1598,6 +1621,7 @@ model ProductionOrder {
   tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   product         Product           @relation("ProductProductionOrders", fields: [productId], references: [id])
   bom             BOM?              @relation(fields: [bomId], references: [id], onDelete: SetNull)
+  workOrder       WorkOrder?
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId])
@@ -1618,8 +1642,10 @@ model Workstation {
   updatedAt    DateTime @updatedAt @map("updated_at")
   createdBy    String?  @map("created_by")
 
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  machines     Machine[]
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  machines            Machine[]
+  routingOperations   RoutingOperation[]
+  workOrderOperations WorkOrderOperation[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1733,6 +1759,339 @@ model ProductGroup {
 
   @@index([tenantId])
   @@map("product_groups")
+}
+
+// Shop-floor work orders. Routing is versioned with the BOM (one header per BOM version).
+// Work orders snapshot components and operations. Legacy production jobs and production
+// orders stay in place and point at a work order so existing screens keep their APIs.
+
+model Routing {
+  id         String             @id @default(uuid())
+  tenantId   String             @map("tenant_id")
+  bomId      String             @unique @map("bom_id")
+  code       String
+  version    String
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bom        BOM                @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  operations RoutingOperation[]
+  workOrders WorkOrder[]
+
+  @@index([tenantId])
+  @@map("routings")
+}
+
+model RoutingOperation {
+  id                      String       @id @default(uuid())
+  tenantId                String       @map("tenant_id")
+  routingId               String       @map("routing_id")
+  sequence                Int
+  name                    String
+  workstationId           String?      @map("workstation_id")
+  setupMinutes            Decimal      @default(0) @map("setup_minutes") @db.Decimal(19, 4)
+  runMinutesPerUnit       Decimal      @default(0) @map("run_minutes_per_unit") @db.Decimal(19, 4)
+  noOfWorkers             Int          @default(1) @map("no_of_workers")
+  isSubcontract           Boolean      @default(false) @map("is_subcontract")
+  subcontractCostPerUnit  Decimal      @default(0) @map("subcontract_cost_per_unit") @db.Decimal(19, 4)
+  instructions            String?
+
+  tenant                  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  routing                 Routing      @relation(fields: [routingId], references: [id], onDelete: Cascade)
+  workstation             Workstation? @relation(fields: [workstationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([routingId])
+  @@map("routing_operations")
+}
+
+model WorkOrder {
+  id                   String                   @id @default(uuid())
+  tenantId             String                   @map("tenant_id")
+  orderNumber          String                   @map("order_number")
+  productId            String                   @map("product_id")
+  bomId                String?                  @map("bom_id")
+  routingId            String?                  @map("routing_id")
+  warehouseId          String?                  @map("warehouse_id")
+  quantity             Decimal                  @db.Decimal(19, 4)
+  quantityCompleted    Decimal                  @default(0) @map("quantity_completed") @db.Decimal(19, 4)
+  quantityScrapped     Decimal                  @default(0) @map("quantity_scrapped") @db.Decimal(19, 4)
+  quantityRework       Decimal                  @default(0) @map("quantity_rework") @db.Decimal(19, 4)
+  quantityReceipted    Decimal                  @default(0) @map("quantity_receipted") @db.Decimal(19, 4)
+  status               String                   @default("CREATED")
+  priority             String                   @default("MEDIUM")
+  issueMode            String                   @default("BACKFLUSH") @map("issue_mode")
+  startDate            DateTime?                @map("start_date")
+  endDate              DateTime?                @map("end_date")
+  assignedTo           String?                  @map("assigned_to")
+  notes                String?
+  sourceType           String                   @default("MANUAL") @map("source_type")
+  sourceId             String?                  @map("source_id")
+  salesOrderId         String?                  @map("sales_order_id")
+  salesOrderItemId     String?                  @map("sales_order_item_id")
+  legacyJobId          String?                  @unique @map("legacy_job_id")
+  legacyOrderId        String?                  @unique @map("legacy_order_id")
+  labourRatePerHour    Decimal                  @default(0) @map("labour_rate_per_hour") @db.Decimal(19, 4)
+  overheadPercent      Decimal                  @default(0) @map("overhead_percent") @db.Decimal(19, 4)
+  plannedMaterialCost  Decimal                  @default(0) @map("planned_material_cost") @db.Decimal(19, 4)
+  plannedLabourCost    Decimal                  @default(0) @map("planned_labour_cost") @db.Decimal(19, 4)
+  plannedMachineCost   Decimal                  @default(0) @map("planned_machine_cost") @db.Decimal(19, 4)
+  plannedOverheadCost  Decimal                  @default(0) @map("planned_overhead_cost") @db.Decimal(19, 4)
+  plannedScrapCost     Decimal                  @default(0) @map("planned_scrap_cost") @db.Decimal(19, 4)
+  plannedSubcontractCost Decimal                @default(0) @map("planned_subcontract_cost") @db.Decimal(19, 4)
+  actualMaterialCost   Decimal                  @default(0) @map("actual_material_cost") @db.Decimal(19, 4)
+  actualLabourCost     Decimal                  @default(0) @map("actual_labour_cost") @db.Decimal(19, 4)
+  actualMachineCost    Decimal                  @default(0) @map("actual_machine_cost") @db.Decimal(19, 4)
+  actualOverheadCost   Decimal                  @default(0) @map("actual_overhead_cost") @db.Decimal(19, 4)
+  actualScrapCost      Decimal                  @default(0) @map("actual_scrap_cost") @db.Decimal(19, 4)
+  actualSubcontractCost Decimal                 @default(0) @map("actual_subcontract_cost") @db.Decimal(19, 4)
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  createdBy            String?                  @map("created_by")
+
+  tenant               Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product              Product                  @relation("WorkOrderProduct", fields: [productId], references: [id])
+  bom                  BOM?                     @relation(fields: [bomId], references: [id], onDelete: SetNull)
+  routing              Routing?                 @relation(fields: [routingId], references: [id], onDelete: SetNull)
+  warehouse            Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  salesOrder           SalesOrder?              @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrderItem       SalesOrderItem?          @relation("WorkOrderSalesItem", fields: [salesOrderItemId], references: [id], onDelete: SetNull)
+  legacyJob            ProductionJob?           @relation(fields: [legacyJobId], references: [id], onDelete: Cascade)
+  legacyOrder          ProductionOrder?         @relation(fields: [legacyOrderId], references: [id], onDelete: Cascade)
+  components           WorkOrderComponent[]
+  operations           WorkOrderOperation[]
+  reservations         MaterialReservation[]
+  issues               WorkOrderIssue[]
+  confirmations        WorkOrderConfirmation[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@index([productId])
+  @@index([status])
+  @@map("work_orders")
+}
+
+model WorkOrderComponent {
+  id            String                @id @default(uuid())
+  tenantId      String                @map("tenant_id")
+  workOrderId   String                @map("work_order_id")
+  productId     String                @map("product_id")
+  quantityPer   Decimal               @map("quantity_per") @db.Decimal(19, 4)
+  scrapPercent  Decimal               @default(0) @map("scrap_percent") @db.Decimal(19, 4)
+  requiredQty   Decimal               @default(0) @map("required_qty") @db.Decimal(19, 4)
+  reservedQty   Decimal               @default(0) @map("reserved_qty") @db.Decimal(19, 4)
+  issuedQty     Decimal               @default(0) @map("issued_qty") @db.Decimal(19, 4)
+  unitCost      Decimal               @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  costSource    String                @default("COST_PRICE") @map("cost_source")
+  type          String                @default("Raw Material")
+  instruction   String?
+
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder     WorkOrder             @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  product       Product               @relation(fields: [productId], references: [id])
+  reservations  MaterialReservation[]
+  issues        WorkOrderIssue[]
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@index([productId])
+  @@map("work_order_components")
+}
+
+model WorkOrderOperation {
+  id                     String                  @id @default(uuid())
+  tenantId               String                  @map("tenant_id")
+  workOrderId            String                  @map("work_order_id")
+  sequence               Int
+  name                   String
+  workstationId          String?                 @map("workstation_id")
+  setupMinutes           Decimal                 @default(0) @map("setup_minutes") @db.Decimal(19, 4)
+  runMinutesPerUnit      Decimal                 @default(0) @map("run_minutes_per_unit") @db.Decimal(19, 4)
+  noOfWorkers            Int                     @default(1) @map("no_of_workers")
+  isSubcontract          Boolean                 @default(false) @map("is_subcontract")
+  subcontractCostPerUnit Decimal                 @default(0) @map("subcontract_cost_per_unit") @db.Decimal(19, 4)
+  machineRatePerHour     Decimal                 @default(0) @map("machine_rate_per_hour") @db.Decimal(19, 4)
+  instructions           String?
+  status                 String                  @default("PENDING")
+  runningSince           DateTime?               @map("running_since")
+  actualMachineMinutes   Decimal                 @default(0) @map("actual_machine_minutes") @db.Decimal(19, 4)
+  yieldQty               Decimal                 @default(0) @map("yield_qty") @db.Decimal(19, 4)
+  scrapQty               Decimal                 @default(0) @map("scrap_qty") @db.Decimal(19, 4)
+  reworkQty              Decimal                 @default(0) @map("rework_qty") @db.Decimal(19, 4)
+
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder              WorkOrder               @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workstation            Workstation?            @relation(fields: [workstationId], references: [id], onDelete: SetNull)
+  timeLogs               OperationTimeLog[]
+  confirmations          WorkOrderConfirmation[]
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@map("work_order_operations")
+}
+
+model MaterialReservation {
+  id           String              @id @default(uuid())
+  tenantId     String              @map("tenant_id")
+  workOrderId  String              @map("work_order_id")
+  componentId  String              @map("component_id")
+  productId    String              @map("product_id")
+  warehouseId  String?             @map("warehouse_id")
+  quantity     Decimal             @db.Decimal(19, 4)
+  consumedQty  Decimal             @default(0) @map("consumed_qty") @db.Decimal(19, 4)
+  status       String              @default("OPEN")
+  lotNumber    String?             @map("lot_number")
+  serialNumber String?             @map("serial_number")
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder    WorkOrder           @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  component    WorkOrderComponent  @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@index([productId])
+  @@map("material_reservations")
+}
+
+model WorkOrderIssue {
+  id             String              @id @default(uuid())
+  tenantId       String              @map("tenant_id")
+  workOrderId    String              @map("work_order_id")
+  componentId    String?             @map("component_id")
+  confirmationId String?             @map("confirmation_id")
+  productId      String              @map("product_id")
+  quantity       Decimal             @db.Decimal(19, 4)
+  unitCost       Decimal             @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  totalCost      Decimal             @default(0) @map("total_cost") @db.Decimal(19, 4)
+  materialCost   Decimal             @default(0) @map("material_cost") @db.Decimal(19, 4)
+  scrapCost      Decimal             @default(0) @map("scrap_cost") @db.Decimal(19, 4)
+  mode           String              @default("MANUAL")
+  lotNumber      String?             @map("lot_number")
+  serialNumber   String?             @map("serial_number")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  createdBy      String?             @map("created_by")
+
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder      WorkOrder           @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  component      WorkOrderComponent? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  confirmation   WorkOrderConfirmation? @relation(fields: [confirmationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@map("work_order_issues")
+}
+
+model WorkOrderConfirmation {
+  id               String              @id @default(uuid())
+  tenantId         String              @map("tenant_id")
+  workOrderId      String              @map("work_order_id")
+  operationId      String              @map("operation_id")
+  yieldQty         Decimal             @default(0) @map("yield_qty") @db.Decimal(19, 4)
+  scrapQty         Decimal             @default(0) @map("scrap_qty") @db.Decimal(19, 4)
+  reworkQty        Decimal             @default(0) @map("rework_qty") @db.Decimal(19, 4)
+  scrapReasonId    String?             @map("scrap_reason_id")
+  reworkReasonId   String?             @map("rework_reason_id")
+  labourMinutes    Decimal             @default(0) @map("labour_minutes") @db.Decimal(19, 4)
+  machineMinutes   Decimal             @default(0) @map("machine_minutes") @db.Decimal(19, 4)
+  labourCost       Decimal             @default(0) @map("labour_cost") @db.Decimal(19, 4)
+  machineCost      Decimal             @default(0) @map("machine_cost") @db.Decimal(19, 4)
+  subcontractCost  Decimal             @default(0) @map("subcontract_cost") @db.Decimal(19, 4)
+  overheadCost     Decimal             @default(0) @map("overhead_cost") @db.Decimal(19, 4)
+  materialCost     Decimal             @default(0) @map("material_cost") @db.Decimal(19, 4)
+  scrapCost        Decimal             @default(0) @map("scrap_cost") @db.Decimal(19, 4)
+  lotNumber        String?             @map("lot_number")
+  serialNumbers    String?             @map("serial_numbers")
+  operatorName     String?             @map("operator_name")
+  confirmedAt      DateTime            @default(now()) @map("confirmed_at")
+  createdBy        String?             @map("created_by")
+
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder        WorkOrder           @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  operation        WorkOrderOperation  @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  scrapReason      ReasonCode?         @relation("ScrapReason", fields: [scrapReasonId], references: [id], onDelete: SetNull)
+  reworkReason     ReasonCode?         @relation("ReworkReason", fields: [reworkReasonId], references: [id], onDelete: SetNull)
+  issues           WorkOrderIssue[]
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@map("work_order_confirmations")
+}
+
+model ReasonCode {
+  id            String                   @id @default(uuid())
+  tenantId      String                   @map("tenant_id")
+  code          String
+  name          String
+  category      String
+  createdAt     DateTime                 @default(now()) @map("created_at")
+
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scrapUses     WorkOrderConfirmation[]  @relation("ScrapReason")
+  reworkUses    WorkOrderConfirmation[]  @relation("ReworkReason")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("reason_codes")
+}
+
+model ProductionSetting {
+  id                 String   @id @default(uuid())
+  tenantId           String   @unique @map("tenant_id")
+  materialCheck      String   @default("WARN") @map("material_check")
+  issueMode          String   @default("BACKFLUSH") @map("issue_mode")
+  overheadPercent    Decimal  @default(10) @map("overhead_percent") @db.Decimal(19, 4)
+  labourRatePerHour  Decimal  @default(0) @map("labour_rate_per_hour") @db.Decimal(19, 4)
+  hoursPerDay        Decimal  @default(8) @map("hours_per_day") @db.Decimal(19, 4)
+  workDays           Json     @default("[1,2,3,4,5]") @map("work_days")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("production_settings")
+}
+
+// Minimal FIFO cost-layer ledger. Finance can extend source types and valuation.
+// OPENING layers are created only when a product is issued and has no layers yet.
+model CostLayer {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  productId          String    @map("product_id")
+  warehouseId        String?   @map("warehouse_id")
+  quantityReceived   Decimal   @map("quantity_received") @db.Decimal(19, 4)
+  quantityRemaining  Decimal   @map("quantity_remaining") @db.Decimal(19, 4)
+  unitCost           Decimal   @map("unit_cost") @db.Decimal(19, 4)
+  sourceType         String    @map("source_type")
+  sourceId           String?   @map("source_id")
+  receivedAt         DateTime  @default(now()) @map("received_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product            Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([receivedAt])
+  @@map("cost_layers")
+}
+
+model OperationTimeLog {
+  id             String             @id @default(uuid())
+  tenantId       String             @map("tenant_id")
+  operationId    String             @map("operation_id")
+  action         String
+  at             DateTime           @default(now())
+  elapsedMinutes Decimal            @default(0) @map("elapsed_minutes") @db.Decimal(19, 4)
+  operatorName   String?            @map("operator_name")
+
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  operation      WorkOrderOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([operationId])
+  @@map("operation_time_logs")
 }
 
 

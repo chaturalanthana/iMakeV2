@@ -1,5 +1,6 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { receiveLayer } = require('../services/production/fifo');
 
 // --- PURCHASE ORDERS ---
 const getPurchaseOrders = async (req, res) => {
@@ -206,6 +207,28 @@ const createGrn = async (req, res) => {
             warehouseId: warehouseId,
             createdBy: req.user.userId
           }
+        });
+        let unitCost = 0;
+        if (poId) {
+          const poItem = await tx.purchaseOrderItem.findFirst({
+            where: { poId, productId: item.productId }
+          });
+          if (poItem) unitCost = parseFloat(poItem.unitPrice);
+        }
+        if (!(unitCost > 0)) {
+          const product = await tx.product.findFirst({
+            where: { id: item.productId, tenantId: req.tenantId }
+          });
+          unitCost = parseFloat(product?.costPrice || product?.standardCost || 0);
+        }
+        await receiveLayer(tx, {
+          tenantId: req.tenantId,
+          productId: item.productId,
+          warehouseId,
+          quantity: parseFloat(item.quantityReceived),
+          unitCost,
+          sourceType: 'GRN',
+          sourceId: created.id
         });
       }
 

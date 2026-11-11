@@ -1,5 +1,6 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { syncLegacy } = require('../services/production/workOrders');
 
 const num = (value) => {
   const parsed = parseFloat(value);
@@ -51,14 +52,27 @@ const runMRPAna = async (req, res) => {
     });
 
     const supply = {};
-    const openJobs = await prisma.productionJob.findMany({
-      where: { tenantId: req.tenantId, status: { in: ['QUEUED', 'WIP', 'QC'] } }
-    });
+    const [openJobs, openWorkOrders] = await Promise.all([
+      prisma.productionJob.findMany({
+        where: { tenantId: req.tenantId, status: { in: ['QUEUED', 'WIP', 'QC'] } }
+      }),
+      prisma.workOrder.findMany({
+        where: { tenantId: req.tenantId, status: { in: ['CREATED', 'RELEASED', 'IN_PROGRESS'] } }
+      })
+    ]);
+    const linkedJobs = new Set(openWorkOrders.map((row) => row.legacyJobId).filter(Boolean));
+    const linkedOrders = new Set(openWorkOrders.map((row) => row.legacyOrderId).filter(Boolean));
     orders.forEach((order) => {
+      if (linkedOrders.has(order.id)) return;
       supply[order.productId] = num(supply[order.productId]) + num(order.quantity);
     });
     openJobs.forEach((job) => {
+      if (linkedJobs.has(job.id)) return;
       supply[job.productId] = num(supply[job.productId]) + num(job.quantity);
+    });
+    openWorkOrders.forEach((row) => {
+      const remaining = Math.max(0, num(row.quantity) - num(row.quantityCompleted));
+      supply[row.productId] = num(supply[row.productId]) + remaining;
     });
 
     const products = {};
@@ -284,6 +298,14 @@ const raiseRequirements = async ({ tenantId, userId, purchaseSuggestions, produc
           where: { id: covered.id },
           data: { quantity: roundQty(num(covered.quantity) + row.shortage) }
         });
+        await syncLegacy(tx, {
+          tenantId,
+          userId,
+          legacy: updated,
+          kind: 'job',
+          sourceType: 'MRP',
+          receiptOnComplete: false
+        });
         row.documentNumber = updated.jobNumber;
         row.action = 'updated';
         updatedOrders += 1;
@@ -304,6 +326,14 @@ const raiseRequirements = async ({ tenantId, userId, purchaseSuggestions, produc
           notes: 'MRP',
           createdBy: userId
         }
+      });
+      await syncLegacy(tx, {
+        tenantId,
+        userId,
+        legacy: job,
+        kind: 'job',
+        sourceType: 'MRP',
+        receiptOnComplete: false
       });
       row.documentNumber = job.jobNumber;
       row.action = 'created';
@@ -359,7 +389,13 @@ const convertPurchaseSuggestion = async (req, res) => {
       productionSuggestions: [],
       bomByProduct: new Map()
     });
-    res.status(row.action === 'created' ? 201 : 200).json({ message: raised.message, documentNumber: row.documentNumber });
+    res.status(row.action === 'created' ? 201 : 200).json({
+      message: row.action === 'created'
+        ? `Successfully created Requisition ${row.documentNumber}`
+        : raised.message,
+      documentNumber: row.documentNumber,
+      pr: raised.purchaseRequisition
+    });
   } catch (error) {
     console.error('Convert purchase suggestion error:', error);
     res.status(500).json({ error: 'Failed to convert purchase suggestion' });

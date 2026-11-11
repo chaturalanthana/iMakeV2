@@ -57,6 +57,7 @@ export default function ProductionCalendar() {
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   
   // Event modal state
   const [showEventModal, setShowEventModal] = useState(false);
@@ -151,8 +152,15 @@ export default function ProductionCalendar() {
   };
 
   const handleSaveEvent = async () => {
-    if (!eventForm.name.trim()) return showToast('Event name is required', 'error');
-    if (!eventForm.date) return showToast('Date is required', 'error');
+    const errors = {};
+    if (!eventForm.name.trim()) errors.name = 'Event name is required';
+    if (!eventForm.date) errors.date = 'Date is required';
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const messages = Object.values(errors);
+      return showToast(messages.length === 1 ? messages[0] : 'Please fill the highlighted fields.', 'error');
+    }
+    setFieldErrors({});
     setSaving(true);
     try {
       const config = authConfig();
@@ -206,7 +214,11 @@ export default function ProductionCalendar() {
   };
 
   const handleSaveShift = async () => {
-    if (!shiftForm.name.trim()) return showToast('Shift name is required', 'error');
+    if (!shiftForm.name.trim()) {
+      setFieldErrors({ shiftName: 'Shift name is required' });
+      return showToast('Shift name is required', 'error');
+    }
+    setFieldErrors({});
     setSaving(true);
     try {
       const config = authConfig();
@@ -540,7 +552,8 @@ export default function ProductionCalendar() {
             <input 
               type="date" 
               value={eventForm.date} 
-              onChange={e => setEventForm(prev => ({ ...prev, date: e.target.value }))} 
+              onChange={e => setEventForm(prev => ({ ...prev, date: e.target.value }))}
+              className={fieldErrors.date ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
           </div>
@@ -552,6 +565,7 @@ export default function ProductionCalendar() {
               value={eventForm.name} 
               onChange={e => setEventForm(prev => ({ ...prev, name: e.target.value }))} 
               placeholder="e.g. Annual Plant Overhaul"
+              className={fieldErrors.name ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
           </div>
@@ -632,6 +646,7 @@ export default function ProductionCalendar() {
               value={shiftForm.name} 
               onChange={e => setShiftForm(prev => ({ ...prev, name: e.target.value }))} 
               placeholder="e.g. Night Assembly Shift"
+              className={fieldErrors.shiftName ? 'field-invalid' : undefined}
               style={FIELD_STYLE} 
             />
           </div>

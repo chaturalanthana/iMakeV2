@@ -1,4 +1,22 @@
 const prisma = require('../lib/prisma');
+const { receiveLayer } = require('../services/production/fifo');
+
+const layerFromReceipt = async (db, { tenantId, productId, warehouseId, quantity, unitCost, sourceId }) => {
+  let cost = parseFloat(unitCost || 0);
+  if (!(cost > 0)) {
+    const product = await db.product.findFirst({ where: { id: productId, tenantId } });
+    cost = parseFloat(product?.standardCost || product?.costPrice || 0);
+  }
+  await receiveLayer(db, {
+    tenantId,
+    productId,
+    warehouseId: warehouseId || null,
+    quantity: parseFloat(quantity),
+    unitCost: cost,
+    sourceType: 'SR',
+    sourceId
+  });
+};
 
 const getStockLedger = async (req, res) => {
   try {
@@ -614,6 +632,14 @@ const createStockReceipt = async (req, res) => {
               createdBy: req.user?.userId || null
             }
           });
+          await layerFromReceipt(tx, {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            warehouseId: warehouseId || null,
+            quantity: item.quantity,
+            unitCost: item.unitPrice,
+            sourceId: created.id
+          });
         }
       }
       return created;
@@ -683,6 +709,14 @@ const updateStockReceipt = async (req, res) => {
               warehouseId: saved.warehouseId || null,
               createdBy: req.user?.userId || null
             }
+          });
+          await layerFromReceipt(tx, {
+            tenantId: req.tenantId,
+            productId: item.productId,
+            warehouseId: saved.warehouseId || null,
+            quantity: item.quantity,
+            unitCost: item.unitPrice,
+            sourceId: saved.id
           });
         }
       }
