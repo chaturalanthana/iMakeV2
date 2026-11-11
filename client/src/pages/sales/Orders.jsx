@@ -7,6 +7,7 @@ import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import OrderPrintModal from '../../components/ui/OrderPrintModal';
 import DataTable from '../../components/ui/DataTable';
+import ExportButton from '../../components/ui/ExportButton';
 import { ShoppingCart, Plus, Printer } from 'lucide-react';
 
 export default function Orders() {
@@ -16,18 +17,21 @@ export default function Orders() {
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [printModalData, setPrintModalData] = useState(null);
+  const [query, setQuery] = useState({ page: 1, q: '', sort: 'date', dir: 'desc' });
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     fetchOrders();
-  }, []);
+  }, [query]);
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const res = await axios.get('/api/sales/orders', config);
-      setOrders(res.data);
+      const res = await axios.get('/api/sales/orders', { ...config, params: { page: query.page, pageSize: 15, q: query.q || undefined, sort: query.sort || undefined, dir: query.dir || undefined } });
+      setOrders(res.data.items || []);
+      setTotal(res.data.total || 0);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
     } finally {
@@ -93,6 +97,8 @@ export default function Orders() {
   ];
 
   const extraActions = (
+    <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <ExportButton url="/api/sales/orders" filename="sales-orders.xlsx" params={{ q: query.q, sort: query.sort, dir: query.dir }} />
     <button
       onClick={() => navigate('/sales/orders/new')}
       style={{
@@ -113,6 +119,7 @@ export default function Orders() {
     >
       <Plus size={16} /> New Order
     </button>
+    </div>
   );
 
   return (
@@ -127,6 +134,9 @@ export default function Orders() {
             loading={loading}
             searchPlaceholder="Search by order number or customer..."
             searchKeys={['orderNumber', 'customerName']}
+            onServerQuery={(next) => setQuery((prev) => ({ ...prev, q: next.q ?? prev.q, page: next.page || 1, sort: next.sort || prev.sort, dir: next.dir || prev.dir }))}
+            serverTotal={total}
+            serverPage={query.page}
             extraActions={extraActions}
             onRowClick={(row) => navigate(recordPath('/sales/orders', row, 'orderNumber'))}
           />

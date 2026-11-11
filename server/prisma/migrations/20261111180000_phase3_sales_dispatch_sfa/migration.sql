@@ -1,6 +1,3 @@
--- DropForeignKey
-ALTER TABLE "payment_vouchers" DROP CONSTRAINT "payment_vouchers_account_id_fkey";
-
 -- AlterTable
 ALTER TABLE "customers" ADD COLUMN     "channel" TEXT DEFAULT 'GENERAL_TRADE',
 ADD COLUMN     "external_ref" TEXT;
@@ -522,9 +519,6 @@ ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_warehouse_id_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "sales_invoices" ADD CONSTRAINT "sales_invoices_warehouse_id_fkey" FOREIGN KEY ("warehouse_id") REFERENCES "warehouses"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment_vouchers" ADD CONSTRAINT "payment_vouchers_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "dispatch_settings" ADD CONSTRAINT "dispatch_settings_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;

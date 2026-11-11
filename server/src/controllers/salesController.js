@@ -1,4 +1,5 @@
 const prisma = require('../lib/prisma');
+const { syncHard, syncSoft, releaseSource, consumeSource } = require('../services/inventory/allocations');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { sendError } = require('../services/errors');
 const { dec, money, rateOf } = require('../services/money');
@@ -7,6 +8,7 @@ const {
   cancelStockAndJournal,
   assertQuotationQuantity,
   refreshQuotationStatus,
+  assessCredit,
   creditWarning,
   finalizeSalesInvoice,
   customerAging,
@@ -15,11 +17,49 @@ const {
 const { createDraftsForSalesOrder } = require('../services/production/workOrders');
 const { isCashKind, postCashSale } = require('../services/phase3/cashSale');
 const { deliverPending } = require('../services/phase3/notify');
+const { DocumentError } = require('../services/errors');
+const { writeAudit } = require('../services/auditService');
+const { respondList } = require('../services/listQuery');
+const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
+const { num } = require('../services/money');
 
 const isDocumentModifiable = (status) => {
   if (!status) return true;
-  return ['DRAFT', 'PENDING'].includes(status.toUpperCase());
+  return ['DRAFT', 'PENDING', 'RETURNED'].includes(status.toUpperCase());
 };
+
+const BLOCKED_ORDER = ['PENDING_APPROVAL', 'REJECTED', 'RETURNED', 'CANCELLED'];
+
+async function creditHold(db, { tenantId, customerId, amount, status }) {
+  const releasing = !['DRAFT'].includes(String(status || 'PENDING').toUpperCase());
+  const exposure = await assessCredit(db, { tenantId, customerId, documentBase: amount });
+  if (!releasing || !exposure.blocked) return { exposure, hold: false };
+  const rule = await loadRule(db, tenantId, 'SALES_ORDER_CREDIT');
+  const needed = levelsForAmount(rule, amount);
+  if (!rule?.enabled) {
+    throw new DocumentError(exposure.message, { credit: exposure.message });
+  }
+  if (!needed.length) return { exposure, hold: false, auto: true };
+  return { exposure, hold: true };
+}
+
+async function priceVariance(db, { tenantId, customerId, items }) {
+  const customer = await db.customer.findFirst({ where: { id: customerId, tenantId } });
+  if (!customer?.priceList || !items?.length) return 0;
+  const list = await db.priceList.findFirst({
+    where: { tenantId, name: customer.priceList },
+    include: { prices: true }
+  });
+  if (!list) return 0;
+  let variance = 0;
+  for (const item of items) {
+    const row = list.prices.find((price) => price.productId === item.productId);
+    if (!row) continue;
+    const diff = Math.abs(num(item.unitPrice) - num(row.price));
+    if (diff > 0.0001) variance += diff * num(item.quantity);
+  }
+  return variance;
+}
 
 // --- QUOTATIONS ---
 const getQuotations = async (req, res) => {
@@ -85,6 +125,18 @@ const createQuotation = async (req, res) => {
       }
     });
 
+    if (['SENT', 'APPROVED'].includes(quotation.status)) {
+      await syncSoft(prisma, {
+        tenantId: req.tenantId,
+        sourceType: 'QUOTATION',
+        sourceId: quotation.id,
+        lines: (quotation.items || []).map((item) => ({
+          lineId: item.id,
+          productId: item.productId,
+          quantity: item.quantity
+        }))
+      });
+    }
     res.status(201).json(quotation);
   } catch (error) {
     console.error('Create quotation error:', error);
@@ -168,19 +220,30 @@ const deleteQuotation = async (req, res) => {
 // --- SALES ORDERS ---
 const getOrders = async (req, res) => {
   try {
-    const orders = await prisma.salesOrder.findMany({
+    await respondList(req, res, {
+      model: prisma.salesOrder,
       where: { tenantId: req.tenantId },
-      include: { 
-        customer: true, 
+      include: {
+        customer: true,
         quotation: true,
         currency: true,
         items: { include: { product: true } },
         deliveries: { include: { items: true } },
         salesInvoices: { include: { items: true } }
       },
-      orderBy: { date: 'desc' }
+      search: ['orderNumber', 'status', 'customer.name'],
+      sortFields: ['date', 'orderNumber', 'total', 'status', 'createdAt'],
+      defaultSort: 'date',
+      filename: 'sales-orders.xlsx',
+      exportHeaders: ['date', 'orderNumber', 'customer', 'total', 'status'],
+      toExport: (row) => ({
+        date: row.date?.toISOString?.().slice(0, 10) || '',
+        orderNumber: row.orderNumber,
+        customer: row.customer?.name || '',
+        total: String(row.total),
+        status: row.status
+      })
     });
-    res.json(orders);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
@@ -207,6 +270,17 @@ const createOrder = async (req, res) => {
 
     let totalAmount = 0;
     if (items) items.forEach(i => totalAmount += parseFloat(i.total || 0));
+    const baseTotal = totalAmount * (parseFloat(exchangeRate) || 1);
+    const hold = await creditHold(prisma, {
+      tenantId: req.tenantId,
+      customerId,
+      amount: baseTotal,
+      status: status || 'PENDING'
+    });
+    const variance = await priceVariance(prisma, { tenantId: req.tenantId, customerId, items });
+    const priceRule = variance > 0 ? await loadRule(prisma, req.tenantId, 'PRICE_OVERRIDE') : null;
+    const priceNeeded = levelsForAmount(priceRule, variance);
+    const holdPrice = Boolean(priceRule?.enabled && priceNeeded.length);
 
     const order = await prisma.salesOrder.create({
       data: {
@@ -215,7 +289,7 @@ const createOrder = async (req, res) => {
         quotationId: quotationId || null,
         orderNumber: finalOrderNumber,
         date: new Date(date),
-        status: status || 'PENDING',
+        status: (hold.hold || holdPrice) ? 'PENDING_APPROVAL' : (status || 'PENDING'),
         total: totalAmount,
         currencyId: currencyId || null,
         exchangeRate: parseFloat(exchangeRate) || 1.0,
@@ -231,13 +305,54 @@ const createOrder = async (req, res) => {
       }
     });
 
-    if (quotationId) await refreshQuotationStatus(prisma, quotationId);
-    const warning = await creditWarning(prisma, {
-      tenantId: req.tenantId,
-      customerId,
-      documentBase: totalAmount * (parseFloat(exchangeRate) || 1)
+    if (quotationId) {
+      await refreshQuotationStatus(prisma, quotationId);
+      await releaseSource(prisma, req.tenantId, 'QUOTATION', quotationId);
+    }
+    const savedOrder = await prisma.salesOrder.findFirst({
+      where: { id: order.id, tenantId: req.tenantId },
+      include: { items: true }
     });
-    order.creditWarning = warning;
+    const allocation = await syncHard(prisma, {
+      tenantId: req.tenantId,
+      sourceType: 'SALES_ORDER',
+      sourceId: order.id,
+      lines: (savedOrder?.items || []).map((item) => ({
+        lineId: item.id,
+        productId: item.productId,
+        quantity: item.quantity
+      }))
+    });
+    order.allocationShortages = allocation.shortages;
+    if (hold.exposure.blocked && (hold.hold || hold.auto)) {
+      await submitForApproval(prisma, {
+        tenantId: req.tenantId,
+        documentType: 'SALES_ORDER_CREDIT',
+        documentId: order.id,
+        documentNumber: order.orderNumber,
+        amount: baseTotal,
+        userId: req.user.userId
+      });
+    }
+    if (variance > 0 && priceRule?.enabled) {
+      await submitForApproval(prisma, {
+        tenantId: req.tenantId,
+        documentType: 'PRICE_OVERRIDE',
+        documentId: order.id,
+        documentNumber: order.orderNumber,
+        amount: variance,
+        userId: req.user.userId
+      });
+    }
+    order.creditWarning = hold.exposure.message;
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      action: 'CREATE',
+      entity: 'SALES_ORDER',
+      entityId: order.id,
+      after: order
+    });
     await createDraftsForSalesOrder({
       tenantId: req.tenantId,
       userId: req.user?.userId || null,
@@ -426,6 +541,9 @@ const createDelivery = async (req, res) => {
       if (!sourceOrd) {
         return res.status(404).json({ error: 'Source order not found' });
       }
+      if (BLOCKED_ORDER.includes(String(sourceOrd.status || '').toUpperCase())) {
+        return res.status(400).json({ error: 'This sales order cannot be released until it is approved.' });
+      }
       const sourceProductIds = sourceOrd.items.map(item => item.productId);
       const invalidItem = items.find(item => !sourceProductIds.includes(item.productId));
       if (invalidItem) {
@@ -506,7 +624,15 @@ const createDelivery = async (req, res) => {
             data: { unitCost: dec(result.unitCost), costValue: dec(result.value) }
           });
         }
-        if (orderId) await updateOrderStatusOnDelivery(orderId, tx);
+        if (orderId) {
+          await updateOrderStatusOnDelivery(orderId, tx);
+          await consumeSource(tx, {
+            tenantId: req.tenantId,
+            sourceType: 'SALES_ORDER',
+            sourceId: orderId,
+            lines: savedItems
+          });
+        }
       }
       return created;
     });
@@ -658,18 +784,29 @@ const deleteDelivery = async (req, res) => {
 // --- SALES INVOICES ---
 const getInvoices = async (req, res) => {
   try {
-    const invoices = await prisma.salesInvoice.findMany({
+    await respondList(req, res, {
+      model: prisma.salesInvoice,
       where: { tenantId: req.tenantId },
-      include: { 
-        customer: true, 
-        order: true, 
-        delivery: true, 
+      include: {
+        customer: true,
+        order: true,
+        delivery: true,
         currency: true,
         items: { include: { product: true } }
       },
-      orderBy: { date: 'desc' }
+      search: ['invoiceNumber', 'status', 'customer.name'],
+      sortFields: ['date', 'invoiceNumber', 'total', 'status', 'createdAt'],
+      defaultSort: 'date',
+      filename: 'invoices.xlsx',
+      exportHeaders: ['date', 'invoiceNumber', 'customer', 'total', 'status'],
+      toExport: (row) => ({
+        date: row.date?.toISOString?.().slice(0, 10) || '',
+        invoiceNumber: row.invoiceNumber,
+        customer: row.customer?.name || '',
+        total: String(row.total),
+        status: row.status
+      })
     });
-    res.json(invoices);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch invoices' });
   }
@@ -702,6 +839,9 @@ const createInvoice = async (req, res) => {
       });
       if (!sourceOrd) {
         return res.status(404).json({ error: 'Source order not found' });
+      }
+      if (BLOCKED_ORDER.includes(String(sourceOrd.status || '').toUpperCase())) {
+        return res.status(400).json({ error: 'This sales order cannot be released until it is approved.' });
       }
       const sourceProductIds = sourceOrd.items.map(item => item.productId);
       const invalidItem = items.find(item => !sourceProductIds.includes(item.productId));
@@ -982,6 +1122,8 @@ const cancelDelivery = async (req, res) => {
     const existing = await prisma.salesDelivery.findFirst({ where: { id, tenantId: req.tenantId } });
     if (!existing) return res.status(404).json({ error: 'Delivery not found' });
     if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Delivery is already cancelled.' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
     const billed = await prisma.salesInvoice.count({
       where: { deliveryId: id, tenantId: req.tenantId, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
     });
@@ -999,6 +1141,15 @@ const cancelDelivery = async (req, res) => {
       }
       await tx.salesDelivery.update({ where: { id }, data: { status: 'CANCELLED' } });
       if (existing.orderId) await updateOrderStatusOnDelivery(existing.orderId, tx);
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user?.userId,
+        action: existing.status === 'DELIVERED' ? 'REVERSE' : 'STATUS',
+        entity: 'SALES_DELIVERY',
+        entityId: id,
+        before: existing,
+        after: { status: 'CANCELLED', reason }
+      });
     });
     res.json({ success: true, cancelled: true });
   } catch (error) {
@@ -1012,6 +1163,8 @@ const cancelInvoice = async (req, res) => {
     const existing = await prisma.salesInvoice.findFirst({ where: { id, tenantId: req.tenantId } });
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
     if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Invoice is already cancelled.' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
     if (money(existing.amountPaid) > 0.0001) {
       return res.status(400).json({ error: 'Remove the receipt allocation before cancelling this invoice.' });
     }
@@ -1025,6 +1178,15 @@ const cancelInvoice = async (req, res) => {
         description: existing.invoiceNumber
       });
       await tx.salesInvoice.update({ where: { id }, data: { status: 'CANCELLED' } });
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user?.userId,
+        action: 'REVERSE',
+        entity: 'SALES_INVOICE',
+        entityId: id,
+        before: existing,
+        after: { status: 'CANCELLED', reason }
+      });
     });
     res.json({ success: true, cancelled: true });
   } catch (error) {

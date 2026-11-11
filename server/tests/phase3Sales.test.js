@@ -77,6 +77,13 @@ describe('phase 3 sales, dispatch and SFA', () => {
 
   afterAll(async () => {
     const where = { tenantId: tenant.id };
+    await prisma.auditLog.deleteMany({ where });
+    await prisma.approvalAction.deleteMany({ where });
+    await prisma.approvalRequest.deleteMany({ where });
+    await prisma.partyNote.deleteMany({ where });
+    await prisma.stockReturnItem.deleteMany({ where });
+    await prisma.stockReturn.deleteMany({ where });
+    await prisma.stockAllocation.deleteMany({ where });
     await prisma.proofLine.deleteMany({ where });
     await prisma.proofOfDelivery.deleteMany({ where });
     await prisma.salesReturnLine.deleteMany({ where });
@@ -194,7 +201,7 @@ describe('phase 3 sales, dispatch and SFA', () => {
     });
     expect(released.status).toBe(200);
     expect(released.body.order.status).toBe('RELEASED');
-    const held = await prisma.salesReservation.findMany({ where: { orderId: order.body.id, status: 'OPEN' } });
+    const held = await prisma.stockAllocation.findMany({ where: { sourceId: order.body.id, status: 'OPEN' } });
     expect(Number(held[0].quantity)).toBe(4);
 
     const early = await request(app).post('/api/sales/dispatch/trips').set(auth()).send({
@@ -239,10 +246,12 @@ describe('phase 3 sales, dispatch and SFA', () => {
     expect(credit.status).toBe(201);
     expect(await onHand(prisma, { tenantId: tenant.id, productId: product.id, warehouseId: warehouse.id })).toBe(17);
 
-    const revenue = await prisma.journalLine.findMany({
-      where: { journalEntry: { tenantId: tenant.id, description: { contains: 'Credit note' } }, debit: { gt: 0 } }
+    const revenue = await prisma.journalEntry.findFirst({
+      where: { tenantId: tenant.id, referenceType: 'PARTY_NOTE' }
     });
-    expect(revenue.length).toBeGreaterThan(0);
+    expect(revenue).toBeTruthy();
+    const stockReturn = await prisma.stockReturn.findFirst({ where: { tenantId: tenant.id, customerId: customer.id } });
+    expect(stockReturn.status).toBe('POSTED');
     await balanced();
 
     const partial = await request(app).post(`/api/sales/dispatch/orders/${order.body.id}/cancel`).set(auth()).send({ reason: 'Customer cut the balance' });
@@ -256,7 +265,7 @@ describe('phase 3 sales, dispatch and SFA', () => {
     const cancelled = await request(app).post(`/api/sales/dispatch/orders/${fresh.body.id}/cancel`).set(auth()).send({ reason: 'Called off' });
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.status).toBe('CANCELLED');
-    const still = await prisma.salesReservation.count({ where: { orderId: fresh.body.id, status: 'OPEN' } });
+    const still = await prisma.stockAllocation.count({ where: { sourceId: fresh.body.id, status: 'OPEN' } });
     expect(still).toBe(0);
 
     const note = await prisma.appNotification.findFirst({ where: { tenantId: tenant.id, kind: 'GATE_PASS' } });
@@ -293,6 +302,11 @@ describe('phase 3 sales, dispatch and SFA', () => {
     expect(viaInvoice.status).toBe(201);
     expect(viaInvoice.body.saleKind).toBe('FACTORY_CASH');
     expect(await onHand(prisma, { tenantId: tenant.id, productId: product.id, warehouseId: factory.id })).toBe(3);
+    const cancelledSale = await request(app).post(`/api/sales/dispatch/cash-sales/${viaInvoice.body.id}/cancel`).set(auth()).send({ reason: 'Counter void' });
+    expect(cancelledSale.status).toBe(200);
+    expect(await onHand(prisma, { tenantId: tenant.id, productId: product.id, warehouseId: factory.id })).toBe(4);
+    const audit = await prisma.auditLog.findFirst({ where: { tenantId: tenant.id, entity: 'CASH_SALE', action: 'REVERSE' } });
+    expect(audit).toBeTruthy();
 
     const issue = await prisma.journalEntry.findFirst({
       where: { tenantId: tenant.id, referenceId: sale.body.id, description: { contains: 'Cash sale' } },

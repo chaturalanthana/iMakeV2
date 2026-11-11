@@ -59,12 +59,15 @@ router.post('/dispatch/trips', validateBody(phase3Schemas.trip), phase3.createTr
 router.post('/dispatch/trips/:id/invoices', phase3.invoiceTrip);
 router.post('/dispatch/trips/:id/gate-pass', phase3.gatePass);
 router.post('/dispatch/trips/:id/depart', phase3.depart);
+router.post('/dispatch/trips/:id/cancel', validateBody(phase3Schemas.cancel), phase3.cancelTrip);
 router.post('/dispatch/trips/:id/return', phase3.returnTrip);
 router.post('/dispatch/proofs', validateBody(phase3Schemas.proof), phase3.recordProof);
 router.post('/dispatch/proofs/:id/credit', phase3.creditProof);
 router.get('/dispatch/returns', phase3.listReturns);
 router.post('/dispatch/returns', validateBody(phase3Schemas.salesReturn), phase3.createReturn);
+router.post('/dispatch/returns/:id/cancel', validateBody(phase3Schemas.cancel), phase3.cancelReturn);
 router.post('/dispatch/cash-sales', validateBody(phase3Schemas.cashSale), phase3.cashSale);
+router.post('/dispatch/cash-sales/:id/cancel', validateBody(phase3Schemas.cancel), phase3.cancelCash);
 router.get('/dispatch/notifications', phase3.listNotes);
 router.post('/dispatch/notifications/:id/read', phase3.readNote);
 router.post('/dispatch/sfa/keys', validateBody(phase3Schemas.apiKey), phase3.createKey);

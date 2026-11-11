@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const { jwtSecret } = require('../config');
 const { seedTenantRoles } = require('../permissions/catalog');
 const { seedTenantFinance } = require('../services/glService');
+const { ensureDefaultRules } = require('../services/approvalService');
 const { ensureProductTypes } = require('../services/productTypes');
 
 // Resolves email to tenant during authentication
@@ -105,6 +106,7 @@ const register = async (req, res) => {
 
       await seedTenantRoles(tx, tenant.id);
       await seedTenantFinance(tx, tenant.id, currency || 'LKR');
+      await ensureDefaultRules(tx, tenant.id);
       const role = await tx.role.findUnique({
         where: { tenantId_name: { tenantId: tenant.id, name: 'Super Admin' } }
       });

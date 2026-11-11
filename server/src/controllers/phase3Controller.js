@@ -6,8 +6,8 @@ const { CONFIRMED_DEFAULTS } = require('../services/phase3/defaults');
 const { getSettings, saveSettings } = require('../services/phase3/settings');
 const { resolvePrice, savePriceRule } = require('../services/phase3/pricing');
 const dispatch = require('../services/phase3/dispatch');
-const { postCashSale } = require('../services/phase3/cashSale');
-const { postSalesReturn } = require('../services/phase3/returns');
+const { postCashSale, cancelCashSale } = require('../services/phase3/cashSale');
+const { postSalesReturn, cancelSalesReturn } = require('../services/phase3/returns');
 const sfa = require('../services/phase3/sfa');
 const bank = require('../services/phase3/bankFile');
 const { hashKey } = require('../middlewares/sfaAuth');
@@ -145,6 +145,9 @@ const invoiceTrip = (req, res) => tx(req, res, (db) => dispatch.invoiceDeliverie
 const gatePass = (req, res) => tx(req, res, (db) => dispatch.issueGatePass(db, {
   tenantId: req.tenantId, tripId: req.params.id, userId: actor(req), ...req.body
 }), 'Failed to issue gate pass');
+const cancelTrip = (req, res) => tx(req, res, (db) => dispatch.cancelTrip(db, {
+  tenantId: req.tenantId, tripId: req.params.id, userId: actor(req), reason: req.body.reason
+}), 'Failed to cancel the trip', 200);
 const depart = (req, res) => tx(req, res, (db) => dispatch.departTrip(db, {
   tenantId: req.tenantId, tripId: req.params.id, userId: actor(req)
 }), 'Failed to depart', 200);
@@ -182,6 +185,26 @@ const createReturn = async (req, res) => {
   }
 };
 
+const cancelCash = async (req, res) => {
+  try {
+    const invoice = await cancelCashSale(prisma, {
+      tenantId: req.tenantId, invoiceId: req.params.id, userId: actor(req), reason: req.body.reason
+    });
+    return finish(req, res, 200, invoice);
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel the cash sale');
+  }
+};
+const cancelReturn = async (req, res) => {
+  try {
+    const row = await cancelSalesReturn(prisma, {
+      tenantId: req.tenantId, id: req.params.id, userId: actor(req), reason: req.body.reason
+    });
+    return finish(req, res, 200, row);
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel the return');
+  }
+};
 const cashSale = async (req, res) => {
   try {
     const invoice = await postCashSale(prisma, { ...req.body, tenantId: req.tenantId, createdBy: actor(req) });
@@ -272,8 +295,8 @@ module.exports = {
   listRoutes, createRoute, listVehicles, createVehicle, listShipTos, createShipTo,
   listPrices, createPrice, quote, getBoard, release, cancel,
   listPicks, createPick, advance, deliver,
-  listTrips, createTrip, invoiceTrip, gatePass, depart, returnTrip,
-  recordProof, creditProof, listReturns, createReturn, cashSale,
+  listTrips, createTrip, invoiceTrip, gatePass, depart, returnTrip, cancelTrip,
+  recordProof, creditProof, listReturns, createReturn, cancelReturn, cashSale, cancelCash,
   listNotes, readNote, createKey, listKeys, listMessages, retry, sync,
   getBank, putBank, exportBank, publicHandler,
   importOrder: publicHandler((req) => sfa.importOrder(prisma, { ...req.body, tenantId: req.tenantId })),

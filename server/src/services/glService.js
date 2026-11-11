@@ -1,6 +1,7 @@
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { DocumentError } = require('./errors');
 const { num, money, dec } = require('./money');
+const { assertPeriodOpen } = require('./periodService');
 
 const DEFAULT_ACCOUNTS = [
   { key: 'CASH', code: '1000', name: 'Cash on Hand', type: 'ASSET' },
@@ -34,7 +35,20 @@ const DEFAULT_ACCOUNTS = [
   { key: 'EPF_PAYABLE', code: '2130', name: 'EPF Payable', type: 'LIABILITY' },
   { key: 'ETF_PAYABLE', code: '2140', name: 'ETF Payable', type: 'LIABILITY' },
   { key: 'SALARIES_PAYABLE', code: '2150', name: 'Salaries Payable', type: 'LIABILITY' },
-  { key: 'PAYROLL_DEDUCTIONS', code: '2160', name: 'Payroll Deductions Payable', type: 'LIABILITY' }
+  { key: 'PAYROLL_DEDUCTIONS', code: '2160', name: 'Payroll Deductions Payable', type: 'LIABILITY' },
+  { key: 'CWIP', code: '1500', name: 'Capital Work in Progress', type: 'ASSET' },
+  { key: 'FIXED_ASSET', code: '1510', name: 'Fixed Assets', type: 'ASSET' },
+  { key: 'ACCUM_DEPRECIATION', code: '1520', name: 'Accumulated Depreciation', type: 'ASSET' },
+  { key: 'DEPRECIATION_EXPENSE', code: '5700', name: 'Depreciation Expense', type: 'EXPENSE' },
+  { key: 'IMPAIRMENT', code: '5710', name: 'Asset Impairment', type: 'EXPENSE' },
+  { key: 'DISPOSAL_GAIN', code: '4160', name: 'Gain on Disposal', type: 'REVENUE' },
+  { key: 'DISPOSAL_LOSS', code: '5720', name: 'Loss on Disposal', type: 'EXPENSE' },
+  { key: 'LANDED_CLEARING', code: '1410', name: 'Landed Cost Clearing', type: 'LIABILITY' },
+  { key: 'PETTY_CASH', code: '1020', name: 'Petty Cash', type: 'ASSET' },
+  { key: 'IOU_ADVANCES', code: '1210', name: 'Employee IOU Advances', type: 'ASSET' },
+  { key: 'CHEQUES_IN_HAND', code: '1030', name: 'Cheques in Hand', type: 'ASSET' },
+  { key: 'OUTSTANDING_CHEQUES', code: '2170', name: 'Outstanding Cheques', type: 'LIABILITY' },
+  { key: 'RETAINED_EARNINGS', code: '3100', name: 'Retained Earnings', type: 'EQUITY' }
 ];
 
 async function ensureGlMap(tx, tenantId, userId) {
@@ -143,7 +157,9 @@ function cleanLines(lines) {
       accountId: line.accountId,
       debit,
       credit,
-      description: line.description || null
+      description: line.description || null,
+      costCenterId: line.costCenterId || null,
+      profitCenterId: line.profitCenterId || null
     });
   }
   return cleaned;
@@ -170,6 +186,8 @@ async function postJournal(tx, {
   }
   if (cleaned.length === 0 || debit === 0) return null;
 
+  await assertPeriodOpen(tx, { tenantId, date, userId: createdBy });
+
   const entryNumber = await generateDocumentNumber(tenantId, 'journalEntry', 'JE', 'entryNumber', tx);
   return tx.journalEntry.create({
     data: {
@@ -186,7 +204,9 @@ async function postJournal(tx, {
           accountId: line.accountId,
           debit: dec(line.debit),
           credit: dec(line.credit),
-          description: line.description
+          description: line.description,
+          costCenterId: line.costCenterId,
+          profitCenterId: line.profitCenterId
         }))
       }
     },

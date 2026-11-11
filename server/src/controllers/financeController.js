@@ -5,6 +5,11 @@ const { money, rateOf, dec } = require('../services/money');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { allocateCustomerReceipt, allocateSupplierPayment, syncSalesInvoiceStatus, syncSupplierInvoiceStatus, cancelStockAndJournal } = require('../services/documentPosting');
 const { trialBalance } = require('../services/glService');
+const { assertPeriodOpen } = require('../services/periodService');
+const { writeAudit } = require('../services/auditService');
+const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
+const { respondList } = require('../services/listQuery');
+const { toXlsx } = require('../services/spreadsheet');
 
 // --- Accounts (General Ledger) ---
 const getAccounts = async (req, res) => {
@@ -45,14 +50,22 @@ const createAccount = async (req, res) => {
 // --- Journal Entries ---
 const getJournalEntries = async (req, res) => {
   try {
-    const entries = await prisma.journalEntry.findMany({
+    await respondList(req, res, {
+      model: prisma.journalEntry,
       where: { tenantId: req.tenantId },
-      include: {
-        lines: { include: { account: true } }
-      },
-      orderBy: { date: 'desc' }
+      include: { lines: { include: { account: true } } },
+      search: ['entryNumber', 'description', 'status'],
+      sortFields: ['date', 'entryNumber', 'createdAt'],
+      defaultSort: 'date',
+      filename: 'journals.xlsx',
+      exportHeaders: ['date', 'entryNumber', 'description', 'status'],
+      toExport: (row) => ({
+        date: row.date?.toISOString?.().slice(0, 10) || '',
+        entryNumber: row.entryNumber,
+        description: row.description || '',
+        status: row.status || (row.isPosted ? 'POSTED' : 'DRAFT')
+      })
     });
-    res.json(entries);
   } catch (error) {
     console.error('Fetch journal entries error:', error);
     res.status(500).json({ error: 'Failed to fetch journal entries' });
@@ -76,29 +89,55 @@ const createJournalEntry = async (req, res) => {
       return res.status(400).json({ error: 'Journal entry is not balanced (Debits must equal Credits)' });
     }
 
+    const amount = totalDebit;
+    const rule = await loadRule(prisma, req.tenantId, 'JOURNAL');
+    const needed = levelsForAmount(rule, amount);
+    const hold = Boolean(rule?.enabled && needed.length);
+    if (!hold) await assertPeriodOpen(prisma, { tenantId: req.tenantId, date, userId: req.user.userId });
+
     const entry = await prisma.journalEntry.create({
       data: {
         tenantId: req.tenantId,
         entryNumber,
         date: new Date(date),
         description,
-        isPosted: true,
+        isPosted: !hold,
+        status: hold ? 'PENDING_APPROVAL' : 'POSTED',
         createdBy: req.user.userId,
         lines: {
           create: lines.map(line => ({
             accountId: line.accountId,
             debit: parseFloat(line.debit || 0),
             credit: parseFloat(line.credit || 0),
-            description: line.description
+            description: line.description,
+            costCenterId: line.costCenterId || null,
+            profitCenterId: line.profitCenterId || null
           }))
         }
       },
       include: { lines: { include: { account: true } } }
     });
+    if (rule?.enabled) {
+      await submitForApproval(prisma, {
+        tenantId: req.tenantId,
+        documentType: 'JOURNAL',
+        documentId: entry.id,
+        documentNumber: entry.entryNumber,
+        amount,
+        userId: req.user.userId
+      });
+    }
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      action: hold ? 'CREATE' : 'POST',
+      entity: 'JOURNAL',
+      entityId: entry.id,
+      after: entry
+    });
     res.status(201).json(entry);
   } catch (error) {
-    console.error('Create journal entry error:', error);
-    res.status(500).json({ error: 'Failed to create journal entry' });
+    return sendError(res, error, 'Failed to create journal entry');
   }
 };
 
@@ -243,6 +282,10 @@ const createPaymentVoucher = async (req, res) => {
     }
 
     const number = voucherNumber || await generateDocumentNumber(req.tenantId, 'paymentVoucher', 'PV', 'voucherNumber');
+    const rule = await loadRule(prisma, req.tenantId, 'SUPPLIER_PAYMENT');
+    const needed = levelsForAmount(rule, amount);
+    const hold = Boolean(rule?.enabled && needed.length);
+    if (!hold) await assertPeriodOpen(prisma, { tenantId: req.tenantId, date, userId: req.user.userId });
     const voucher = await prisma.$transaction(async (tx) => {
       const created = await tx.paymentVoucher.create({
         data: {
@@ -256,6 +299,7 @@ const createPaymentVoucher = async (req, res) => {
           bankName,
           chequeNumber,
           accountId: accountId || null,
+          status: hold ? 'PENDING_APPROVAL' : 'POSTED',
           exchangeRate: rateOf(req.body.exchangeRate),
           createdBy: req.user.userId,
           ...(!allocations.length && lines && lines.length > 0 && {
@@ -269,7 +313,7 @@ const createPaymentVoucher = async (req, res) => {
           })
         }
       });
-      if (allocations.length) {
+      if (allocations.length && !hold) {
         await allocateSupplierPayment(tx, {
           tenantId: req.tenantId,
           voucher: created,
@@ -277,6 +321,25 @@ const createPaymentVoucher = async (req, res) => {
           createdBy: req.user.userId
         });
       }
+      if (rule?.enabled) {
+        await submitForApproval(tx, {
+          tenantId: req.tenantId,
+          documentType: 'SUPPLIER_PAYMENT',
+          documentId: created.id,
+          documentNumber: created.voucherNumber,
+          amount,
+          userId: req.user.userId,
+          payload: { allocations }
+        });
+      }
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user.userId,
+        action: hold ? 'CREATE' : 'POST',
+        entity: 'SUPPLIER_PAYMENT',
+        entityId: created.id,
+        after: created
+      });
       return tx.paymentVoucher.findUnique({
         where: { id: created.id },
         include: { supplier: true, lines: { include: { account: true } }, allocations: true }
@@ -423,9 +486,71 @@ const getGeneralLedgerLines = async (req, res) => {
 
 const getTrialBalance = async (req, res) => {
   try {
-    res.json(await trialBalance(prisma, req.tenantId));
+    const report = await trialBalance(prisma, req.tenantId);
+    if (req.query.export === 'xlsx') {
+      const headers = ['code', 'name', 'type', 'debit', 'credit'];
+      const rows = report.accounts.map((row) => ({
+        code: row.code,
+        name: row.name,
+        type: row.type,
+        debit: String(row.debit),
+        credit: String(row.credit)
+      }));
+      const buffer = toXlsx(headers, rows);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="trial-balance.xlsx"');
+      return res.send(buffer);
+    }
+    res.json(report);
   } catch (error) {
     return sendError(res, error, 'Failed to build the trial balance');
+  }
+};
+
+const reverseJournalEntry = async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
+    const existing = await prisma.journalEntry.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: { lines: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Journal entry not found' });
+    if (!existing.isPosted) return res.status(400).json({ error: 'Only a posted journal can be reversed.' });
+    if (String(existing.description || '').startsWith('Reversal:')) {
+      return res.status(400).json({ error: 'A reversal cannot be reversed from here.' });
+    }
+    const { postJournal } = require('../services/glService');
+    const reversal = await prisma.$transaction(async (tx) => {
+      const entry = await postJournal(tx, {
+        tenantId: req.tenantId,
+        date: new Date(),
+        createdBy: req.user.userId,
+        description: `Reversal: ${existing.description}`,
+        referenceType: 'JOURNAL',
+        referenceId: existing.id,
+        lines: existing.lines.map((line) => ({
+          accountId: line.accountId,
+          debit: money(line.credit),
+          credit: money(line.debit),
+          description: reason
+        }))
+      });
+      await tx.journalEntry.update({ where: { id: existing.id }, data: { status: 'REVERSED' } });
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user.userId,
+        action: 'REVERSE',
+        entity: 'JOURNAL',
+        entityId: existing.id,
+        before: existing,
+        after: { status: 'REVERSED', reason }
+      });
+      return entry;
+    });
+    res.json({ success: true, reversal });
+  } catch (error) {
+    return sendError(res, error, 'Failed to reverse the journal');
   }
 };
 
@@ -437,6 +562,8 @@ const cancelPaymentReceipt = async (req, res) => {
     });
     if (!existing) return res.status(404).json({ error: 'Receipt not found' });
     if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Receipt is already cancelled.' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
     await prisma.$transaction(async (tx) => {
       for (const line of existing.lines) {
         if (!line.invoiceId) continue;
@@ -472,6 +599,12 @@ const cancelPaymentVoucher = async (req, res) => {
     });
     if (!existing) return res.status(404).json({ error: 'Voucher not found' });
     if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Voucher is already cancelled.' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
+    if (existing.status === 'PENDING_APPROVAL') {
+      await prisma.paymentVoucher.update({ where: { id: existing.id }, data: { status: 'CANCELLED' } });
+      return res.json({ success: true, cancelled: true });
+    }
     await prisma.$transaction(async (tx) => {
       for (const allocation of existing.allocations) {
         const invoice = await tx.supplierInvoice.findUnique({ where: { id: allocation.supplierInvoiceId } });
@@ -513,5 +646,6 @@ module.exports = {
   getPaymentVouchers,
   createPaymentVoucher,
   cancelPaymentVoucher,
-  getTrialBalance
+  getTrialBalance,
+  reverseJournalEntry
 };

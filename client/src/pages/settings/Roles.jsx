@@ -252,6 +252,16 @@ export default function Roles() {
                   </tbody>
                 </table>
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.permissions.financeClose === true || formData.permissions.all === true}
+                  disabled={currentRole?.isSystem || formData.permissions.all}
+                  onChange={() => setFormData((prev) => ({ ...prev, permissions: { ...prev.permissions, financeClose: !prev.permissions.financeClose } }))}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }}
+                />
+                Finance close
+              </label>
               {currentRole?.isSystem && (
                 <p style={{ fontSize: '0.85rem', color: '#eab308', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   <Shield size={14} /> System roles have full access and cannot be modified.

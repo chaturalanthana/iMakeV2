@@ -8,6 +8,7 @@ import ScanCapture, { lookupScan } from '../../components/ui/ScanCapture';
 import WarehouseSearchDropdown from '../../components/ui/WarehouseSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import PageSkeleton from '../../components/ui/PageSkeleton';
+import ActivityPanel from '../../components/ui/ActivityPanel';
 import { ArrowUpRight, ArrowLeft, Plus, Trash2, Briefcase, Package, Printer, Save, CheckCircle, Calendar, FileText } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -456,6 +457,14 @@ export default function NewStockAdjustment() {
               </tfoot>
             </table>
           </div>
+          {id && (
+            <div style={{ marginTop: '1.5rem' }}>
+              <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                <button type="button" style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: '2px solid var(--accent)', color: 'var(--accent)', fontWeight: 600, fontSize: '0.85rem' }}>Activity / History</button>
+              </div>
+              <ActivityPanel entity="STOCK_ADJUSTMENT" entityId={id} />
+            </div>
+          )}
 
         </>
       )}

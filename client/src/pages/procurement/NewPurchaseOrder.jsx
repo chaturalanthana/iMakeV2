@@ -9,7 +9,8 @@ import DatePicker from '../../components/ui/DatePicker';
 import SupplierModal from '../../components/ui/SupplierModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import PurchaseOrderPrintModal from '../../components/ui/PurchaseOrderPrintModal';
-import { ShoppingBag, ArrowLeft, Plus, Trash2, Calendar, Truck, Package, Printer, Briefcase, Banknote } from 'lucide-react';
+import ActivityPanel from '../../components/ui/ActivityPanel';
+import { ShoppingBag, ArrowLeft, Plus, Trash2, Calendar, Truck, Package, Printer, Briefcase, Banknote, FileText } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 export default function NewPurchaseOrder() {
@@ -434,7 +435,11 @@ export default function NewPurchaseOrder() {
             <button onClick={() => setActiveTab('primary')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'primary' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'primary' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Briefcase size={16} /> Primary Details
             </button>
+            <button onClick={() => setActiveTab('history')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'history' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'history' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileText size={16} /> Activity / History
+            </button>
           </div>
+          {activeTab === 'history' && <ActivityPanel entity="PO" entityId={poId} />}
 
           {activeTab === 'primary' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
@@ -520,6 +525,7 @@ export default function NewPurchaseOrder() {
             </div>
           )}
 
+          {activeTab !== 'history' && <>
           {/* Product Section Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '2.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -621,6 +627,7 @@ export default function NewPurchaseOrder() {
               </tfoot>
             </table>
           </div>
+          </>}
 
           {/* Print PDF Modal */}
           <PurchaseOrderPrintModal

@@ -1,7 +1,8 @@
 const { DocumentError } = require('../errors');
 const { num, money, dec } = require('../money');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
-const { postIssueDocument, finalizeSalesInvoice, creditWarning } = require('../documentPosting');
+const { postIssueDocument, finalizeSalesInvoice, assessCredit } = require('../documentPosting');
+const { writeAudit } = require('../auditService');
 const { assertPeriodOpen, submitApproval, assertStockCovered } = require('./bridges');
 const { quoteDiscount } = require('./pricing');
 const { getSettings } = require('./settings');
@@ -27,24 +28,6 @@ async function qtyByProduct(db, model, where) {
     }
   }
   return map;
-}
-
-async function overdueBalance(db, tenantId, customer) {
-  const invoices = await db.salesInvoice.findMany({
-    where: { tenantId, customerId: customer.id, status: { notIn: ['CANCELLED', 'DRAFT', 'PENDING'] } }
-  });
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  let overdue = 0;
-  for (const invoice of invoices) {
-    const open = money(num(invoice.total) - num(invoice.amountPaid));
-    if (open <= 0.0001) continue;
-    const due = invoice.dueDate
-      ? new Date(invoice.dueDate)
-      : new Date(new Date(invoice.date).getTime() + (customer.creditPeriod || 0) * 86400000);
-    if (due < today) overdue = money(overdue + open);
-  }
-  return overdue;
 }
 
 async function refreshOrderStatus(db, orderId) {
@@ -113,13 +96,13 @@ async function releaseOrder(db, input) {
     if (check.exceeded) {
       const approved = db.approvalRequest
         ? await db.approvalRequest.findFirst({
-          where: { tenantId: input.tenantId, documentType: 'PRICE_DISCOUNT', documentId: order.id, status: 'APPROVED' }
+          where: { tenantId: input.tenantId, documentType: 'PRICE_OVERRIDE', documentId: order.id, status: 'APPROVED' }
         })
         : null;
       if (!approved) {
         const approval = await submitApproval(db, {
           tenantId: input.tenantId,
-          documentType: 'PRICE_DISCOUNT',
+          documentType: 'PRICE_OVERRIDE',
           documentId: order.id,
           documentNumber: order.orderNumber,
           amount: check.discount,
@@ -144,15 +127,30 @@ async function releaseOrder(db, input) {
   }
 
   const baseTotal = money(order.items.reduce((sum, item) => sum + openQty(item) * num(item.unitPrice), 0) * (num(order.exchangeRate) || 1));
-  if (settings.blockCreditOverLimit) {
-    const warning = await creditWarning(db, { tenantId: input.tenantId, customerId: customer.id, documentBase: baseTotal });
-    if (warning) throw new DocumentError(warning, { credit: warning });
-  }
-  if (settings.blockOverdue) {
-    const overdue = await overdueBalance(db, input.tenantId, customer);
-    if (overdue > 0.0001) {
-      const message = `Customer has ${overdue.toFixed(2)} overdue.`;
-      throw new DocumentError(message, { credit: message });
+  if (settings.blockCreditOverLimit || settings.blockOverdue) {
+    const exposure = await assessCredit(db, { tenantId: input.tenantId, customerId: customer.id, documentBase: baseTotal });
+    const blocked = (settings.blockCreditOverLimit && exposure.overLimit) || (settings.blockOverdue && exposure.overdue);
+    if (blocked) {
+      const approvedCredit = db.approvalRequest
+        ? await db.approvalRequest.findFirst({
+          where: { tenantId: input.tenantId, documentType: 'SALES_ORDER_CREDIT', documentId: order.id, status: 'APPROVED' }
+        })
+        : null;
+      if (!approvedCredit) {
+        const approval = await submitApproval(db, {
+          tenantId: input.tenantId,
+          documentType: 'SALES_ORDER_CREDIT',
+          documentId: order.id,
+          documentNumber: order.orderNumber,
+          amount: baseTotal,
+          userId: input.userId
+        });
+        if (approval?.status === 'PENDING') {
+          await db.salesOrder.update({ where: { id: order.id }, data: { status: 'PENDING_APPROVAL', channel } });
+          return { order: await db.salesOrder.findUnique({ where: { id: order.id } }), pendingApproval: true };
+        }
+        throw new DocumentError(exposure.message, { credit: exposure.message });
+      }
     }
   }
 
@@ -196,6 +194,15 @@ async function releaseOrder(db, input) {
       releasedBy: input.userId || null
     },
     include: { items: true, customer: true }
+  });
+  await writeAudit(db, {
+    tenantId: input.tenantId,
+    userId: input.userId,
+    action: 'POST',
+    entity: 'SALES_ORDER',
+    entityId: order.id,
+    before: { status: 'PENDING' },
+    after: { status: 'RELEASED', shortages: shortages.length }
   });
   await notify(db, {
     tenantId: input.tenantId,
@@ -258,6 +265,14 @@ async function cancelOpen(db, input) {
   if (!done.length) {
     throw new DocumentError('Nothing is left to cancel.', { quantity: 'Nothing is left to cancel.' });
   }
+  await writeAudit(db, {
+    tenantId: input.tenantId,
+    userId: input.userId,
+    action: 'REVERSE',
+    entity: 'SALES_ORDER',
+    entityId: order.id,
+    after: { reason: String(input.reason).trim(), lines: done }
+  });
   const refreshed = await db.salesOrder.findUnique({ where: { id: order.id }, include: { items: true } });
   const stillOpen = refreshed.items.some((item) => openQty(item) - Math.max(shipped[item.productId] || 0, billed[item.productId] || 0) > 0.0001);
   if (!stillOpen && Object.keys(shipped).length === 0 && Object.keys(billed).length === 0) {
@@ -569,13 +584,10 @@ async function issueGatePass(db, input) {
   }
   if (trip.gatePass?.status === 'ISSUED') return trip.gatePass;
   const number = trip.gatePass?.number || await generateDocumentNumber(input.tenantId, 'gatePass', 'GP', 'number', db);
-  const pass = trip.gatePass
+  const draft = trip.gatePass
     ? await db.gatePass.update({
       where: { id: trip.gatePass.id },
       data: {
-        status: 'ISSUED',
-        issuedAt: new Date(),
-        issuedBy: input.userId || null,
         securityName: input.securityName || trip.gatePass.securityName,
         loadNote: input.loadNote || trip.gatePass.loadNote,
         driverName: input.driverName || trip.driverName,
@@ -591,11 +603,41 @@ async function issueGatePass(db, input) {
         driverName: input.driverName || trip.driverName,
         securityName: input.securityName || null,
         loadNote: input.loadNote || null,
-        status: 'ISSUED',
-        issuedAt: new Date(),
-        issuedBy: input.userId || null
+        status: 'DRAFT'
       }
     });
+  const approval = await submitApproval(db, {
+    tenantId: input.tenantId,
+    documentType: 'GATE_PASS',
+    documentId: draft.id,
+    documentNumber: draft.number,
+    amount: 0,
+    userId: input.userId
+  });
+  if (approval?.status === 'PENDING') {
+    await writeAudit(db, {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      action: 'STATUS',
+      entity: 'GATE_PASS',
+      entityId: draft.id,
+      after: { status: 'PENDING_APPROVAL', number: draft.number }
+    });
+    return db.gatePass.update({ where: { id: draft.id }, data: { status: 'PENDING_APPROVAL' } });
+  }
+  const pass = await db.gatePass.update({
+    where: { id: draft.id },
+    data: { status: 'ISSUED', issuedAt: new Date(), issuedBy: input.userId || null }
+  });
+  await writeAudit(db, {
+    tenantId: input.tenantId,
+    userId: input.userId,
+    action: 'POST',
+    entity: 'GATE_PASS',
+    entityId: pass.id,
+    before: { status: 'DRAFT' },
+    after: { status: 'ISSUED', number: pass.number }
+  });
   await notify(db, {
     tenantId: input.tenantId,
     userId: input.userId,
@@ -627,6 +669,30 @@ async function departTrip(db, input) {
     body: 'Vehicle left with the invoice and gate pass.',
     entityType: 'TRIP',
     entityId: trip.id
+  });
+  return updated;
+}
+
+async function cancelTrip(db, input) {
+  if (!input.reason || String(input.reason).trim().length < 2) {
+    throw new DocumentError('A reason is required.', { reason: 'A reason is required.' });
+  }
+  const trip = await tripDeliveries(db, input.tenantId, input.tripId);
+  if (trip.status === 'DEPARTED' || trip.status === 'RETURNED') {
+    throw new DocumentError('A departed trip is closed with a return, not a cancellation.', { status: 'A departed trip is closed with a return, not a cancellation.' });
+  }
+  if (trip.gatePass && trip.gatePass.status === 'ISSUED') {
+    await db.gatePass.update({ where: { id: trip.gatePass.id }, data: { status: 'CANCELLED' } });
+  }
+  const updated = await db.tripSheet.update({ where: { id: trip.id }, data: { status: 'CANCELLED' } });
+  await writeAudit(db, {
+    tenantId: input.tenantId,
+    userId: input.userId,
+    action: 'STATUS',
+    entity: 'TRIP',
+    entityId: trip.id,
+    before: { status: trip.status },
+    after: { status: 'CANCELLED', reason: String(input.reason).trim() }
   });
   return updated;
 }
@@ -766,6 +832,7 @@ module.exports = {
   returnTrip,
   recordProof,
   creditRejected,
+  cancelTrip,
   board,
   refreshOrderStatus,
   withSummary

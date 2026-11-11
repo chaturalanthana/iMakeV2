@@ -15,6 +15,7 @@ router.get('/purchase-orders', procurementController.getPurchaseOrders);
 router.post('/purchase-orders', validateBody(schemas.purchaseOrder), procurementController.createPurchaseOrder);
 router.put('/purchase-orders/:id', validateBody(schemas.documentUpdate), procurementController.updatePurchaseOrder);
 router.delete('/purchase-orders/:id', procurementController.deletePurchaseOrder);
+router.post('/purchase-orders/:id/cancel', procurementController.cancelPurchaseOrder);
 
 router.get('/grn', procurementController.getGrns);
 router.post('/grn', validateBody(schemas.goodsReceipt), procurementController.createGrn);

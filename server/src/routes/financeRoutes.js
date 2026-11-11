@@ -32,6 +32,7 @@ router.get('/tax-return', complianceController.taxReturn);
 // Journal Entries
 router.get('/journal-entries', financeController.getJournalEntries);
 router.post('/journal-entries', validateBody(schemas.journalEntry), financeController.createJournalEntry);
+router.post('/journal-entries/:id/reverse', financeController.reverseJournalEntry);
 
 // Payment Receipts
 router.get('/payment-receipts', financeController.getPaymentReceipts);

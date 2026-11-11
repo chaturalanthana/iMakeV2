@@ -10,6 +10,9 @@ const {
   postTransferDocument,
   cancelStockAndJournal
 } = require('../services/documentPosting');
+const { writeAudit } = require('../services/auditService');
+const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
+const { respondList } = require('../services/listQuery');
 
 const getStockLedger = async (req, res) => {
   try {
@@ -52,11 +55,31 @@ const getStockLedger = async (req, res) => {
       }
     }
 
+    const paged = req.query.page !== undefined;
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(200, Math.max(parseInt(req.query.pageSize, 10) || 15, 1));
+    const total = await prisma.stockMovement.count({ where: whereClause });
     const movements = await prisma.stockMovement.findMany({
       where: whereClause,
       include: { product: true },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'asc' },
+      ...(paged ? { skip: (page - 1) * pageSize, take: pageSize } : {})
     });
+    if (paged && startDate) {
+      const priorInPage = await prisma.stockMovement.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'asc' },
+        take: (page - 1) * pageSize
+      });
+      openingBalance += priorInPage.reduce((acc, movement) => acc + movementEffect(movement), 0);
+    } else if (paged && page > 1) {
+      const priorInPage = await prisma.stockMovement.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'asc' },
+        take: (page - 1) * pageSize
+      });
+      openingBalance = priorInPage.reduce((acc, movement) => acc + movementEffect(movement), 0);
+    }
     
     // Resolve UUIDs to readable document numbers
     const enhancedMovements = await Promise.all(movements.map(async (m) => {
@@ -94,7 +117,13 @@ const getStockLedger = async (req, res) => {
       };
     }));
     
-    res.json({ openingBalance, movements: enhancedMovements });
+    const body = { openingBalance, movements: enhancedMovements };
+    if (paged) {
+      body.total = total;
+      body.page = page;
+      body.pageSize = pageSize;
+    }
+    res.json(body);
   } catch (error) {
     console.error('Failed to fetch stock ledger:', error);
     res.status(500).json({ error: 'Failed to fetch stock ledger' });
@@ -104,20 +133,26 @@ const getStockLedger = async (req, res) => {
 
 const getStockMovements = async (req, res) => {
   try {
-    const { type } = req.query; // 'GI' or 'ADJ' or empty for all
-    
-    let whereClause = { tenantId: req.tenantId };
-    if (type) {
-      whereClause.type = type;
-    }
-
-    const movements = await prisma.stockMovement.findMany({
-      where: whereClause,
+    const where = { tenantId: req.tenantId };
+    if (req.query.type) where.type = req.query.type;
+    if (req.query.productId) where.productId = req.query.productId;
+    await respondList(req, res, {
+      model: prisma.stockMovement,
+      where,
       include: { product: true },
-      orderBy: { createdAt: 'desc' }
+      search: ['type', 'referenceType', 'lotNumber', 'product.code', 'product.name'],
+      sortFields: ['createdAt', 'type', 'quantity'],
+      defaultSort: 'createdAt',
+      filename: 'stock-movements.xlsx',
+      exportHeaders: ['date', 'type', 'product', 'quantity', 'reference'],
+      toExport: (row) => ({
+        date: row.createdAt?.toISOString?.() || '',
+        type: row.type,
+        product: row.product?.code || '',
+        quantity: String(row.quantity),
+        reference: row.referenceType || ''
+      })
     });
-    
-    res.json(movements);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stock movements' });
   }
@@ -365,6 +400,10 @@ const createStockAdjustment = async (req, res) => {
       'ADJ',
       'adjNumber'
     );
+    const rule = await loadRule(prisma, req.tenantId, 'STOCK_ADJUSTMENT');
+    const needed = levelsForAmount(rule, totalAmount);
+    const posting = status === 'COMPLETED';
+    const hold = Boolean(posting && rule?.enabled && needed.length);
 
     const adj = await prisma.$transaction(async (tx) => {
       const created = await tx.stockAdjustment.create({
@@ -372,7 +411,7 @@ const createStockAdjustment = async (req, res) => {
           tenantId: req.tenantId,
           adjNumber,
           date: new Date(date),
-          status: status || 'PENDING',
+          status: hold ? 'PENDING_APPROVAL' : (status || 'PENDING'),
           reason: reason || null,
           total: totalAmount,
           warehouseId: req.body.warehouseId || null,
@@ -393,6 +432,16 @@ const createStockAdjustment = async (req, res) => {
         }
       });
 
+      if (rule?.enabled && posting) {
+        await submitForApproval(tx, {
+          tenantId: req.tenantId,
+          documentType: 'STOCK_ADJUSTMENT',
+          documentId: created.id,
+          documentNumber: created.adjNumber,
+          amount: totalAmount,
+          userId: req.user?.userId || null
+        });
+      }
       if (created.status === 'COMPLETED') {
         await postAdjustmentDocument(tx, {
           tenantId: req.tenantId,
@@ -479,10 +528,59 @@ const updateStockAdjustment = async (req, res) => {
 const deleteStockAdjustment = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.stockAdjustment.delete({ where: { id, tenantId: req.tenantId } });
+    const existing = await prisma.stockAdjustment.findFirst({ where: { id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Stock adjustment not found' });
+    if (!['DRAFT', 'PENDING', 'REJECTED', 'RETURNED'].includes(String(existing.status).toUpperCase())) {
+      return res.status(400).json({ error: 'Posted adjustments cannot be deleted. Reverse the adjustment and give a reason.' });
+    }
+    await prisma.stockAdjustment.delete({ where: { id } });
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user?.userId,
+      action: 'DELETE',
+      entity: 'STOCK_ADJUSTMENT',
+      entityId: id,
+      before: existing,
+      after: null
+    });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete Stock Adjustment' });
+  }
+};
+
+const cancelStockAdjustment = async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required.', fields: { reason: 'A reason is required.' } });
+    const existing = await prisma.stockAdjustment.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } });
+    if (!existing) return res.status(404).json({ error: 'Stock adjustment not found' });
+    if (existing.status === 'CANCELLED') return res.status(400).json({ error: 'Adjustment is already cancelled.' });
+    await prisma.$transaction(async (tx) => {
+      if (existing.status === 'COMPLETED') {
+        await cancelStockAndJournal(tx, {
+          tenantId: req.tenantId,
+          referenceType: 'ADJ',
+          referenceId: existing.id,
+          date: new Date(),
+          createdBy: req.user?.userId,
+          description: existing.adjNumber
+        });
+      }
+      await tx.stockAdjustment.update({ where: { id: existing.id }, data: { status: 'CANCELLED' } });
+      await writeAudit(tx, {
+        tenantId: req.tenantId,
+        userId: req.user?.userId,
+        action: existing.status === 'COMPLETED' ? 'REVERSE' : 'STATUS',
+        entity: 'STOCK_ADJUSTMENT',
+        entityId: existing.id,
+        before: existing,
+        after: { status: 'CANCELLED', reason }
+      });
+    });
+    res.json({ success: true, cancelled: true });
+  } catch (error) {
+    return sendError(res, error, 'Failed to cancel the adjustment');
   }
 };
 
@@ -910,6 +1008,7 @@ module.exports = {
   createStockAdjustment,
   updateStockAdjustment,
   deleteStockAdjustment,
+  cancelStockAdjustment,
   getInventoryReport,
   getValuation,
   costingReceive,

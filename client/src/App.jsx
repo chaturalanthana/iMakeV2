@@ -22,6 +22,11 @@ import MRPPlanner from './pages/production/MRPPlanner';
 import Alerts from './pages/Alerts';
 import DataImport from './pages/settings/DataImport';
 import Labels from './pages/warehouse/Labels';
+import InventoryList from './pages/warehouse/InventoryList';
+import InventoryDocument from './pages/warehouse/InventoryDocument';
+import InventoryMaster from './pages/warehouse/InventoryMaster';
+import StockReports from './pages/warehouse/StockReports';
+import Allocations from './pages/warehouse/Allocations';
 import WhtCertificate from './pages/finance/WhtCertificate';
 import StatutoryReport from './pages/hr/StatutoryReport';
 import ProductGroups from './pages/production/ProductGroups';
@@ -90,6 +95,12 @@ import SupplierOutstanding from './pages/procurement/SupplierOutstanding';
 import SupplierInvoices from './pages/procurement/SupplierInvoices';
 import NewSupplierInvoice from './pages/procurement/NewSupplierInvoice';
 import PartyStatement from './pages/finance/PartyStatement';
+import {
+  Centers, Projects, Budgets, Contracts,
+  Rfqs, NewRfq, RfqDetail, LandedCosts, NewLandedCost, NewCapex, Assets,
+  Notes, Collections, Cheques, Ious,
+  Closes, CloseDetail, FinanceReports
+} from './pages/phase2/pages';
 
 // Warehouse / Stock Features
 import StockMovements from './pages/warehouse/StockMovements';
@@ -117,6 +128,10 @@ import HolidayCalendar from './pages/hr/HolidayCalendar';
 // Settings Features
 import Users from './pages/settings/Users';
 import Roles from './pages/settings/Roles';
+import Approvals from './pages/Approvals';
+import ApprovalRules from './pages/settings/ApprovalRules';
+import FiscalPeriods from './pages/settings/FiscalPeriods';
+import AuditLog from './pages/settings/AuditLog';
 
 function App() {
   const isAuthenticated = !!localStorage.getItem('token');
@@ -133,6 +148,7 @@ function App() {
             {/* Authenticated Routes wrapped in PersistentLayout */}
             <Route element={<PersistentLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/approvals" element={<Approvals />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/new" element={<NewProduct />} />
@@ -225,6 +241,14 @@ function App() {
               <Route path="/procurement/withholding-tax-groups" element={<PurchaseWithholdingTaxGroups />} />
               <Route path="/procurement/withholding-tax-groups/new" element={<NewPurchaseWithholdingTaxGroup />} />
               <Route path="/procurement/withholding-tax-groups/:id" element={<NewPurchaseWithholdingTaxGroup />} />
+              <Route path="/procurement/rfqs/new" element={<NewRfq />} />
+              <Route path="/procurement/rfqs/:id" element={<RfqDetail />} />
+              <Route path="/procurement/rfqs" element={<Rfqs />} />
+              <Route path="/procurement/contracts/new" element={<Contracts />} />
+              <Route path="/procurement/contracts" element={<Contracts />} />
+              <Route path="/procurement/landed-costs/new" element={<NewLandedCost />} />
+              <Route path="/procurement/landed-costs" element={<LandedCosts />} />
+              <Route path="/procurement/capex/new" element={<NewCapex />} />
               <Route path="/procurement/outstanding" element={<SupplierOutstanding />} />
               <Route path="/procurement/suppliers/:id/statement" element={<PartyStatement kind="supplier" />} />
 
@@ -242,6 +266,25 @@ function App() {
               <Route path="/warehouse/adjustments/*" element={<NewStockAdjustment />} />
               <Route path="/warehouse/adjustments" element={<StockAdjustments />} />
               <Route path="/warehouse/inventory-report" element={<InventoryReport />} />
+              <Route path="/warehouse/material-requests/new" element={<InventoryDocument kind="mr" />} />
+              <Route path="/warehouse/material-requests/:id" element={<InventoryDocument kind="mr" />} />
+              <Route path="/warehouse/material-requests" element={<InventoryList kind="mr" />} />
+              <Route path="/warehouse/goods-transfers/new" element={<InventoryDocument kind="transfer" />} />
+              <Route path="/warehouse/goods-transfers/:id" element={<InventoryDocument kind="transfer" />} />
+              <Route path="/warehouse/goods-transfers" element={<InventoryList kind="transfer" />} />
+              <Route path="/warehouse/returns/new" element={<InventoryDocument kind="return" />} />
+              <Route path="/warehouse/returns/:id" element={<InventoryDocument kind="return" />} />
+              <Route path="/warehouse/returns" element={<InventoryList kind="return" />} />
+              <Route path="/warehouse/cycle-counts/new" element={<InventoryDocument kind="count" />} />
+              <Route path="/warehouse/cycle-counts/:id" element={<InventoryDocument kind="count" />} />
+              <Route path="/warehouse/cycle-counts" element={<InventoryList kind="count" />} />
+              <Route path="/warehouse/batch-receipts/new" element={<InventoryDocument kind="receipt" />} />
+              <Route path="/warehouse/bins" element={<InventoryMaster kind="bins" />} />
+              <Route path="/warehouse/batches" element={<InventoryMaster kind="batches" />} />
+              <Route path="/warehouse/pallets" element={<InventoryMaster kind="pallets" />} />
+              <Route path="/warehouse/allocations" element={<Allocations />} />
+              <Route path="/warehouse/stock-reports" element={<StockReports />} />
+              <Route path="/registries/uom-templates" element={<InventoryMaster kind="templates" />} />
               <Route path="/warehouse/labels" element={<Labels />} />
               <Route path="/warehouse/movements/new" element={<NewStockMovement />} />
               <Route path="/warehouse/movements" element={<StockMovements />} />
@@ -284,11 +327,36 @@ function App() {
               <Route path="/finance/tax-groups/:id" element={<NewTaxGroup />} />
               <Route path="/finance/vat" element={<VATReport />} />
               <Route path="/finance/reconciliation" element={<BankReconciliation />} />
+              <Route path="/finance/centers/new" element={<Centers />} />
+              <Route path="/finance/centers" element={<Centers />} />
+              <Route path="/finance/budgets/new" element={<Budgets />} />
+              <Route path="/finance/budgets" element={<Budgets />} />
+              <Route path="/finance/projects/new" element={<Projects />} />
+              <Route path="/finance/projects" element={<Projects />} />
+              <Route path="/finance/assets/:id" element={<Assets />} />
+              <Route path="/finance/assets" element={<Assets />} />
+              <Route path="/finance/depreciation" element={<Assets />} />
+              <Route path="/finance/notes/new" element={<Notes />} />
+              <Route path="/finance/notes" element={<Notes />} />
+              <Route path="/finance/collections/:id" element={<Collections />} />
+              <Route path="/finance/collections" element={<Collections />} />
+              <Route path="/finance/cheques/new" element={<Cheques />} />
+              <Route path="/finance/cheques" element={<Cheques />} />
+              <Route path="/finance/ious/new" element={<Ious />} />
+              <Route path="/finance/ious/:id" element={<Ious />} />
+              <Route path="/finance/ious" element={<Ious />} />
+              <Route path="/finance/period-close/new" element={<Closes />} />
+              <Route path="/finance/period-close/:id" element={<CloseDetail />} />
+              <Route path="/finance/period-close" element={<Closes />} />
+              <Route path="/finance/reports" element={<FinanceReports />} />
               
               {/* Settings */}
               <Route path="/settings/users" element={<Users />} />
               <Route path="/settings/roles" element={<Roles />} />
               <Route path="/settings/import" element={<DataImport />} />
+              <Route path="/settings/approval-rules" element={<ApprovalRules />} />
+              <Route path="/settings/periods" element={<FiscalPeriods />} />
+              <Route path="/settings/audit" element={<AuditLog />} />
             </Route>
           </Routes>
         </BrowserRouter>

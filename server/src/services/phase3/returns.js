@@ -5,6 +5,8 @@ const { receive } = require('../stockService');
 const { ensureGlMap, postJournal } = require('../glService');
 const { slabsFor, applySlabs, sumBucket } = require('../taxService');
 const { assertPeriodOpen, inventoryOps, treasuryApi } = require('./bridges');
+const { writeAudit } = require('../auditService');
+const { reverseJournal } = require('../glService');
 const { notify } = require('./notify');
 const { RETURN_KINDS } = require('./defaults');
 
@@ -206,6 +208,14 @@ async function postSalesReturn(db, input) {
       },
       include: { lines: { include: { product: true } }, customer: true, invoice: true }
     });
+    await writeAudit(tx, {
+      tenantId: input.tenantId,
+      userId: input.createdBy,
+      action: 'POST',
+      entity: 'SALES_RETURN',
+      entityId: created.id,
+      after: { number, kind, invoiceId: invoice.id, stockReturnId, partyNoteId }
+    });
     await notify(tx, {
       tenantId: input.tenantId,
       userId: input.createdBy,
@@ -222,4 +232,56 @@ async function postSalesReturn(db, input) {
   return run(db);
 }
 
-module.exports = { postSalesReturn, returnedQty };
+async function cancelSalesReturn(db, input) {
+  if (!input.reason || String(input.reason).trim().length < 2) {
+    throw new DocumentError('A reason is required.', { reason: 'A reason is required.' });
+  }
+  const row = await db.salesReturn.findFirst({ where: { id: input.id, tenantId: input.tenantId } });
+  if (!row) throw new DocumentError('Return not found.', { id: 'Return not found.' });
+  if (row.status === 'CANCELLED') throw new DocumentError('This return is already cancelled.', { status: 'This return is already cancelled.' });
+  const run = async (tx) => {
+    await assertPeriodOpen(tx, { tenantId: input.tenantId, date: new Date(), userId: input.userId });
+    const ops = inventoryOps();
+    if (row.stockReturnId && ops?.cancelReturn) {
+      await ops.cancelReturn(tx, { tenantId: input.tenantId, id: row.stockReturnId, createdBy: input.userId, reason: input.reason });
+    }
+    await reverseJournal(tx, {
+      tenantId: input.tenantId,
+      referenceType: 'SALES_RETURN',
+      referenceId: row.number,
+      date: new Date(),
+      createdBy: input.userId,
+      description: input.reason
+    });
+    if (row.partyNoteId) {
+      const treasury = treasuryApi();
+      if (treasury?.cancelPartyNote) {
+        await treasury.cancelPartyNote(tx, { tenantId: input.tenantId, id: row.partyNoteId, createdBy: input.userId, reason: input.reason });
+      }
+    } else {
+      await reverseJournal(tx, {
+        tenantId: input.tenantId,
+        referenceType: 'SALES_RETURN',
+        referenceId: `${row.number}:AR`,
+        date: new Date(),
+        createdBy: input.userId,
+        description: input.reason
+      });
+    }
+    const updated = await tx.salesReturn.update({ where: { id: row.id }, data: { status: 'CANCELLED' } });
+    await writeAudit(tx, {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      action: 'REVERSE',
+      entity: 'SALES_RETURN',
+      entityId: row.id,
+      before: { status: row.status },
+      after: { status: 'CANCELLED', reason: String(input.reason).trim() }
+    });
+    return updated;
+  };
+  if (!input.managed && typeof db.$transaction === 'function') return db.$transaction(run);
+  return run(db);
+}
+
+module.exports = { postSalesReturn, returnedQty, cancelSalesReturn };

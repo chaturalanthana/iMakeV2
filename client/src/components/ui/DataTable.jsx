@@ -24,8 +24,12 @@ export default function DataTable({
   onRowClick,
   selectable = false,
   selectedIds: controlledSelectedIds,
-  onSelectionChange
+  onSelectionChange,
+  onServerQuery,
+  serverTotal,
+  serverPage = 1
 }) {
+  const usingServer = typeof onServerQuery === 'function';
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -189,7 +193,7 @@ export default function DataTable({
 
   // 1. Handle local search/filtering if searchKeys are provided
   const getFilteredData = () => {
-    if (!searchQuery.trim() || searchKeys.length === 0) {
+    if (usingServer || !searchQuery.trim() || searchKeys.length === 0) {
       return data;
     }
     
@@ -216,10 +220,11 @@ export default function DataTable({
     }
     setSortConfig({ key, direction });
     setCurrentPage(1);
+    if (usingServer) onServerQuery({ q: searchQuery, page: 1, sort: key, dir: direction });
   };
 
   const getSortedData = () => {
-    if (!sortConfig.key) {
+    if (usingServer || !sortConfig.key) {
       return filteredData;
     }
     
@@ -269,14 +274,17 @@ export default function DataTable({
     commitSelection(next);
   };
 
-  // 3. Pagination Calculations
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedData = sortedData.slice(startIndex, startIndex + itemsPerPage);
+  // 3. Pagination Calculations. Server mode keeps this same footer and skips the local slice.
+  const totalRows = usingServer ? (serverTotal || 0) : sortedData.length;
+  const pageNow = usingServer ? serverPage : currentPage;
+  const totalPages = Math.ceil(totalRows / itemsPerPage) || 1;
+  const startIndex = (pageNow - 1) * itemsPerPage;
+  const paginatedData = usingServer ? data : sortedData.slice(startIndex, startIndex + itemsPerPage);
 
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
-    setCurrentPage(1); // Reset to first page on search
+    setCurrentPage(1);
+    if (usingServer) onServerQuery({ q: e.target.value, page: 1, sort: sortConfig.key, dir: sortConfig.direction });
   };
 
   return (
@@ -450,19 +458,23 @@ export default function DataTable({
                   }}>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       {selectable && selectedIds.length > 0 ? `${selectedIds.length} selected · ` : ''}
-                      Showing {filteredData.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + itemsPerPage, filteredData.length)} of {filteredData.length} entries
+                      Showing {totalRows > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + itemsPerPage, totalRows)} of {totalRows} entries
                     </span>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       <button 
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                        disabled={currentPage === 1} 
+                        onClick={() => {
+                          const next = Math.max(1, pageNow - 1);
+                          if (usingServer) onServerQuery({ q: searchQuery, page: next, sort: sortConfig.key, dir: sortConfig.direction });
+                          else setCurrentPage(next);
+                        }} 
+                        disabled={pageNow === 1} 
                         style={{ 
                           padding: '3px', 
                           borderRadius: '4px', 
                           border: '1px solid var(--border-color)', 
-                          backgroundColor: currentPage === 1 ? '#f8fafc' : '#fff', 
-                          cursor: currentPage === 1 ? 'not-allowed' : 'pointer', 
-                          color: currentPage === 1 ? '#cbd5e1' : 'var(--text-main)', 
+                          backgroundColor: pageNow === 1 ? '#f8fafc' : '#fff', 
+                          cursor: pageNow === 1 ? 'not-allowed' : 'pointer', 
+                          color: pageNow === 1 ? '#cbd5e1' : 'var(--text-main)', 
                           display: 'flex', 
                           alignItems: 'center' 
                         }}
@@ -470,18 +482,22 @@ export default function DataTable({
                         <ChevronLeft size={14} />
                       </button>
                       <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0 0.5rem' }}>
-                        Page {currentPage} of {totalPages || 1}
+                        Page {pageNow} of {totalPages || 1}
                       </span>
                       <button 
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                        disabled={currentPage === totalPages || totalPages === 0} 
+                        onClick={() => {
+                          const next = Math.min(totalPages, pageNow + 1);
+                          if (usingServer) onServerQuery({ q: searchQuery, page: next, sort: sortConfig.key, dir: sortConfig.direction });
+                          else setCurrentPage(next);
+                        }} 
+                        disabled={pageNow === totalPages || totalPages === 0} 
                         style={{ 
                           padding: '3px', 
                           borderRadius: '4px', 
                           border: '1px solid var(--border-color)', 
-                          backgroundColor: (currentPage === totalPages || totalPages === 0) ? '#f8fafc' : '#fff', 
-                          cursor: (currentPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', 
-                          color: (currentPage === totalPages || totalPages === 0) ? '#cbd5e1' : 'var(--text-main)', 
+                          backgroundColor: (pageNow === totalPages || totalPages === 0) ? '#f8fafc' : '#fff', 
+                          cursor: (pageNow === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', 
+                          color: (pageNow === totalPages || totalPages === 0) ? '#cbd5e1' : 'var(--text-main)', 
                           display: 'flex', 
                           alignItems: 'center' 
                         }}

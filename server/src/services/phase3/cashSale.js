@@ -1,8 +1,10 @@
 const { DocumentError } = require('../errors');
 const { num, money, dec, rateOf } = require('../money');
 const { generateDocumentNumber } = require('../../utils/codeGenerator');
-const { postIssueDocument, finalizeSalesInvoice, allocateCustomerReceipt } = require('../documentPosting');
-const { assertPeriodOpen, assertStockCovered } = require('./bridges');
+const { postIssueDocument, finalizeSalesInvoice, allocateCustomerReceipt, cancelStockAndJournal } = require('../documentPosting');
+const { reverseJournal } = require('../glService');
+const { assertPeriodOpen, assertStockCovered, submitApproval } = require('./bridges');
+const { writeAudit } = require('../auditService');
 const { notify } = require('./notify');
 const { CASH_KINDS } = require('./defaults');
 
@@ -59,6 +61,29 @@ async function postCashSale(db, input) {
         items: { create: prepared.map((item) => ({ ...item, quantity: dec(item.quantity), unitPrice: dec(item.unitPrice), total: dec(item.total) })) }
       }
     });
+    const approval = await submitApproval(tx, {
+      tenantId: input.tenantId,
+      documentType: 'CASH_SALE',
+      documentId: created.id,
+      documentNumber: number,
+      amount: num(created.total),
+      userId: input.createdBy
+    });
+    if (approval?.status === 'PENDING') {
+      const held = await tx.salesInvoice.update({
+        where: { id: created.id },
+        data: { status: 'PENDING_APPROVAL', stockPosted: false }
+      });
+      await writeAudit(tx, {
+        tenantId: input.tenantId,
+        userId: input.createdBy,
+        action: 'STATUS',
+        entity: 'CASH_SALE',
+        entityId: created.id,
+        after: { status: 'PENDING_APPROVAL', invoiceNumber: number }
+      });
+      return held;
+    }
     const invoice = await finalizeSalesInvoice(tx, {
       tenantId: input.tenantId,
       invoiceId: created.id,
@@ -69,7 +94,7 @@ async function postCashSale(db, input) {
       tenantId: input.tenantId,
       warehouseId: warehouse.id,
       items: savedItems,
-      referenceType: 'SALES_INVOICE',
+      referenceType: 'CASH_SALE',
       referenceId: invoice.id,
       date: input.date,
       createdBy: input.createdBy,
@@ -98,6 +123,14 @@ async function postCashSale(db, input) {
       allocations: [{ invoiceId: invoice.id, amount: num(invoice.total) }],
       createdBy: input.createdBy
     });
+    await writeAudit(tx, {
+      tenantId: input.tenantId,
+      userId: input.createdBy,
+      action: 'POST',
+      entity: 'CASH_SALE',
+      entityId: invoice.id,
+      after: { status: 'PAID', invoiceNumber: invoice.invoiceNumber, saleKind, warehouseId: warehouse.id }
+    });
     await notify(tx, {
       tenantId: input.tenantId,
       userId: input.createdBy,
@@ -117,4 +150,61 @@ async function postCashSale(db, input) {
   return run(db);
 }
 
-module.exports = { isCashKind, postCashSale };
+async function cancelCashSale(db, input) {
+  if (!input.reason || String(input.reason).trim().length < 2) {
+    throw new DocumentError('A reason is required.', { reason: 'A reason is required.' });
+  }
+  const invoice = await db.salesInvoice.findFirst({ where: { id: input.invoiceId, tenantId: input.tenantId } });
+  if (!invoice || !isCashKind(invoice.saleKind)) {
+    throw new DocumentError('Cash sale not found.', { invoiceId: 'Cash sale not found.' });
+  }
+  if (invoice.status === 'CANCELLED') throw new DocumentError('This sale is already cancelled.', { status: 'This sale is already cancelled.' });
+  const run = async (tx) => {
+    await assertPeriodOpen(tx, { tenantId: input.tenantId, date: new Date(), userId: input.userId });
+    if (invoice.stockPosted) {
+      await cancelStockAndJournal(tx, {
+        tenantId: input.tenantId,
+        referenceType: 'CASH_SALE',
+        referenceId: invoice.id,
+        date: new Date(),
+        createdBy: input.userId,
+        description: input.reason
+      });
+    }
+    await reverseJournal(tx, {
+      tenantId: input.tenantId,
+      referenceType: 'SALES_INVOICE',
+      referenceId: invoice.id,
+      date: new Date(),
+      createdBy: input.userId,
+      description: input.reason
+    });
+    const receipt = await tx.paymentReceipt.findFirst({ where: { tenantId: input.tenantId, invoiceId: invoice.id } });
+    if (receipt && receipt.status !== 'CANCELLED') {
+      await reverseJournal(tx, {
+        tenantId: input.tenantId,
+        referenceType: 'PAYMENT_RECEIPT',
+        referenceId: receipt.id,
+        date: new Date(),
+        createdBy: input.userId,
+        description: input.reason
+      });
+      await tx.paymentReceipt.update({ where: { id: receipt.id }, data: { status: 'CANCELLED' } });
+    }
+    const updated = await tx.salesInvoice.update({ where: { id: invoice.id }, data: { status: 'CANCELLED' } });
+    await writeAudit(tx, {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      action: 'REVERSE',
+      entity: 'CASH_SALE',
+      entityId: invoice.id,
+      before: { status: invoice.status },
+      after: { status: 'CANCELLED', reason: String(input.reason).trim() }
+    });
+    return updated;
+  };
+  if (!input.managed && typeof db.$transaction === 'function') return db.$transaction(run);
+  return run(db);
+}
+
+module.exports = { isCashKind, postCashSale, cancelCashSale };
