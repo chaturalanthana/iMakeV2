@@ -96,8 +96,7 @@ async function issue(tx, {
     quantity: qty,
     strictWarehouse: true
   });
-  // A shortfall is returned as an unlayered slice at standard or cost price.
-  // Callers that must not go short (transfers) check `consumptions`.
+  // Short issues are rejected unless the tenant allows negative stock.
 
   const signedQty = money(qty * (quantitySign < 0 ? -1 : 1));
   const movement = await tx.stockMovement.create({

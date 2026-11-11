@@ -331,6 +331,8 @@ describe('Work order lifecycle', () => {
   });
 
   test('sales orders and MRP create draft work orders', async () => {
+    await prisma.stockMovement.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    await prisma.costLayer.deleteMany({ where: { tenantId: tenant.id, productId: fg.id } });
     const sales = await request(app)
       .post('/api/sales/orders')
       .set(auth())

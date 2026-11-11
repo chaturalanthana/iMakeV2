@@ -66,6 +66,17 @@ beforeAll(async () => {
   warehouseA = await prisma.warehouse.create({
     data: { tenantId: tenantA.id, code: 'WH-A', name: 'Warehouse A' }
   });
+  await prisma.costLayer.create({
+    data: {
+      tenantId: tenantA.id,
+      productId: productA.id,
+      warehouseId: warehouseA.id,
+      quantityReceived: 1000,
+      quantityRemaining: 1000,
+      unitCost: 10,
+      sourceType: 'OPENING'
+    }
+  });
 
   // Shared test helper setup inside Tenant B
   await prisma.unitOfMeasure.create({

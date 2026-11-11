@@ -36,5 +36,6 @@ router.get('/adjustments', warehouseController.getStockAdjustments);
 router.post('/adjustments', validateBody(schemas.stockLines), warehouseController.createStockAdjustment);
 router.put('/adjustments/:id', validateBody(schemas.stockLines), warehouseController.updateStockAdjustment);
 router.delete('/adjustments/:id', warehouseController.deleteStockAdjustment);
+router.post('/adjustments/:id/cancel', warehouseController.cancelStockAdjustment);
 
 module.exports = router;

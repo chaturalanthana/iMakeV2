@@ -5,13 +5,29 @@ import {
   Wallet, Users, Settings, Landmark, BookOpen, Receipt, 
   CreditCard, Network, FileText, Package, Truck, Layers, 
   ArrowUpRight, BarChart2, Tag, Users2, Banknote, CalendarDays, MinusCircle, TrendingUp, DollarSign,
-  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale
+  Factory, RefreshCw, Percent, ClipboardList, ArrowDownLeft, Sliders, Upload, Scale, ScrollText
 } from 'lucide-react';
 
 export default function Sidebar() {
   const location = useLocation();
   const [expandedMenu, setExpandedMenu] = useState(null);
   const [shouldAnimate, setShouldAnimate] = useState(false);
+  const [approvalCount, setApprovalCount] = useState(0);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return undefined;
+    let stop = false;
+    const load = () => {
+      fetch('/api/approvals/count', { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => res.ok ? res.json() : { count: 0 })
+        .then((data) => { if (!stop) setApprovalCount(data.count || 0); })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 30000);
+    return () => { stop = true; clearInterval(timer); };
+  }, []);
 
   const isPathActive = (path) => {
     if (!path) return false;
@@ -20,6 +36,7 @@ export default function Sidebar() {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { name: 'Approvals', icon: ClipboardList, path: '/approvals', badge: approvalCount },
     {
       name: 'Production',
       icon: Factory,
@@ -129,6 +146,9 @@ export default function Sidebar() {
       subItems: [
         { name: 'Users', icon: Users, path: '/settings/users' },
         { name: 'Roles', icon: Layers, path: '/settings/roles' },
+        { name: 'Approval rules', icon: ClipboardList, path: '/settings/approval-rules' },
+        { name: 'Fiscal periods', icon: CalendarDays, path: '/settings/periods' },
+        { name: 'Audit log', icon: ScrollText, path: '/settings/audit' },
         { name: 'Data import', icon: Upload, path: '/settings/import' },
       ] 
     }
@@ -310,6 +330,7 @@ export default function Sidebar() {
               >
                 <item.icon size={22} style={{ flexShrink: 0 }} />
                 <span className="menu-item-text">{item.name}</span>
+                {item.badge > 0 && <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{item.badge}</span>}
               </NavLink>
             ) : (
               <button
@@ -357,6 +378,7 @@ export default function Sidebar() {
               >
                 <item.icon size={22} style={{ flexShrink: 0 }} />
                 <span className="menu-item-text">{item.name}</span>
+                {item.badge > 0 && <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{item.badge}</span>}
               </NavLink>
             ) : (
               <button

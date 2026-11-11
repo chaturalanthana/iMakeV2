@@ -3,6 +3,7 @@ import axios from 'axios';
 import AppLayout from '../../components/layout/AppLayout';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import { Scale, Printer } from 'lucide-react';
+import ExportButton from '../../components/ui/ExportButton';
 import { useToast } from '../../context/ToastContext';
 
 const money = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -38,9 +39,12 @@ export default function TrialBalance() {
         }}>
           {balanced ? 'Debits equal credits' : 'Out of balance'} · Debit {money(report?.debit)} · Credit {money(report?.credit)}
         </div>
-        <button type="button" onClick={() => window.print()} style={{ height: 36, padding: '0 0.8rem', borderRadius: 8, border: '1px solid var(--border-color)', background: '#fff', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Printer size={15} /> Print
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <ExportButton url="/api/finance/trial-balance" filename="trial-balance.xlsx" />
+          <button type="button" onClick={() => window.print()} style={{ height: 36, padding: '0 0.8rem', borderRadius: 8, border: '1px solid var(--border-color)', background: '#fff', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Printer size={15} /> Print
+          </button>
+        </div>
       </div>
       <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -1,9 +1,15 @@
 const prisma = require('../lib/prisma');
+const { respondList } = require('../services/listQuery');
+const { writeAudit } = require('../services/auditService');
 
 const getProducts = async (req, res) => {
   try {
-    const products = await prisma.product.findMany({
-      where: { tenantId: req.tenantId },
+    const where = { tenantId: req.tenantId };
+    if (req.query.categoryId) where.categoryId = req.query.categoryId;
+    if (req.query.brand) where.brand = { name: String(req.query.brand) };
+    await respondList(req, res, {
+      model: prisma.product,
+      where,
       include: {
         category: true,
         brand: true,
@@ -18,9 +24,19 @@ const getProducts = async (req, res) => {
         currencyRel: true,
         productGroupRel: true
       },
-      orderBy: { createdAt: 'desc' }
+      search: ['code', 'name'],
+      sortFields: ['code', 'name', 'createdAt', 'sellingPrice', 'costPrice'],
+      defaultSort: 'createdAt',
+      filename: 'items.xlsx',
+      exportHeaders: ['code', 'name', 'sellingPrice', 'costPrice', 'activeStatus'],
+      toExport: (row) => ({
+        code: row.code,
+        name: row.name,
+        sellingPrice: String(row.sellingPrice ?? ''),
+        costPrice: String(row.costPrice ?? ''),
+        activeStatus: row.activeStatus || ''
+      })
     });
-    res.json(products);
   } catch (error) {
     console.error('Fetch products error:', error);
     res.status(500).json({ error: 'Failed to fetch products' });

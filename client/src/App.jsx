@@ -113,6 +113,10 @@ import HolidayCalendar from './pages/hr/HolidayCalendar';
 // Settings Features
 import Users from './pages/settings/Users';
 import Roles from './pages/settings/Roles';
+import Approvals from './pages/Approvals';
+import ApprovalRules from './pages/settings/ApprovalRules';
+import FiscalPeriods from './pages/settings/FiscalPeriods';
+import AuditLog from './pages/settings/AuditLog';
 
 function App() {
   const isAuthenticated = !!localStorage.getItem('token');
@@ -129,6 +133,7 @@ function App() {
             {/* Authenticated Routes wrapped in PersistentLayout */}
             <Route element={<PersistentLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/approvals" element={<Approvals />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/new" element={<NewProduct />} />
@@ -275,6 +280,9 @@ function App() {
               <Route path="/settings/users" element={<Users />} />
               <Route path="/settings/roles" element={<Roles />} />
               <Route path="/settings/import" element={<DataImport />} />
+              <Route path="/settings/approval-rules" element={<ApprovalRules />} />
+              <Route path="/settings/periods" element={<FiscalPeriods />} />
+              <Route path="/settings/audit" element={<AuditLog />} />
             </Route>
           </Routes>
         </BrowserRouter>

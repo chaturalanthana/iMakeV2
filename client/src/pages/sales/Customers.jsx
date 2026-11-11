@@ -6,6 +6,7 @@ import AppLayout from '../../components/layout/AppLayout';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DataTable from '../../components/ui/DataTable';
+import ExportButton from '../../components/ui/ExportButton';
 import { Users, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -16,18 +17,21 @@ export default function Customers() {
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+  const [query, setQuery] = useState({ page: 1, q: '', sort: 'name', dir: 'asc' });
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     fetchCustomers();
-  }, []);
+  }, [query]);
 
   const fetchCustomers = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const res = await axios.get('/api/customers', config);
-      setCustomers(res.data);
+      const res = await axios.get('/api/customers', { ...config, params: { page: query.page, pageSize: 15, q: query.q || undefined, sort: query.sort || undefined, dir: query.dir || undefined } });
+      setCustomers(res.data.items || []);
+      setTotal(res.data.total || 0);
     } catch (error) {
       console.error('Failed to fetch customers:', error);
     } finally {
@@ -94,8 +98,13 @@ export default function Customers() {
             loading={loading}
             searchPlaceholder="Search by name or code..."
             searchKeys={['name', 'code']}
+            onServerQuery={(next) => setQuery((prev) => ({ ...prev, q: next.q ?? prev.q, page: next.page || 1, sort: next.sort || prev.sort, dir: next.dir || prev.dir }))}
+            serverTotal={total}
+            serverPage={query.page}
             onRowClick={(row) => navigate(recordPath('/sales/customers', row, 'code'))}
             extraActions={
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <ExportButton url="/api/customers" filename="customers.xlsx" params={{ q: query.q, sort: query.sort, dir: query.dir }} />
               <button
                 onClick={() => navigate('/sales/customers/new')}
                 style={{
@@ -116,6 +125,7 @@ export default function Customers() {
               >
                 <Plus size={16} /> New Customer
               </button>
+              </div>
             }
           />
           

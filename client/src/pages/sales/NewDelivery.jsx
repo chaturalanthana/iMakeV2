@@ -10,6 +10,7 @@ import DatePicker from '../../components/ui/DatePicker';
 import CustomerModal from '../../components/ui/CustomerModal';
 import PageSkeleton from '../../components/ui/PageSkeleton';
 import DeliveryPrintModal from '../../components/ui/DeliveryPrintModal';
+import ActivityPanel from '../../components/ui/ActivityPanel';
 import TransactionalTable from '../../components/ui/TransactionalTable';
 import ScanCapture, { lookupScan, mergeScannedProduct } from '../../components/ui/ScanCapture';
 import { Truck, ArrowLeft, Plus, Trash2, Search, Filter, Calendar, User, Package, Calculator, UserPlus, Printer } from 'lucide-react';
@@ -421,8 +422,12 @@ export default function NewDelivery() {
             <button onClick={() => setActiveTab('primary')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'primary' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'primary' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Truck size={16} /> Primary Details
             </button>
+            <button onClick={() => setActiveTab('history')} style={{ padding: '0.75rem 0', border: 'none', background: 'none', borderBottom: activeTab === 'history' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'history' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Truck size={16} /> Activity / History
+            </button>
           </div>
 
+          {activeTab === 'history' && <ActivityPanel entity="SALES_DELIVERY" entityId={deliveryId} />}
           {activeTab === 'primary' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '2rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '350px' }}>

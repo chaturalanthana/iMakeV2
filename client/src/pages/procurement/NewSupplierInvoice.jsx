@@ -8,6 +8,7 @@ import SupplierSearchDropdown from '../../components/ui/SupplierSearchDropdown';
 import DatePicker from '../../components/ui/DatePicker';
 import { ArrowLeft, FileText } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { firstZodError, supplierInvoiceSchema } from '../../validation/controls';
 
 const emptyLine = () => ({ productId: '', productName: '', quantity: 1, unitPrice: 0 });
 
@@ -32,6 +33,7 @@ export default function NewSupplierInvoice() {
   const [receipts, setReceipts] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saved, setSaved] = useState(null);
+  const [knownInvoices, setKnownInvoices] = useState([]);
   const readOnly = Boolean(routeKey || saved);
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export default function NewSupplierInvoice() {
           axios.get('/api/procurement/supplier-invoices', config)
         ]);
         setSuppliers(supplierRes.data);
+        setKnownInvoices(invoiceRes.data || []);
         setReceipts(grnRes.data || []);
         if (routeKey) {
           const current = findByRouteKey(invoiceRes.data, routeKey, 'invoiceNumber');
@@ -101,12 +104,19 @@ export default function NewSupplierInvoice() {
   }, [routeKey, grnKey]);
 
   const save = async () => {
+    const parsed = supplierInvoiceSchema.safeParse({ supplierId, date, supplierReference: reference, poId, grnId });
     const errors = {};
-    if (!supplierId) errors.supplierId = 'Supplier is required.';
-    if (!date) errors.date = 'Date is required.';
-    if (!poId && !grnId) errors.grnId = 'Link a goods receipt or a purchase order.';
+    if (!parsed.success) {
+      parsed.error.issues.forEach((issue) => {
+        errors[issue.path[0] || 'form'] = issue.message;
+      });
+    }
     const lines = items.filter((item) => item.productId);
     if (!lines.length) errors.items = 'Add at least one product.';
+    const vendorNo = reference.trim();
+    if (vendorNo && knownInvoices.some((row) => row.supplierId === supplierId && String(row.supplierReference || '').trim().toLowerCase() === vendorNo.toLowerCase() && row.status !== 'CANCELLED')) {
+      errors.supplierReference = 'This supplier invoice number is already used for this supplier.';
+    }
     if (Object.keys(errors).length) {
       setFieldErrors(errors);
       showToast(Object.values(errors)[0], 'error');

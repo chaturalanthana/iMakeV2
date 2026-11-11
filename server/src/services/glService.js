@@ -1,6 +1,7 @@
 const { generateDocumentNumber } = require('../utils/codeGenerator');
 const { DocumentError } = require('./errors');
 const { num, money, dec } = require('./money');
+const { assertPeriodOpen } = require('./periodService');
 
 const DEFAULT_ACCOUNTS = [
   { key: 'CASH', code: '1000', name: 'Cash on Hand', type: 'ASSET' },
@@ -169,6 +170,8 @@ async function postJournal(tx, {
     throw new DocumentError(`Journal is not balanced (debits ${debit}, credits ${credit}).`);
   }
   if (cleaned.length === 0 || debit === 0) return null;
+
+  await assertPeriodOpen(tx, { tenantId, date, userId: createdBy });
 
   const entryNumber = await generateDocumentNumber(tenantId, 'journalEntry', 'JE', 'entryNumber', tx);
   return tx.journalEntry.create({

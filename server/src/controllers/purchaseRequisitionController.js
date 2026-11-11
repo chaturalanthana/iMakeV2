@@ -1,5 +1,8 @@
 const prisma = require('../lib/prisma');
 const { generateDocumentNumber } = require('../utils/codeGenerator');
+const { sendError } = require('../services/errors');
+const { writeAudit } = require('../services/auditService');
+const { loadRule, levelsForAmount, submitForApproval } = require('../services/approvalService');
 
 // Fetch all purchase requisitions
 const getPurchaseRequisitions = async (req, res) => {
@@ -69,6 +72,9 @@ const createPurchaseRequisition = async (req, res) => {
       'PR',
       'prNumber'
     );
+    const rule = await loadRule(prisma, req.tenantId, 'PR');
+    const needed = levelsForAmount(rule, totalAmount);
+    const hold = Boolean(rule?.enabled && needed.length);
 
     const requisition = await prisma.purchaseRequisition.create({
       data: {
@@ -76,7 +82,7 @@ const createPurchaseRequisition = async (req, res) => {
         supplierId: supplierId || null,
         prNumber,
         date: new Date(date),
-        status: status || 'PENDING',
+        status: hold ? 'PENDING_APPROVAL' : (status || 'PENDING'),
         total: totalAmount,
         currencyId: currencyId || null,
         exchangeRate: parseFloat(exchangeRate) || 1.0,
@@ -97,10 +103,27 @@ const createPurchaseRequisition = async (req, res) => {
       }
     });
 
+    if (rule?.enabled) {
+      await submitForApproval(prisma, {
+        tenantId: req.tenantId,
+        documentType: 'PR',
+        documentId: requisition.id,
+        documentNumber: requisition.prNumber,
+        amount: totalAmount,
+        userId: req.user.userId
+      });
+    }
+    await writeAudit(prisma, {
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      action: 'CREATE',
+      entity: 'PR',
+      entityId: requisition.id,
+      after: requisition
+    });
     res.status(201).json(requisition);
   } catch (error) {
-    console.error('Failed to create PR:', error);
-    res.status(500).json({ error: 'Failed to create purchase requisition' });
+    return sendError(res, error, 'Failed to create purchase requisition');
   }
 };
 
