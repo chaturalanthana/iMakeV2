@@ -307,7 +307,12 @@ module.exports = {
   brand: named('Brand name is required.'),
   category: named('Category name is required.'),
   productGroup: named('Product Group name is required.'),
-  productType: named('Product type name is required.'),
+  productType: z.object({
+    name: requiredText('Product type name is required.'),
+    kind: z.enum(['FINISHED_GOOD', 'SEMI_FINISHED', 'RAW_MATERIAL', 'PACKAGING', 'CONSUMABLE', 'SERVICE'], {
+      error: 'Choose a class. Finished Good is one of the options.'
+    }).optional()
+  }).passthrough(),
   uom: named('UOM name is required.'),
   priceList: named('Price list name is required'),
   discountGroup: named('Discount group name is required'),

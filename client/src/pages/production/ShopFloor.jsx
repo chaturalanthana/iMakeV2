@@ -42,10 +42,14 @@ export default function ShopFloor() {
     setOrder(orderRes.data);
     setReasons(reasonRes.data);
     const next = {};
-    (orderRes.data.operations || []).forEach((operation) => {
+    const operations = orderRes.data.operations || [];
+    operations.forEach((operation) => {
+      const previous = [...operations].reverse().find((row) => Number(row.sequence) < Number(operation.sequence));
+      const ceiling = previous ? Number(previous.yieldQty || 0) : Number(orderRes.data.quantity || 0);
+      const remaining = Math.max(0, ceiling - Number(operation.yieldQty || 0) - Number(operation.scrapQty || 0));
       const clockMinutes = Math.round(parseFloat(operation.actualMachineMinutes || 0));
       next[operation.id] = {
-        yieldQty: '',
+        yieldQty: remaining > 0 ? String(remaining) : '',
         scrapQty: '',
         reworkQty: '',
         scrapReasonId: '',
@@ -122,7 +126,7 @@ export default function ShopFloor() {
     }
     setFieldErrors({});
     try {
-      const res = await axios.post(`/api/work-orders/${id}/confirmations`, {
+      await axios.post(`/api/work-orders/${id}/confirmations`, {
         operationId: operation.id,
         ...form,
         yieldQty: parseFloat(form.yieldQty || 0),
@@ -132,7 +136,7 @@ export default function ShopFloor() {
         machineMinutes: parseFloat(form.machineMinutes || 0)
       }, authConfig());
       showToast('Confirmation posted', 'success');
-      setOrder(res.data);
+      await loadOrder(id);
     } catch (error) {
       setFieldErrors({ [operation.id]: error.response?.data?.fields || {} });
       showToast(error.response?.data?.error || 'Confirmation failed', 'error');
@@ -184,7 +188,10 @@ export default function ShopFloor() {
                   <div style={{ color: '#64748b', fontSize: '0.85rem' }}>{operation.workstation?.code || 'No workstation'} · {operation.status} · clock {parseFloat(operation.actualMachineMinutes || 0).toFixed(1)} min</div>
                 </div>
                 {done ? (
-                  <div style={{ fontWeight: 700, color: '#15803d' }}>Completed · good {parseFloat(operation.yieldQty || 0)}</div>
+                  <div style={{ fontWeight: 700, color: '#15803d' }}>
+                    Completed · good {parseFloat(operation.yieldQty || 0)}
+                    {parseFloat(operation.scrapQty || 0) > 0 ? ` · scrap ${parseFloat(operation.scrapQty || 0)}` : ''}
+                  </div>
                 ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem' }}>
                   <button onClick={() => clock(operation.id, 'start')} style={{ ...BUTTON, background: '#15803d', color: '#fff' }}>Start</button>
@@ -193,6 +200,11 @@ export default function ShopFloor() {
                 </div>
                 )}
                 {!done && <>
+                {(parseFloat(operation.yieldQty || 0) > 0 || parseFloat(operation.scrapQty || 0) > 0) && (
+                  <div style={{ fontWeight: 700 }}>
+                    Good {parseFloat(operation.yieldQty || 0)} · Scrap {parseFloat(operation.scrapQty || 0)}
+                  </div>
+                )}
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Operator
                   <input style={{ ...FIELD, marginTop: 4 }} placeholder="Name" value={form.operatorName || ''} onChange={(event) => setField(operation.id, 'operatorName', event.target.value)} />
                 </label>

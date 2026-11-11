@@ -15,6 +15,7 @@ const { seedTenantFinance } = require('../src/services/glService');
 const { postReceiptDocument } = require('../src/services/documentPosting');
 const { syncRoutingForBom } = require('../src/services/production/routing');
 const { ensureReasonCodes } = require('../src/services/production/workOrders');
+const { ensureProductTypes } = require('../src/services/productTypes');
 
 const SLUG = 'ceylon-woodworks';
 const EMAIL = 'nimal@ceylonwood.lk';
@@ -167,12 +168,7 @@ async function main() {
         roleId: role.id
       }
     });
-    for (const type of [
-      { name: 'Raw Material', description: 'Timber, hardware, and finishes' },
-      { name: 'Product ( Finish Good ) Material', description: 'Finished furniture' }
-    ]) {
-      await tx.productType.create({ data: { tenantId: created.id, ...type } });
-    }
+    await ensureProductTypes(tx, created.id);
     return created;
   });
 
@@ -244,8 +240,8 @@ async function main() {
     }
   });
 
-  const rawType = await prisma.productType.findFirst({ where: { tenantId, name: 'Raw Material' } });
-  const fgType = await prisma.productType.findFirst({ where: { tenantId, name: { contains: 'Finish Good' } } });
+  const rawType = await prisma.productType.findFirst({ where: { tenantId, kind: 'RAW_MATERIAL' } });
+  const fgType = await prisma.productType.findFirst({ where: { tenantId, kind: 'FINISHED_GOOD' } });
   const material = async (data) => prisma.product.create({
     data: {
       tenantId,

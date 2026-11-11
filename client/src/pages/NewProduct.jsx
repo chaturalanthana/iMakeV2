@@ -702,7 +702,6 @@ export default function NewProduct() {
                       placeholder="Select Item Type..."
                       style={{ input: controlStyle('productTypeId') }}
                       invalid={!!fieldErrors.productTypeId}
-                      onAddNew={() => setMasterModal({ kind: 'productType' })}
                     />
                     {fieldErrors.productTypeId && <span className="field-error-text">{fieldErrors.productTypeId}</span>}
                   </div>

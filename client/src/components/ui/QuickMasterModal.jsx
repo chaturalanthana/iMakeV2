@@ -12,7 +12,21 @@ const MASTER_CONFIG = {
     endpoint: '/api/product-types',
     success: 'Item type created',
     fields: [
-      { name: 'name', label: 'Name', required: true, placeholder: 'e.g. Raw Material, Finished Good' },
+      {
+        name: 'kind',
+        label: 'Class',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'FINISHED_GOOD', label: 'Finished Good' },
+          { value: 'SEMI_FINISHED', label: 'Semi-Finished Good' },
+          { value: 'RAW_MATERIAL', label: 'Raw Material' },
+          { value: 'PACKAGING', label: 'Packaging Material' },
+          { value: 'CONSUMABLE', label: 'Consumable' },
+          { value: 'SERVICE', label: 'Service' }
+        ]
+      },
+      { name: 'name', label: 'Name', required: true, placeholder: 'e.g. Finished Good' },
       { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional details about this type' }
     ]
   },
@@ -165,7 +179,16 @@ export default function QuickMasterModal({ kind, accountType, parents = [], onCl
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [name]: value };
+      if (kind === 'productType' && name === 'kind') {
+        const options = config.fields.find((field) => field.name === 'kind')?.options || [];
+        const selected = options.find((item) => item.value === value);
+        const previous = options.find((item) => item.value === prev.kind);
+        if (selected && (!String(prev.name || '').trim() || prev.name === previous?.label)) next.name = selected.label;
+      }
+      return next;
+    });
     clearInvalid(name);
   };
 
@@ -243,7 +266,20 @@ export default function QuickMasterModal({ kind, accountType, parents = [], onCl
                   <label style={labelStyle}>
                     {field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}
                   </label>
-                  {field.type === 'textarea' ? (
+                  {field.type === 'select' ? (
+                    <select
+                      name={field.name}
+                      value={form[field.name]}
+                      onChange={handleChange}
+                      className={invalidFields[field.name] ? 'field-invalid' : undefined}
+                      style={inputStyle}
+                    >
+                      <option value="">Select {field.label.toLowerCase()}</option>
+                      {(field.options || []).map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  ) : field.type === 'textarea' ? (
                     <textarea
                       name={field.name}
                       value={form[field.name]}

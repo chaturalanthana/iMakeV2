@@ -955,7 +955,13 @@ async function confirmOperation(tenantId, id, body, userId) {
     }
     const lastSequence = (wo.operations || []).reduce((max, row) => Math.max(max, num(row.sequence)), 0);
     const isLast = num(operation.sequence) === lastSequence;
-    if (round4(num(operation.yieldQty) + yieldQty) - num(wo.quantity) > 0.00005) {
+    const previous = [...wo.operations]
+      .filter((row) => num(row.sequence) < num(operation.sequence))
+      .sort((a, b) => num(b.sequence) - num(a.sequence))[0];
+    const ceiling = previous ? num(previous.yieldQty) : num(wo.quantity);
+    const upstreamClosed = !previous || previous.status === 'COMPLETE';
+    const processed = round4(num(operation.yieldQty) + num(operation.scrapQty) + yieldQty + scrapQty);
+    if (processed - ceiling > 0.00005) {
       throw new ProductionError('Yield exceeds the remaining quantity for this operation');
     }
     if (scrapQty > 0 && !body.scrapReasonId) throw new ProductionError('Scrap reason is required');
@@ -1071,7 +1077,8 @@ async function confirmOperation(tenantId, id, body, userId) {
       opStatus = 'PAUSED';
     }
     const nextYield = round4(num(operation.yieldQty) + yieldQty);
-    if (nextYield + 0.00005 >= num(wo.quantity)) opStatus = 'COMPLETE';
+    const nextScrap = round4(num(operation.scrapQty) + scrapQty);
+    if (upstreamClosed && ceiling > 0 && nextYield + nextScrap + 0.00005 >= ceiling) opStatus = 'COMPLETE';
     await tx.workOrderOperation.update({
       where: { id: operation.id },
       data: {

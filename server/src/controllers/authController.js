@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const { jwtSecret } = require('../config');
 const { seedTenantRoles } = require('../permissions/catalog');
 const { seedTenantFinance } = require('../services/glService');
+const { ensureProductTypes } = require('../services/productTypes');
 
 // Resolves email to tenant during authentication
 const login = async (req, res) => {
@@ -108,25 +109,7 @@ const register = async (req, res) => {
         where: { tenantId_name: { tenantId: tenant.id, name: 'Super Admin' } }
       });
 
-      // Seed default product types for the new tenant
-      const defaultProductTypes = [
-        { name: 'Service Material', description: 'Service material or non-inventory service items' },
-        { name: 'Raw Material', description: 'Raw materials used in production' },
-        { name: 'Product ( Finish Good ) Material', description: 'Finished goods ready for sale' },
-        { name: 'Semi-Finishgood Material', description: 'Semi-finished goods or sub-assemblies' }
-      ];
-
-      await Promise.all(
-        defaultProductTypes.map(pt =>
-          tx.productType.create({
-            data: {
-              tenantId: tenant.id,
-              name: pt.name,
-              description: pt.description
-            }
-          })
-        )
-      );
+      await ensureProductTypes(tx, tenant.id);
 
       const user = await tx.user.create({
         data: {

@@ -69,13 +69,24 @@ export default function NewBOM() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
-  const mapProductTypeName = (name) => {
+  const mapProductTypeName = (name, kind) => {
+    const byKind = {
+      FINISHED_GOOD: 'Finished Good',
+      SEMI_FINISHED: 'Sub Assembly',
+      RAW_MATERIAL: 'Raw Material',
+      PACKAGING: 'Packaging Material',
+      CONSUMABLE: 'Consumable',
+      SERVICE: 'Service'
+    };
+    if (kind && byKind[kind]) return byKind[kind];
     if (!name) return 'Raw Material';
     const clean = name.toLowerCase().trim();
-    if (clean.includes('raw')) return 'Raw Material';
-    if (clean.includes('semi') || clean.includes('finish good') || clean.includes('sub')) return 'Sub Assembly';
+    if (clean.includes('semi') || clean.includes('sub')) return 'Sub Assembly';
+    if (clean.includes('finish')) return 'Finished Good';
     if (clean.includes('pack')) return 'Packaging Material';
-    if (clean.includes('consumable') || clean.includes('spare') || clean.includes('service')) return 'Consumable';
+    if (clean.includes('consumable') || clean.includes('spare')) return 'Consumable';
+    if (clean.includes('service')) return 'Service';
+    if (clean.includes('raw')) return 'Raw Material';
     return 'Raw Material';
   };
 
@@ -280,7 +291,7 @@ export default function NewBOM() {
           productId: item.productId,
           code: item.componentProduct?.code || '',
           name: item.componentProduct?.name || '',
-          type: mapProductTypeName(item.componentProduct?.productType?.name || item.type || 'Raw Material'),
+          type: mapProductTypeName(item.componentProduct?.productType?.name || item.type || 'Raw Material', item.componentProduct?.productType?.kind),
           uom: item.componentProduct?.uom?.name || '-',
           quantity: parseFloat(item.quantity),
           scrapPercent: parseFloat(item.scrapPercent || 0),
@@ -370,7 +381,7 @@ export default function NewBOM() {
         productId: product.id,
         code: product.code,
         name: product.name,
-        type: mapProductTypeName(product.productType?.name),
+        type: mapProductTypeName(product.productType?.name, product.productType?.kind),
         uom: product.uom?.name || '-',
         standardCost: parseFloat(product.standardCost || product.costPrice || 0),
         scrapPercent: parseFloat(product.scrapPercent || 0)
@@ -931,10 +942,12 @@ export default function NewBOM() {
           <td style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>
             {(() => {
               const typeColors = {
+                'Finished Good': '#15803d',
                 'Raw Material': '#0284c7',
                 'Sub Assembly': '#10b981',
                 'Packaging Material': '#7c3aed',
-                'Consumable': '#b45309'
+                'Consumable': '#b45309',
+                'Service': '#64748b'
               };
               const label = node.type || 'Raw Material';
               return (
@@ -1422,10 +1435,12 @@ export default function NewBOM() {
                         <td style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'center', color: '#000' }} className="spreadsheet-cell">
                           {(() => {
                             const typeColors = {
+                              'Finished Good': '#15803d',
                               'Raw Material': '#0284c7',
                               'Sub Assembly': '#10b981',
                               'Packaging Material': '#7c3aed',
-                              'Consumable': '#b45309'
+                              'Consumable': '#b45309',
+                              'Service': '#64748b'
                             };
                             const label = item.type || 'Raw Material';
                             return (

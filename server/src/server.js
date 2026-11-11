@@ -2,12 +2,16 @@ const app = require('./app');
 const { port } = require('./config');
 const { migrateAllTenants } = require('./services/production/workOrders');
 const { runDueReplenishment } = require('./services/replenishment');
+const { ensureAllProductTypes } = require('./services/productTypes');
 
 const startServer = () => {
   app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
     migrateAllTenants().catch((error) => {
       console.error('Work order migration skipped:', error.message);
+    });
+    ensureAllProductTypes().catch((error) => {
+      console.error('Product type generation skipped:', error.message);
     });
     if (process.env.NODE_ENV !== 'test') {
       const tick = () => {

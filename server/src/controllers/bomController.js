@@ -12,13 +12,25 @@ const rememberRouting = async (bomId) => {
   }
 };
 
-const mapProductTypeName = (name) => {
+const LINE_BY_KIND = {
+  FINISHED_GOOD: 'Finished Good',
+  SEMI_FINISHED: 'Sub Assembly',
+  RAW_MATERIAL: 'Raw Material',
+  PACKAGING: 'Packaging Material',
+  CONSUMABLE: 'Consumable',
+  SERVICE: 'Service'
+};
+
+const mapProductTypeName = (name, kind) => {
+  if (kind && LINE_BY_KIND[kind]) return LINE_BY_KIND[kind];
   if (!name) return 'Raw Material';
   const clean = name.toLowerCase().trim();
-  if (clean.includes('raw')) return 'Raw Material';
-  if (clean.includes('semi') || clean.includes('finish good') || clean.includes('sub')) return 'Sub Assembly';
+  if (clean.includes('semi') || clean.includes('sub')) return 'Sub Assembly';
+  if (clean.includes('finish')) return 'Finished Good';
   if (clean.includes('pack')) return 'Packaging Material';
-  if (clean.includes('consumable') || clean.includes('spare') || clean.includes('service')) return 'Consumable';
+  if (clean.includes('consumable') || clean.includes('spare')) return 'Consumable';
+  if (clean.includes('service')) return 'Service';
+  if (clean.includes('raw')) return 'Raw Material';
   return 'Raw Material';
 };
 
@@ -69,7 +81,7 @@ const getBOM = async (req, res) => {
                 bomApplicable: true,
                 type: true,
                 productType: {
-                  select: { id: true, name: true }
+                  select: { id: true, name: true, kind: true }
                 },
                 uom: {
                   select: { id: true, name: true }
@@ -599,7 +611,7 @@ const compareBOMs = async (req, res) => {
                   code: true,
                   name: true,
                   type: true,
-                  productType: { select: { name: true } },
+                  productType: { select: { name: true, kind: true } },
                   uom: { select: { name: true } }
                 }
               }
@@ -625,7 +637,7 @@ const compareBOMs = async (req, res) => {
                   code: true,
                   name: true,
                   type: true,
-                  productType: { select: { name: true } },
+                  productType: { select: { name: true, kind: true } },
                   uom: { select: { name: true } }
                 }
               }
@@ -677,14 +689,14 @@ const compareBOMs = async (req, res) => {
         quantity: parseFloat(item1.quantity),
         scrapPercent: parseFloat(item1.scrapPercent),
         instruction: item1.instruction || '',
-        type: mapProductTypeName(item1.componentProduct?.productType?.name)
+        type: mapProductTypeName(item1.componentProduct?.productType?.name, item1.componentProduct?.productType?.kind)
       } : null;
 
       const val2 = item2 ? {
         quantity: parseFloat(item2.quantity),
         scrapPercent: parseFloat(item2.scrapPercent),
         instruction: item2.instruction || '',
-        type: mapProductTypeName(item2.componentProduct?.productType?.name)
+        type: mapProductTypeName(item2.componentProduct?.productType?.name, item2.componentProduct?.productType?.kind)
       } : null;
 
       if (item1 && !item2) {
@@ -716,7 +728,7 @@ const compareBOMs = async (req, res) => {
         code,
         name,
         uom,
-        type: mapProductTypeName(compProduct?.productType?.name),
+        type: mapProductTypeName(compProduct?.productType?.name, compProduct?.productType?.kind),
         changeType,
         bom1Val: val1,
         bom2Val: val2,
@@ -841,7 +853,7 @@ const getBOMTree = async (req, res) => {
           standardCost: true, 
           bomApplicable: true,
           productType: {
-            select: { id: true, name: true }
+            select: { id: true, name: true, kind: true }
           },
           uom: {
             select: { id: true, name: true }
@@ -860,7 +872,7 @@ const getBOMTree = async (req, res) => {
         standardCost: parseFloat(product.standardCost || 0),
         totalCost: parseFloat(product.standardCost || 0) * reqQty,
         uom: product.uom?.name || '-',
-        type: mapProductTypeName(product.productType?.name),
+        type: mapProductTypeName(product.productType?.name, product.productType?.kind),
         children: []
       };
 
