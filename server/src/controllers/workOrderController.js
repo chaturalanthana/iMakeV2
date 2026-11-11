@@ -106,6 +106,22 @@ const close = async (req, res) => {
   }
 };
 
+const closeNow = async (req, res) => {
+  try {
+    res.json(await workOrders.closeNow(req.tenantId, req.params.id, { short: false }));
+  } catch (error) {
+    send(res, error, 'Failed to close work order');
+  }
+};
+
+const shortClose = async (req, res) => {
+  try {
+    res.json(await workOrders.closeNow(req.tenantId, req.params.id, { short: true }));
+  } catch (error) {
+    send(res, error, 'Failed to short-close work order');
+  }
+};
+
 const cancel = async (req, res) => {
   try {
     res.json(await workOrders.cancelWorkOrder(req.tenantId, req.params.id));
@@ -185,6 +201,8 @@ module.exports = {
   confirm,
   teco,
   close,
+  closeNow,
+  shortClose,
   cancel,
   cost,
   settings,

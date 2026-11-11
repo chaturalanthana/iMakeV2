@@ -50,6 +50,8 @@ export default function Sidebar() {
         { name: 'Costing', icon: DollarSign, path: '/production/costing' },
         { name: 'Workstations', icon: Sliders, path: '/production/workstations' },
         { name: 'MRP Planner', icon: FileText, path: '/production/mrp' },
+        { name: 'Production Reports', icon: BarChart2, path: '/production/reports' },
+        { name: 'Contract Manufacturing', icon: Truck, path: '/production/contracts' },
         { name: 'Product Groups', icon: Layers, path: '/production/groups' },
         { name: 'Product Types', icon: Layers, path: '/registries/product-types' },
         { name: 'Brands', icon: Tag, path: '/registries/brands' },

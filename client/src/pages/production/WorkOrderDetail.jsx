@@ -101,6 +101,8 @@ export default function WorkOrderDetail() {
             {order.status === 'CREATED' && <ActionButton variant="submit" onClick={() => act('/release', 'Work order released')}>Release</ActionButton>}
             {['RELEASED', 'IN_PROGRESS'].includes(order.status) && <ActionButton onClick={() => act('/teco', 'Technically complete')} style={{ background: '#b45309' }}>TECO</ActionButton>}
             {order.status === 'TECO' && <ActionButton onClick={() => act('/close', 'Work order closed')} style={{ background: '#15803d' }}>Close</ActionButton>}
+            {['RELEASED', 'IN_PROGRESS', 'TECO'].includes(order.status) && <ActionButton onClick={() => act('/close-now', 'Work order closed')} style={{ background: '#15803d' }}>Close now</ActionButton>}
+            {['RELEASED', 'IN_PROGRESS', 'TECO'].includes(order.status) && <ActionButton variant="secondary" onClick={() => act('/short-close', 'Short closed')}>Short close</ActionButton>}
             {['CREATED', 'RELEASED'].includes(order.status) && <ActionButton variant="danger" onClick={() => act('/cancel', 'Work order cancelled')}>Cancel</ActionButton>}
             <ActionButton variant="secondary" onClick={() => navigate(recordPath('/production/shop-floor', order, 'orderNumber'))}>Shop floor</ActionButton>
           </>

@@ -337,6 +337,8 @@ describe('Work order lifecycle', () => {
       where: { tenantId: tenant.id, status: { notIn: ['CANCELLED', 'CLOSED'] } },
       data: { status: 'CANCELLED' }
     });
+    const before = await prisma.stockMovement.findMany({ where: { tenantId: tenant.id, productId: fg.id } });
+    const onHand = before.reduce((sum, row) => sum + (row.type === 'GI' ? -Math.abs(Number(row.quantity)) : Number(row.quantity)), 0);
     const sales = await request(app)
       .post('/api/sales/orders')
       .set(auth())
@@ -344,7 +346,7 @@ describe('Work order lifecycle', () => {
         customerId: customer.id,
         date: new Date().toISOString(),
         status: 'PENDING',
-        items: [{ productId: fg.id, quantity: 2, unitPrice: 50, total: 100 }]
+        items: [{ productId: fg.id, quantity: onHand + 2, unitPrice: 50, total: (onHand + 2) * 50 }]
       });
     expect(sales.status).toBe(201);
     const drafts = await prisma.workOrder.findMany({
@@ -361,7 +363,7 @@ describe('Work order lifecycle', () => {
         customerId: customer.id,
         date: new Date().toISOString(),
         status: 'PENDING',
-        items: [{ productId: fg.id, quantity: 5, unitPrice: 50, total: 250 }]
+        items: [{ productId: fg.id, quantity: onHand + 5, unitPrice: 50, total: (onHand + 5) * 50 }]
       });
     expect(revised.status).toBe(200);
     const updatedDraft = await prisma.workOrder.findFirst({

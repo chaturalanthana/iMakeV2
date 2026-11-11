@@ -91,6 +91,18 @@ model Tenant {
   itemWarehousePolicies        ItemWarehousePolicy[]
   replenishmentRuns            ReplenishmentRun[]
   replenishmentLines           ReplenishmentLine[]
+  demandForecasts              DemandForecast[]
+  mpsBuckets                   MpsBucket[]
+  mpsRuns                      MpsRun[]
+  plannedProductionOrders      PlannedProductionOrder[]
+  bomAlternates                BomAlternate[]
+  batchGenealogy               BatchGenealogy[]
+  machineCaptures              MachineCapture[]
+  abnormalLosses               AbnormalLoss[]
+  payrollImports               PayrollImport[]
+  overheadReconciliations      OverheadReconciliation[]
+  contractOrders               ContractOrder[]
+  contractIssues               ContractIssue[]
   operationsSetting            OperationsSetting?
   statutorySetting             StatutorySetting?
   whtCertificates              WhtCertificate[]
@@ -290,6 +302,8 @@ model Supplier {
   purchaseRequisitions PurchaseRequisition[]
   supplierInvoices SupplierInvoice[]
   whtCertificates  WhtCertificate[]
+  virtualWarehouses Warehouse[]
+  contractOrders   ContractOrder[]
   itemSuppliers    ItemSupplier[]
   stockBatches     StockBatch[]
   stockReturns     StockReturn[]
@@ -400,6 +414,14 @@ model Product {
   productGroupId        String?                @map("product_group_id")
   purchaseUomId         String?                @map("purchase_uom_id")
   safetyStock           Int?                   @default(0) @map("safety_stock")
+  planningPolicy        String                 @default("MAKE_TO_ORDER") @map("planning_policy")
+  stockTarget           Decimal                @default(0) @map("stock_target") @db.Decimal(19, 4)
+  manufacturingLeadDays Int                    @default(1) @map("manufacturing_lead_days")
+  lotPolicy             String                 @default("LOT_FOR_LOT") @map("lot_policy")
+  fixedLotQty           Decimal                @default(0) @map("fixed_lot_qty") @db.Decimal(19, 4)
+  minLotQty             Decimal                @default(0) @map("min_lot_qty") @db.Decimal(19, 4)
+  standardYieldPercent  Decimal                @default(100) @map("standard_yield_percent") @db.Decimal(9, 4)
+  abnormalLossThreshold Decimal                @default(2) @map("abnormal_loss_threshold") @db.Decimal(9, 4)
   salesUomId            String?                @map("sales_uom_id")
   scrapPercent          Decimal?               @default(0.0) @map("scrap_percent") @db.Decimal(19, 4)
   standardCost          Decimal?               @default(0.0) @map("standard_cost") @db.Decimal(19, 4)
@@ -471,6 +493,16 @@ model Product {
   stockReturnItems      StockReturnItem[]
   cycleCountLines       CycleCountLine[]
   machineThroughputs    MachineThroughput[]
+  demandForecasts       DemandForecast[]
+  mpsBuckets            MpsBucket[]
+  plannedOrders         PlannedProductionOrder[]
+  bomAlternates         BomAlternate[]
+  genealogyFinished     BatchGenealogy[]       @relation("GenealogyFinished")
+  genealogyMaterial     BatchGenealogy[]       @relation("GenealogyMaterial")
+  byproductCaptures     MachineCapture[]       @relation("CaptureByproduct")
+  contractOrders        ContractOrder[]
+  contractIssues        ContractIssue[]
+  issuedSubstitutes     WorkOrderIssue[]       @relation("IssuedSubstitute")
 
   @@index([tenantId])
   @@index([tenantId, barcode])
@@ -1035,7 +1067,13 @@ model Warehouse {
   workOrders       WorkOrder[]
   itemWarehousePolicies ItemWarehousePolicy[]
   replenishmentLines ReplenishmentLine[]
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  contractVirtual  ContractOrder[]   @relation("ContractVirtual")
+  contractFinished ContractOrder[]   @relation("ContractFinished")
+  contractIssues   ContractIssue[]
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  locationRole     String            @default("STORE") @map("location_role")
+  supplierId       String?           @map("supplier_id")
 
   @@index([tenantId])
   @@map("warehouses")
@@ -1684,6 +1722,7 @@ model BOMItem {
   
   bom              BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
   componentProduct Product  @relation("BOMComponentProducts", fields: [productId], references: [id])
+  alternates       BomAlternate[]
 
   @@index([tenantId])
   @@map("bom_items")
@@ -1866,6 +1905,7 @@ model Machine {
   tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workstation   Workstation?        @relation(fields: [workstationId], references: [id], onDelete: SetNull)
   throughputs   MachineThroughput[]
+  captures      MachineCapture[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1953,6 +1993,9 @@ model ProductGroup {
   parent        ProductGroup?  @relation("GroupHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   subGroups     ProductGroup[] @relation("GroupHierarchy")
   products      Product[]      @relation("ProductToProductGroup")
+  standardYieldPercent  Decimal @default(98) @map("standard_yield_percent") @db.Decimal(9, 4)
+  standardScrapPercent  Decimal @default(2) @map("standard_scrap_percent") @db.Decimal(9, 4)
+  abnormalLossThreshold Decimal @default(2) @map("abnormal_loss_threshold") @db.Decimal(9, 4)
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -1993,6 +2036,7 @@ model RoutingOperation {
   noOfWorkers             Int          @default(1) @map("no_of_workers")
   isSubcontract           Boolean      @default(false) @map("is_subcontract")
   subcontractCostPerUnit  Decimal      @default(0) @map("subcontract_cost_per_unit") @db.Decimal(19, 4)
+  milestoneWeight         Decimal      @default(0) @map("milestone_weight") @db.Decimal(9, 4)
   instructions            String?
 
   tenant                  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -2044,11 +2088,16 @@ model WorkOrder {
   actualOverheadCost   Decimal                  @default(0) @map("actual_overhead_cost") @db.Decimal(19, 4)
   actualScrapCost      Decimal                  @default(0) @map("actual_scrap_cost") @db.Decimal(19, 4)
   actualSubcontractCost Decimal                 @default(0) @map("actual_subcontract_cost") @db.Decimal(19, 4)
+  tecoAt               DateTime?                @map("teco_at")
+  closeDueAt           DateTime?                @map("close_due_at")
+  shortClosed          Boolean                  @default(false) @map("short_closed")
+  costCenterId         String?                  @map("cost_center_id")
   createdAt            DateTime                 @default(now()) @map("created_at")
   updatedAt            DateTime                 @updatedAt @map("updated_at")
   createdBy            String?                  @map("created_by")
 
   tenant               Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  costCenter           OrgCenter?               @relation("WorkOrderCostCenter", fields: [costCenterId], references: [id], onDelete: SetNull)
   product              Product                  @relation("WorkOrderProduct", fields: [productId], references: [id])
   bom                  BOM?                     @relation(fields: [bomId], references: [id], onDelete: SetNull)
   routing              Routing?                 @relation(fields: [routingId], references: [id], onDelete: SetNull)
@@ -2062,6 +2111,10 @@ model WorkOrder {
   reservations         MaterialReservation[]
   issues               WorkOrderIssue[]
   confirmations        WorkOrderConfirmation[]
+  plannedOrders        PlannedProductionOrder[]
+  machineCaptures      MachineCapture[]
+  genealogy            BatchGenealogy[]
+  abnormalLosses       AbnormalLoss[]
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId])
@@ -2109,6 +2162,7 @@ model WorkOrderOperation {
   noOfWorkers            Int                     @default(1) @map("no_of_workers")
   isSubcontract          Boolean                 @default(false) @map("is_subcontract")
   subcontractCostPerUnit Decimal                 @default(0) @map("subcontract_cost_per_unit") @db.Decimal(19, 4)
+  milestoneWeight        Decimal                 @default(0) @map("milestone_weight") @db.Decimal(9, 4)
   machineRatePerHour     Decimal                 @default(0) @map("machine_rate_per_hour") @db.Decimal(19, 4)
   instructions           String?
   status                 String                  @default("PENDING")
@@ -2123,6 +2177,7 @@ model WorkOrderOperation {
   workstation            Workstation?            @relation(fields: [workstationId], references: [id], onDelete: SetNull)
   timeLogs               OperationTimeLog[]
   confirmations          WorkOrderConfirmation[]
+  machineCaptures        MachineCapture[]
 
   @@index([tenantId])
   @@index([workOrderId])
@@ -2160,6 +2215,9 @@ model WorkOrderIssue {
   componentId    String?             @map("component_id")
   confirmationId String?             @map("confirmation_id")
   productId      String              @map("product_id")
+  issuedProductId String?            @map("issued_product_id")
+  substitutionRatio Decimal          @default(1) @map("substitution_ratio") @db.Decimal(19, 4)
+  substitutionDelta Decimal          @default(0) @map("substitution_delta") @db.Decimal(19, 4)
   quantity       Decimal             @db.Decimal(19, 4)
   unitCost       Decimal             @default(0) @map("unit_cost") @db.Decimal(19, 4)
   totalCost      Decimal             @default(0) @map("total_cost") @db.Decimal(19, 4)
@@ -2174,7 +2232,9 @@ model WorkOrderIssue {
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workOrder      WorkOrder           @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   component      WorkOrderComponent? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  issuedProduct  Product?            @relation("IssuedSubstitute", fields: [issuedProductId], references: [id], onDelete: SetNull)
   confirmation   WorkOrderConfirmation? @relation(fields: [confirmationId], references: [id], onDelete: SetNull)
+  genealogy      BatchGenealogy[]
 
   @@index([tenantId])
   @@index([workOrderId])
@@ -2243,6 +2303,14 @@ model ProductionSetting {
   labourRatePerHour  Decimal  @default(0) @map("labour_rate_per_hour") @db.Decimal(19, 4)
   hoursPerDay        Decimal  @default(8) @map("hours_per_day") @db.Decimal(19, 4)
   workDays           Json     @default("[1,2,3,4,5]") @map("work_days")
+  closeGraceDays     Int      @default(3) @map("close_grace_days")
+  planningHorizonWeeks Int    @default(8) @map("planning_horizon_weeks")
+  labourAbsorptionBase String @default("PER_LABOUR_HOUR") @map("labour_absorption_base")
+  overheadAbsorptionBase String @default("PERCENT_OF_CONVERSION") @map("overhead_absorption_base")
+  overheadRate       Decimal  @default(0) @map("overhead_rate") @db.Decimal(19, 4)
+  abnormalLossThreshold Decimal @default(2) @map("abnormal_loss_threshold") @db.Decimal(9, 4)
+  defaultYieldPercent Decimal @default(98) @map("default_yield_percent") @db.Decimal(9, 4)
+  defaultScrapPercent Decimal @default(2) @map("default_scrap_percent") @db.Decimal(9, 4)
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
@@ -2489,6 +2557,295 @@ model OperationTimeLog {
   @@map("operation_time_logs")
 }
 
+model DemandForecast {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  productId  String   @map("product_id")
+  weekStart  DateTime @map("week_start")
+  quantity   Decimal  @db.Decimal(19, 4)
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, productId, weekStart])
+  @@index([tenantId])
+  @@map("demand_forecasts")
+}
+
+model MpsRun {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  horizonWeeks Int      @map("horizon_weeks")
+  weekStart    DateTime @map("week_start")
+  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    String?  @map("created_by")
+
+  tenant  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buckets MpsBucket[]
+  orders  PlannedProductionOrder[]
+
+  @@index([tenantId])
+  @@map("mps_runs")
+}
+
+model MpsBucket {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  runId        String   @map("run_id")
+  productId    String   @map("product_id")
+  weekStart    DateTime @map("week_start")
+  opening      Decimal  @default(0) @db.Decimal(19, 4)
+  forecastQty  Decimal  @default(0) @map("forecast_qty") @db.Decimal(19, 4)
+  orderQty     Decimal  @default(0) @map("order_qty") @db.Decimal(19, 4)
+  demandQty    Decimal  @default(0) @map("demand_qty") @db.Decimal(19, 4)
+  receiptsQty  Decimal  @default(0) @map("receipts_qty") @db.Decimal(19, 4)
+  projected    Decimal  @default(0) @db.Decimal(19, 4)
+  safetyStock  Decimal  @default(0) @map("safety_stock") @db.Decimal(19, 4)
+  stockTarget  Decimal  @default(0) @map("stock_target") @db.Decimal(19, 4)
+  plannedQty   Decimal  @default(0) @map("planned_qty") @db.Decimal(19, 4)
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run     MpsRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([runId])
+  @@map("mps_buckets")
+}
+
+model PlannedProductionOrder {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  runId       String?   @map("run_id")
+  productId   String    @map("product_id")
+  quantity    Decimal   @db.Decimal(19, 4)
+  startDate   DateTime  @map("start_date")
+  dueDate     DateTime  @map("due_date")
+  weekStart   DateTime  @map("week_start")
+  status      String    @default("PLANNED")
+  workOrderId String?   @map("work_order_id")
+  costCenterId String?  @map("cost_center_id")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  costCenter OrgCenter? @relation("PlannedOrderCenter", fields: [costCenterId], references: [id], onDelete: SetNull)
+  run        MpsRun?    @relation(fields: [runId], references: [id], onDelete: SetNull)
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([runId])
+  @@index([status])
+  @@map("planned_production_orders")
+}
+
+model BomAlternate {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  bomItemId  String   @map("bom_item_id")
+  productId  String   @map("product_id")
+  ratio      Decimal  @default(1) @db.Decimal(19, 4)
+  approved   Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bomItem BOMItem @relation(fields: [bomItemId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([bomItemId, productId])
+  @@index([tenantId])
+  @@map("bom_alternates")
+}
+
+model MachineCapture {
+  id                      String   @id @default(uuid())
+  tenantId                String   @map("tenant_id")
+  workOrderId             String   @map("work_order_id")
+  operationId             String   @map("operation_id")
+  machineId               String   @map("machine_id")
+  startedAt               DateTime @map("started_at")
+  endedAt                 DateTime @map("ended_at")
+  inputQty                Decimal  @default(0) @map("input_qty") @db.Decimal(19, 4)
+  outputQty               Decimal  @default(0) @map("output_qty") @db.Decimal(19, 4)
+  wastageQty              Decimal  @default(0) @map("wastage_qty") @db.Decimal(19, 4)
+  downtimeMinutes         Decimal  @default(0) @map("downtime_minutes") @db.Decimal(19, 4)
+  downtimeReason          String?  @map("downtime_reason")
+  reworkQty               Decimal  @default(0) @map("rework_qty") @db.Decimal(19, 4)
+  scrapQty                Decimal  @default(0) @map("scrap_qty") @db.Decimal(19, 4)
+  coproductQty            Decimal  @default(0) @map("coproduct_qty") @db.Decimal(19, 4)
+  byproductProductId      String?  @map("byproduct_product_id")
+  byproductQty            Decimal  @default(0) @map("byproduct_qty") @db.Decimal(19, 4)
+  lotNumber               String?  @map("lot_number")
+  batchId                 String?  @map("batch_id")
+  yieldPercent            Decimal  @default(0) @map("yield_percent") @db.Decimal(9, 4)
+  wastagePercent          Decimal  @default(0) @map("wastage_percent") @db.Decimal(9, 4)
+  theoreticalYieldPercent Decimal  @default(0) @map("theoretical_yield_percent") @db.Decimal(9, 4)
+  notes                   String?
+  createdAt               DateTime @default(now()) @map("created_at")
+  createdBy               String?  @map("created_by")
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder          @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  operation WorkOrderOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  machine   Machine            @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  batch     StockBatch?        @relation("CaptureBatch", fields: [batchId], references: [id], onDelete: SetNull)
+  byproduct Product?           @relation("CaptureByproduct", fields: [byproductProductId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@map("machine_captures")
+}
+
+model BatchGenealogy {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  workOrderId      String?  @map("work_order_id")
+  contractOrderId  String?  @map("contract_order_id")
+  confirmationId   String?  @map("confirmation_id")
+  issueId          String?  @map("issue_id")
+  fgProductId      String   @map("fg_product_id")
+  fgLotNumber      String?  @map("fg_lot_number")
+  fgBatchId        String?  @map("fg_batch_id")
+  rmProductId      String   @map("rm_product_id")
+  rmLotNumber      String?  @map("rm_lot_number")
+  rmBatchId        String?  @map("rm_batch_id")
+  quantity         Decimal  @db.Decimal(19, 4)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder     WorkOrder?     @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  contractOrder ContractOrder? @relation(fields: [contractOrderId], references: [id], onDelete: Cascade)
+  issue         WorkOrderIssue? @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  fgProduct     Product        @relation("GenealogyFinished", fields: [fgProductId], references: [id], onDelete: Cascade)
+  rmProduct     Product        @relation("GenealogyMaterial", fields: [rmProductId], references: [id], onDelete: Cascade)
+  fgBatch       StockBatch?    @relation("GenealogyFgBatch", fields: [fgBatchId], references: [id], onDelete: SetNull)
+  rmBatch       StockBatch?    @relation("GenealogyRmBatch", fields: [rmBatchId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@map("batch_genealogy")
+}
+
+model AbnormalLoss {
+  id                   String    @id @default(uuid())
+  tenantId             String    @map("tenant_id")
+  workOrderId          String    @map("work_order_id")
+  productLine          String?   @map("product_line")
+  actualScrapPercent   Decimal   @default(0) @map("actual_scrap_percent") @db.Decimal(9, 4)
+  standardScrapPercent Decimal   @default(0) @map("standard_scrap_percent") @db.Decimal(9, 4)
+  threshold            Decimal   @default(0) @db.Decimal(9, 4)
+  excessQty            Decimal   @default(0) @map("excess_qty") @db.Decimal(19, 4)
+  amount               Decimal   @default(0) @db.Decimal(19, 4)
+  reason               String?
+  status               String    @default("PENDING")
+  approvedBy           String?   @map("approved_by")
+  approvedAt           DateTime? @map("approved_at")
+  journalEntryId       String?   @map("journal_entry_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@map("abnormal_losses")
+}
+
+model PayrollImport {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  reference      String
+  date           DateTime
+  description    String?
+  totalDebit     Decimal  @map("total_debit") @db.Decimal(19, 4)
+  journalEntryId String?  @map("journal_entry_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String?  @map("created_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("payroll_imports")
+}
+
+model OverheadReconciliation {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  periodStart       DateTime @map("period_start")
+  periodEnd         DateTime @map("period_end")
+  costCenterId      String?  @map("cost_center_id")
+  absorbedLabour    Decimal  @default(0) @map("absorbed_labour") @db.Decimal(19, 4)
+  absorbedOverhead  Decimal  @default(0) @map("absorbed_overhead") @db.Decimal(19, 4)
+  actualPayroll     Decimal  @default(0) @map("actual_payroll") @db.Decimal(19, 4)
+  actualOverhead    Decimal  @default(0) @map("actual_overhead") @db.Decimal(19, 4)
+  labourVariance    Decimal  @default(0) @map("labour_variance") @db.Decimal(19, 4)
+  overheadVariance  Decimal  @default(0) @map("overhead_variance") @db.Decimal(19, 4)
+  journalEntryId    String?  @map("journal_entry_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  costCenter OrgCenter? @relation("ReconciliationCenter", fields: [costCenterId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@map("overhead_reconciliations")
+}
+
+model ContractOrder {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  orderNumber        String   @map("order_number")
+  supplierId         String   @map("supplier_id")
+  virtualWarehouseId String   @map("virtual_warehouse_id")
+  fgWarehouseId      String   @map("fg_warehouse_id")
+  productId          String   @map("product_id")
+  workOrderId        String?  @map("work_order_id")
+  quantity           Decimal  @db.Decimal(19, 4)
+  quantityReceived   Decimal  @default(0) @map("quantity_received") @db.Decimal(19, 4)
+  serviceCharge      Decimal  @default(0) @map("service_charge") @db.Decimal(19, 4)
+  status             String   @default("DRAFT")
+  cancelReason       String?  @map("cancel_reason")
+  costCenterId       String?  @map("cost_center_id")
+  supplierInvoiceId  String?  @map("supplier_invoice_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  createdBy          String?  @map("created_by")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  costCenter       OrgCenter?        @relation("ContractCostCenter", fields: [costCenterId], references: [id], onDelete: SetNull)
+  supplier         Supplier          @relation(fields: [supplierId], references: [id])
+  virtualWarehouse Warehouse         @relation("ContractVirtual", fields: [virtualWarehouseId], references: [id])
+  fgWarehouse      Warehouse         @relation("ContractFinished", fields: [fgWarehouseId], references: [id])
+  product          Product           @relation(fields: [productId], references: [id])
+  issues           ContractIssue[]
+  genealogy        BatchGenealogy[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@map("contract_orders")
+}
+
+model ContractIssue {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  contractOrderId String   @map("contract_order_id")
+  productId       String   @map("product_id")
+  quantity        Decimal  @db.Decimal(19, 4)
+  unitCost        Decimal  @default(0) @map("unit_cost") @db.Decimal(19, 4)
+  lotNumber       String?  @map("lot_number")
+  warehouseId     String?  @map("warehouse_id")
+  kind            String   @default("ISSUE")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contractOrder ContractOrder @relation(fields: [contractOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+  warehouse     Warehouse?    @relation(fields: [warehouseId], references: [id])
+
+  @@index([tenantId])
+  @@index([contractOrderId])
+  @@map("contract_issues")
+}
+
 // Sequential approval. Delegation and escalation are reserved columns only.
 model ApprovalRule {
   id               String          @id @default(uuid())
@@ -2627,6 +2984,10 @@ model OrgCenter {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
   tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrders       WorkOrder[] @relation("WorkOrderCostCenter")
+  contractOrders   ContractOrder[] @relation("ContractCostCenter")
+  reconciliations  OverheadReconciliation[] @relation("ReconciliationCenter")
+  plannedOrders    PlannedProductionOrder[] @relation("PlannedOrderCenter")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -3393,6 +3754,9 @@ model StockBatch {
   supplier           Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   retests            QaRetest[]
+  finishedGenealogy  BatchGenealogy[] @relation("GenealogyFgBatch")
+  materialGenealogy  BatchGenealogy[] @relation("GenealogyRmBatch")
+  machineCaptures    MachineCapture[] @relation("CaptureBatch")
 
   @@unique([tenantId, productId, lotNumber])
   @@index([tenantId])
@@ -3665,5 +4029,6 @@ model CycleCountLine {
   @@index([countId])
   @@map("cycle_count_lines")
 }
+
 
 
